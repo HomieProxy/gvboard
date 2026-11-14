@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, type Component } from 'vue'
+import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   WalletIcon, CoinsIcon, MessageSquareIcon, UsersIcon, BookOpenIcon, DownloadIcon, RefreshCwIcon, LifeBuoyIcon,
@@ -11,11 +11,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@gv/shared
 import { Button } from '@gv/shared/ui/button'
 import { Alert, AlertDescription } from '@gv/shared/ui/alert'
 import { Skeleton } from '@gv/shared/ui/skeleton'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
 import { cfg, http } from '../api'
 import { errText, toast } from '../ui'
-import { loadMe, loadStat, loadSubs, me, money, stat, subs } from '../store'
+import { biz, clientOnly, loadBiz, loadMe, loadStat, loadSubs, me, money, stat, subs } from '../store'
 import type { Notice } from '../types'
 import SubCard from '../components/SubCard.vue'
+import ClientDownloads from '../components/ClientDownloads.vue'
 import NoticeDialog from '../components/NoticeDialog.vue'
 import StatusBadge from '../components/common/StatusBadge.vue'
 
@@ -33,14 +35,17 @@ const cards = computed(() => [
   { label: t('dashboard.openTickets'), value: stat.value?.open_tickets ?? 0, icon: MessageSquareIcon, to: '/tickets' },
   { label: t('dashboard.invitees'), value: stat.value?.invitees ?? 0, icon: UsersIcon, to: '/invite' },
 ])
-const shortcuts = computed(() => [
+const downloadShow = ref(false)
+const shortcuts = computed<{ title: string; desc: string; icon: Component; to?: RouteLocationRaw; action?: () => void }[]>(() => [
   { title: t('dashboard.tutorial'), desc: t('dashboard.tutorialDesc', { site: cfg.value.site.name }), icon: BookOpenIcon, to: '/knowledge' },
-  {
-    title: t('dashboard.oneClick'),
-    desc: t('dashboard.oneClickDesc'),
-    icon: DownloadIcon,
-    to: primary.value ? `/subscriptions/${primary.value.id}` : '/plans',
-  },
+  clientOnly.value
+    ? { title: t('client.title'), desc: t('client.shortcutDesc'), icon: DownloadIcon, action: () => (downloadShow.value = true) }
+    : {
+        title: t('dashboard.oneClick'),
+        desc: t('dashboard.oneClickDesc'),
+        icon: DownloadIcon,
+        to: primary.value ? `/subscriptions/${primary.value.id}` : '/plans',
+      },
   {
     title: t('dashboard.renew'),
     desc: t('dashboard.renewDesc'),
@@ -57,6 +62,7 @@ function openNotice(n: Notice) {
 
 onMounted(async () => {
   try {
+    loadBiz().catch(() => {})
     const [, , , n] = await Promise.all([
       loadMe(),
       loadStat(),
@@ -109,7 +115,7 @@ onMounted(async () => {
             </Button>
           </div>
           <div v-if="loading" class="space-y-3"><Skeleton class="h-40 w-full rounded-xl" /></div>
-          <div v-else class="grid gap-4 2xl:grid-cols-2">
+          <div v-else :class="['grid gap-4', subs.length > 1 && 'lg:grid-cols-2']">
             <SubCard v-for="s in subs" :key="s.id" :sub="s" class="cursor-pointer" @click="router.push(`/subscriptions/${s.id}`)" />
           </div>
           <Card v-if="!loading && !subs.some((s) => s.plan)" class="mt-4">
@@ -129,7 +135,7 @@ onMounted(async () => {
                 :key="s.title"
                 type="button"
                 class="flex w-full items-center gap-4 px-4 py-3.5 text-left transition-colors hover:bg-accent/40"
-                @click="router.push(s.to)"
+                @click="s.action ? s.action() : s.to && router.push(s.to)"
               >
                 <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   <component :is="s.icon" class="size-4.5" />
@@ -175,5 +181,14 @@ onMounted(async () => {
     </div>
 
     <NoticeDialog v-model:open="noticeShow" :notice="notice" />
+    <Dialog v-model:open="downloadShow">
+      <DialogContent class="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{{ t('client.title') }}</DialogTitle>
+          <DialogDescription>{{ t('client.tip') }}</DialogDescription>
+        </DialogHeader>
+        <ClientDownloads :clients="biz?.clients || []" />
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

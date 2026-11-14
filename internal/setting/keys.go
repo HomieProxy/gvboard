@@ -44,6 +44,7 @@ const (
 	GroupEmail     = "email"
 	GroupTelegram  = "telegram"
 	GroupApp       = "app"
+	GroupClient    = "client"
 	GroupGvboard   = "gvboard"
 	GroupLegacy    = "legacy" // 原项目中存在但已不在管理端展示的项
 )
@@ -269,6 +270,10 @@ var defs = []Def{
 	{Key: "macos_download_url", Type: TypeString, Default: "", Group: GroupApp},
 	{Key: "android_version", Type: TypeString, Default: "", Group: GroupApp},
 	{Key: "android_download_url", Type: TypeString, Default: "", Group: GroupApp},
+
+	// Gvboard 新增（决策 D67）：只允许使用客户端时用户端不显示订阅链接，改为展示客户端下载。
+	{Key: "client_only_enable", Type: TypeBool, Default: 0, Group: GroupClient},
+	{Key: "client_downloads", Type: TypeString, Default: "", Group: GroupClient, Validate: validateClients},
 
 	// 安全
 	{Key: "email_verify", Type: TypeBool, Default: 0, Group: GroupSafe},

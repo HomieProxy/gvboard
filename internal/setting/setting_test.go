@@ -230,6 +230,32 @@ func TestTemplateValidation(t *testing.T) {
 	}
 }
 
+func TestClientsValidation(t *testing.T) {
+	ok := `[{"platform":"windows","name":"Clash Verge","url":"https://a.example.com/c.exe","icon":""},` +
+		`{"platform":"harmony","name":"X","url":"http://b.example.com","icon":"https://b.example.com/i.png"}]`
+	cases := []struct {
+		in   string
+		fail bool
+	}{
+		{"", false},
+		{"[]", false},
+		{ok, false},
+		{`{"platform":"windows"}`, true},
+		{`[{"platform":"symbian","name":"A","url":"https://a.example.com"}]`, true},
+		{`[{"platform":"ios","name":" ","url":"https://a.example.com"}]`, true},
+		{`[{"platform":"ios","name":"A","url":"javascript:alert(1)"}]`, true},
+		{`[{"platform":"ios","name":"A","url":"https://a.example.com","icon":"data:image/png;base64,AAAA"}]`, true},
+	}
+	for _, c := range cases {
+		if err := validateClients(c.in); (err != nil) != c.fail {
+			t.Errorf("客户端列表 %q 校验结果 %v，期望失败=%v", c.in, err, c.fail)
+		}
+	}
+	if list, _ := ParseClients(ok); len(list) != 2 || list[1].Platform != "harmony" {
+		t.Errorf("解析结果不正确: %+v", list)
+	}
+}
+
 func containsSubstr(list []string, sub string) bool {
 	for _, s := range list {
 		if strings.Contains(s, sub) {

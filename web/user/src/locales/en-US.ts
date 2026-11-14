@@ -112,6 +112,13 @@ const m: Messages = {
     problem: 'Need help?',
     problemDesc: 'Contact us through a ticket if you run into problems',
   },
+  client: {
+    title: 'Client downloads',
+    tip: 'This site can only be used through our clients. Download the client for your platform and sign in with your account.',
+    download: 'Download',
+    empty: 'No client downloads are available yet. Please contact support.',
+    shortcutDesc: 'Download the client and sign in to get started',
+  },
   sub: {
     primary: 'Primary',
     unnamed: 'Subscription #{id}',

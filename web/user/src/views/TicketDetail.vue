@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ArrowLeftIcon, SendIcon, Loader2Icon, HeadsetIcon, UserIcon } from '@lucide/vue'
@@ -47,6 +47,22 @@ async function load() {
   }
 }
 
+// 定时拉取对方的新回复，有变化时才更新
+let poll = 0
+async function refresh() {
+  if (document.hidden || sending.value || !ticket.value) return
+  try {
+    const d = await http.get<TicketDetail>(`/user/tickets/${id}`)
+    const cur = ticket.value
+    if (d.messages.length === cur.messages.length && d.status === cur.status) return
+    ticket.value = d
+    await nextTick()
+    box.value?.scrollTo({ top: box.value.scrollHeight, behavior: 'smooth' })
+  } catch {
+    // 忽略轮询失败，下次再试
+  }
+}
+
 async function reply() {
   if (!message.value.trim()) return
   sending.value = true
@@ -75,7 +91,9 @@ onMounted(async () => {
   await load()
   loadSubs().catch(() => {})
   loading.value = false
+  poll = window.setInterval(refresh, 5000)
 })
+onUnmounted(() => clearInterval(poll))
 </script>
 
 <template>

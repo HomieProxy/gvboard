@@ -1,1 +1,0 @@
-import{c as s}from"./index-PvaEYvat.js";import{G as n,L as o,Z as r,al as t,u as l}from"./vendor-BbvSUpF_.js";const u=n({__name:"Skeleton",props:{class:{type:[Boolean,null,String,Object,Array]}},setup(e){const a=e;return(c,p)=>(o(),r("div",{"data-slot":"skeleton",class:t(l(s)("animate-pulse rounded-md bg-primary/10",a.class))},null,2))}});export{u as _};

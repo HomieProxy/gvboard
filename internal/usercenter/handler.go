@@ -11,6 +11,7 @@ import (
 	"gvboard/internal/auth"
 	"gvboard/internal/httpx"
 	"gvboard/internal/server"
+	"gvboard/internal/setting"
 	"gvboard/internal/subscription"
 )
 
@@ -21,7 +22,7 @@ type Module struct {
 
 // Register 挂载原生 API（均需登录）：
 //
-//	GET    {api}/user/config                              用户端需要的业务设置（货币、提现、分销、换套餐、工单）
+//	GET    {api}/user/config                              用户端需要的业务设置（货币、提现、分销、换套餐、工单、客户端下载）
 //	GET    {api}/user/info                                用户信息
 //	GET    {api}/user/stat                                待支付订单、未关闭工单、邀请人数
 //	POST   {api}/user/password                            修改密码
@@ -112,6 +113,9 @@ type UserConfig struct {
 	PlanChange   bool     `json:"plan_change"`   // 是否允许更换套餐
 	TicketStatus int64    `json:"ticket_status"` // 0 开放，1 仅限有订阅的用户，2 关闭
 	DepositBonus []string `json:"deposit_bonus"` // 充值赠送档位，格式 "充值金额:赠送金额"（元）
+	// 只允许使用客户端（决策 D67）：为 true 时用户端不显示订阅链接，改为展示 Clients。
+	ClientOnly bool             `json:"client_only"`
+	Clients    []setting.Client `json:"clients"`
 }
 
 func (m *Module) config(c *gin.Context) {
@@ -134,6 +138,11 @@ func (m *Module) config(c *gin.Context) {
 	}
 	if v.DepositBonus == nil {
 		v.DepositBonus = []string{}
+	}
+	v.ClientOnly = s.Bool("client_only_enable")
+	v.Clients, _ = setting.ParseClients(s.String("client_downloads"))
+	if v.Clients == nil {
+		v.Clients = []setting.Client{}
 	}
 	httpx.OK(c, v)
 }

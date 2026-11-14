@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { formatMoney, nowUnix } from '@gv/shared'
 import { http } from './api'
 import { i18n } from './i18n'
@@ -20,6 +20,9 @@ export async function loadBiz() {
   if (!biz.value) biz.value = await http.get<BizConfig>('/user/config')
   return biz.value
 }
+
+/** 只允许使用客户端（决策 D67）；设置未加载时按开启处理，避免订阅链接闪现 */
+export const clientOnly = computed(() => biz.value?.client_only ?? true)
 
 export async function loadStat() {
   stat.value = await http.get<UserStat>('/user/stat')

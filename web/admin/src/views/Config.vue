@@ -18,6 +18,7 @@ import SelectBox from '../components/common/SelectBox.vue'
 import NumInput from '../components/common/NumInput.vue'
 import BoolSwitch from '../components/common/BoolSwitch.vue'
 import TagsField from '../components/common/TagsField.vue'
+import ClientsField from '../components/common/ClientsField.vue'
 import StatusBadge from '../components/common/StatusBadge.vue'
 import { admin, cfg } from '../api'
 import { ask, errText, message, run } from '../ui'
@@ -238,6 +239,11 @@ onMounted(load)
                 v-else-if="f.kind === 'tags'"
                 :model-value="values[f.key] as string[]"
                 :placeholder="f.placeholder"
+                @update:model-value="(v) => set(f.key, v)"
+              />
+              <ClientsField
+                v-else-if="f.kind === 'clients'"
+                :model-value="values[f.key] as string | null"
                 @update:model-value="(v) => set(f.key, v)"
               />
               <Textarea

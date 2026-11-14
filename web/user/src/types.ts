@@ -1,4 +1,5 @@
 // 原生 API 数据结构（金额：分；流量：字节，套餐流量为 GB；时间：Unix 秒）
+import type { ClientDownload } from '@gv/shared'
 
 export interface AuthResult {
   token: string
@@ -13,6 +14,9 @@ export interface BizConfig {
   plan_change: boolean
   ticket_status: number
   deposit_bonus: string[]
+  /** 只允许使用客户端：为 true 时不显示订阅链接 */
+  client_only: boolean
+  clients: ClientDownload[]
 }
 
 export interface UserInfo {

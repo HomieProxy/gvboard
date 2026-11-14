@@ -17,9 +17,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { cn } from '@gv/shared/lib/utils'
 import { cfg, http } from '../api'
 import { confirm, copy, errText, run, toast } from '../ui'
-import { biz, loadBiz, subAvailable, subName } from '../store'
+import { biz, clientOnly, loadBiz, subAvailable, subName } from '../store'
 import type { ServerView, Subscription } from '../types'
 import QrCode from '../components/QrCode.vue'
+import ClientDownloads from '../components/ClientDownloads.vue'
 import StatusBadge from '../components/common/StatusBadge.vue'
 import DataTable from '../components/common/DataTable.vue'
 
@@ -209,7 +210,19 @@ const serverCols = computed(() => [
           </CardFooter>
         </Card>
 
-        <Card>
+        <Card v-if="clientOnly">
+          <CardHeader>
+            <CardTitle>{{ t('client.title') }}</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <p class="text-sm text-muted-foreground">{{ t('client.tip') }}</p>
+            <ClientDownloads :clients="biz?.clients || []" />
+          </CardContent>
+          <CardFooter>
+            <Button variant="ghost" class="text-destructive hover:text-destructive" @click="resetSecurity">{{ t('sub.resetSecurity') }}</Button>
+          </CardFooter>
+        </Card>
+        <Card v-else>
           <CardHeader>
             <CardTitle>{{ t('sub.link') }}</CardTitle>
           </CardHeader>

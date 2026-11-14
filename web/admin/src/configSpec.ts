@@ -1,7 +1,7 @@
 // 系统配置表单定义，键名与后端设置项一致（见 docs/接口参考/管理端-系统.md 1.2）。
 // 分组、标题、说明文字与原版管理端保持一致。
 
-export type ConfigKind = 'text' | 'textarea' | 'password' | 'int' | 'float' | 'switch' | 'select' | 'radio' | 'tags' | 'plan'
+export type ConfigKind = 'text' | 'textarea' | 'password' | 'int' | 'float' | 'switch' | 'select' | 'radio' | 'tags' | 'plan' | 'clients'
 
 export interface ConfigField {
   key: string
@@ -285,6 +285,20 @@ export const configGroups: ConfigGroup[] = [
       { key: 'windows_version', key2: 'windows_download_url', label: 'Windows', kind: 'text', help: 'Windows端版本号及下载地址', placeholder: '版本号', placeholder2: '下载地址' },
       { key: 'macos_version', key2: 'macos_download_url', label: 'macOS', kind: 'text', help: 'macOS端版本号及下载地址', placeholder: '版本号', placeholder2: '下载地址' },
       { key: 'android_version', key2: 'android_download_url', label: 'Android', kind: 'text', help: 'Android端版本号及下载地址', placeholder: '版本号', placeholder2: '下载地址' },
+    ],
+  },
+  {
+    name: 'client',
+    title: '客户端',
+    notice: '开启后用户端不再显示订阅链接、二维码与一键导入，改为展示下方配置的客户端下载，用户需在客户端中登录账号使用。订阅接口不受影响。',
+    fields: [
+      { key: 'client_only_enable', label: '只允许使用客户端', kind: 'switch', help: '开启后用户端隐藏订阅链接。' },
+      {
+        key: 'client_downloads',
+        label: '客户端下载',
+        kind: 'clients',
+        help: '按平台展示在用户端，同一平台可添加多个客户端。图标留空时使用平台预置图标。',
+      },
     ],
   },
   {

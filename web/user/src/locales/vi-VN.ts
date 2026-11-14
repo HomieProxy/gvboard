@@ -112,6 +112,13 @@ const m: Messages = {
     problem: 'Gặp sự cố?',
     problemDesc: 'Liên hệ với chúng tôi qua phiếu hỗ trợ khi gặp sự cố',
   },
+  client: {
+    title: 'Tải ứng dụng',
+    tip: 'Trang này chỉ hỗ trợ sử dụng qua ứng dụng. Vui lòng tải ứng dụng cho nền tảng của bạn và đăng nhập bằng tài khoản của bạn.',
+    download: 'Tải xuống',
+    empty: 'Chưa có ứng dụng để tải, vui lòng liên hệ hỗ trợ',
+    shortcutDesc: 'Tải ứng dụng và đăng nhập để sử dụng',
+  },
   sub: {
     primary: 'Gói chính',
     unnamed: 'Gói #{id}',

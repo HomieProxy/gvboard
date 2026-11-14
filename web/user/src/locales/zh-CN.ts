@@ -110,6 +110,13 @@ export default {
     problem: '遇到问题',
     problemDesc: '遇到问题可以通过工单与我们沟通',
   },
+  client: {
+    title: '客户端下载',
+    tip: '本站仅支持通过客户端使用，请下载对应平台的客户端，并使用本站账号登录。',
+    download: '下载',
+    empty: '暂未提供客户端下载，请联系客服',
+    shortcutDesc: '下载客户端，登录账号后即可使用',
+  },
   sub: {
     primary: '主订阅',
     unnamed: '订阅 #{id}',

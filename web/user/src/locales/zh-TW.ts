@@ -112,6 +112,13 @@ const m: Messages = {
     problem: '遇到問題',
     problemDesc: '遇到問題可以透過工單與我們溝通',
   },
+  client: {
+    title: '客戶端下載',
+    tip: '本站僅支援透過客戶端使用，請下載對應平台的客戶端，並使用本站帳號登入。',
+    download: '下載',
+    empty: '暫未提供客戶端下載，請聯絡客服',
+    shortcutDesc: '下載客戶端，登入帳號後即可使用',
+  },
   sub: {
     primary: '主訂閱',
     unnamed: '訂閱 #{id}',

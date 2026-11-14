@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { SearchIcon, RefreshCwIcon, Loader2Icon, SendIcon, ExternalLinkIcon, XCircleIcon } from '@lucide/vue'
 import { formatBytes, formatTime, nowUnix } from '@gv/shared'
@@ -122,7 +122,29 @@ function onKey(e: KeyboardEvent) {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send()
 }
 
-onMounted(load)
+// 详情打开时定时拉取用户的新回复，有变化时才更新
+let poll = 0
+async function refresh() {
+  const cur = current.value
+  if (!sheet.value || !cur || document.hidden || sending.value || detailLoading.value) return
+  try {
+    const d = await admin.get<Ticket & { messages: TicketMessage[] }>(`/tickets/${cur.id}`)
+    if (current.value?.id !== d.id) return
+    if (d.messages.length === cur.messages.length && d.status === cur.status) return
+    current.value = d
+    load()
+    await nextTick()
+    box.value?.scrollTo({ top: box.value.scrollHeight, behavior: 'smooth' })
+  } catch {
+    // 忽略轮询失败，下次再试
+  }
+}
+
+onMounted(() => {
+  load()
+  poll = window.setInterval(refresh, 5000)
+})
+onUnmounted(() => clearInterval(poll))
 </script>
 
 <template>

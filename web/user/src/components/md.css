@@ -1,0 +1,20 @@
+/* 管理员编写的 Markdown / HTML 内容（同时注入 Markdown 组件的 Shadow DOM） */
+.md { line-height: 1.75; word-break: break-word; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md h1 { font-size: 1.5rem; font-weight: 600; margin: 1.2em 0 .6em; }
+.md h2 { font-size: 1.25rem; font-weight: 600; margin: 1.2em 0 .6em; }
+.md h3 { font-size: 1.1rem; font-weight: 600; margin: 1em 0 .5em; }
+.md p, .md ul, .md ol, .md blockquote, .md pre, .md table { margin: .75em 0; }
+.md ul { list-style: disc; padding-left: 1.5em; }
+.md ol { list-style: decimal; padding-left: 1.5em; }
+.md a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.md img { max-width: 100%; border-radius: .5rem; }
+.md blockquote { border-left: 3px solid var(--border); padding-left: 1em; color: var(--muted-foreground); }
+.md pre { overflow: auto; padding: .75rem; border-radius: .5rem; background: var(--muted); font-size: .85em; }
+.md code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+.md :not(pre) > code { padding: .1em .35em; border-radius: .25rem; background: var(--muted); }
+.md table { border-collapse: collapse; display: block; overflow-x: auto; }
+.md td, .md th { border: 1px solid var(--border); padding: .35em .75em; }
+.md hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
+.content-locked { padding: .75rem; border-radius: .5rem; background: color-mix(in oklab, var(--color-amber-500) 12%, transparent); color: var(--color-amber-700); }
