@@ -1,0 +1,121 @@
+# 推送 v* 标签时：测试 → 构建前端 → 交叉编译 → 发布 GitHub Release
+#   git tag v1.0.0
+#   git push origin v1.0.0
+# 也可在 Actions 页手动运行（只构建、不发布），用于检查构建是否正常。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: gvb_ci_pass
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -pgvb_ci_pass"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: gvb_ci_pass
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      GVB_TEST_MYSQL_DSN: root:gvb_ci_pass@tcp(127.0.0.1:3306)/?charset=utf8mb4&parseTime=true
+      GVB_TEST_PG_DSN: postgres://postgres:gvb_ci_pass@127.0.0.1:5432/postgres?sslmode=disable
+      GVB_TEST_REDIS_ADDR: 127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -p 1 ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: 构建前端（管理端 + 默认主题）
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run check:fingerprint
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 交叉编译
+        env:
+          CGO_ENABLED: "0"
+          GOFLAGS: -buildvcs=false
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          [ "${GITHUB_REF_TYPE}" = tag ] || VERSION="dev-${GITHUB_SHA::7}"
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-s -w -X gvboard/internal/cli.Version=${VERSION} -X gvboard/internal/cli.BuildTime=${BUILD_TIME}"
+          mkdir -p dist
+          for target in linux/amd64 linux/arm64 windows/amd64 darwin/amd64 darwin/arm64; do
+            os=${target%/*}; arch=${target#*/}
+            name="gvboard_${os}_${arch}"
+            ext=""; [ "$os" = windows ] && ext=".exe"
+            echo "构建 ${name}"
+            rm -rf "out/${name}"; mkdir -p "out/${name}"
+            GOOS=$os GOARCH=$arch go build -trimpath -ldflags "$LDFLAGS" -o "out/${name}/gvboard${ext}" ./cmd/gvboard
+            if [ "$os" = windows ]; then
+              (cd "out/${name}" && zip -q "../../dist/${name}.zip" "gvboard${ext}")
+            else
+              tar -C "out/${name}" -czf "dist/${name}.tar.gz" gvboard
+            fi
+          done
+
+      - name: 安装脚本与校验和
+        run: |
+          sed "s#__GVB_REPO__#${GITHUB_REPOSITORY}#g" deploy/install.sh > dist/install.sh
+          chmod +x dist/install.sh
+          cd dist
+          sha256sum gvboard_* > sha256sums.txt
+          cat sha256sums.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gvboard-dist
+          path: dist/*
+          if-no-files-found: error
+
+      - name: 发布 Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

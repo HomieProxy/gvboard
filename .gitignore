@@ -1,6 +1,7 @@
 /config.yaml
 /bin/
 /dist/
+/out/
 *.exe
 *.log
 /storage/
