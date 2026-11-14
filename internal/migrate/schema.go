@@ -384,6 +384,7 @@ func Schema() []Table {
 			unique("token", "token"),
 			Index{Name: "idx_invite_user", Cols: []string{"invite_user_id"}, Ensure: true},
 			Index{Name: "idx_telegram", Cols: []string{"telegram_id"}, Ensure: true},
+			Index{Name: "idx_banned", Cols: []string{"banned"}, Ensure: true},
 		),
 
 		// ===== Gvboard 新增表 =====
@@ -410,7 +411,7 @@ func Schema() []Table {
 			Index{Name: "uniq_token", Cols: []string{"token"}, Unique: true, Ensure: true},
 			Index{Name: "uniq_uuid", Cols: []string{"uuid"}, Unique: true, Ensure: true},
 			Index{Name: "idx_user", Cols: []string{"user_id"}, Ensure: true},
-			Index{Name: "idx_group", Cols: []string{"group_id"}, Ensure: true},
+			Index{Name: "idx_group_expired", Cols: []string{"group_id", "expired_at"}, Ensure: true},
 		),
 		table("v2_settings", []Column{
 			col("name", "varchar(64)"),

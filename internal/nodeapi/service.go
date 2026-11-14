@@ -102,12 +102,13 @@ type User struct {
 }
 
 // available 可用订阅：流量未用完、未到期（或长期有效）、订阅与所属用户均未被封禁（决策 D36）。
+// 被封禁用户很少，用 NOT IN 排除，避免对每条订阅回查用户表。
 func (s *Service) available(ctx context.Context) *gorm.DB {
 	return s.DB.WithContext(ctx).Table("v2_subscription AS s").
-		Joins("JOIN v2_user AS owner ON owner.id = s.user_id").
 		Where("s.u + s.d < s.transfer_enable").
 		Where("(s.expired_at >= ? OR s.expired_at IS NULL)", s.now().Unix()).
-		Where("s.banned = 0 AND owner.banned = 0")
+		Where("s.banned = 0").
+		Where("s.user_id NOT IN (SELECT id FROM v2_user WHERE banned = 1)")
 }
 
 // Users 权限组内的可用订阅，按 ID 排序。

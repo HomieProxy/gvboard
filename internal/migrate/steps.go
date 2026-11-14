@@ -34,7 +34,21 @@ func Steps() []Step {
 			Description: "MySQL 将 v2_ticket、v2_notice 中仍为 utf8 的表转为 utf8mb4（支持 emoji）",
 			Run:         stepContentUTF8MB4,
 		},
+		{
+			ID:          "2026111501_subscription_drop_idx_group",
+			Description: "删除 v2_subscription 的 idx_group（已由 idx_group_expired 取代）",
+			Run:         stepDropSubscriptionIdxGroup,
+		},
 	}
+}
+
+// stepDropSubscriptionIdxGroup 所有订阅同在一个权限组时，MySQL 仍会选 idx_group 逐行回表，百万订阅时拉取节点用户需数秒。
+func stepDropSubscriptionIdxGroup(ctx context.Context, m *Migrator) error {
+	dropped, err := m.dropIndexIfExists(m.db.WithContext(ctx), "v2_subscription", "idx_group")
+	if dropped {
+		m.report.Notices = append(m.report.Notices, "已删除 v2_subscription 索引 idx_group")
+	}
+	return err
 }
 
 // stepContentUTF8MB4 原安装脚本中工单与公告表为 utf8，工单标题、公告标签含 emoji 时写入失败（决策 D49）。

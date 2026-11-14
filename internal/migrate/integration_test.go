@@ -312,3 +312,36 @@ func testFreshInstall(t *testing.T, driver string) {
 func TestMigrateFreshMySQL(t *testing.T) { testFreshInstall(t, config.DriverMySQL) }
 
 func TestMigratePostgres(t *testing.T) { testFreshInstall(t, config.DriverPostgres) }
+
+// testDropIdxGroup 旧版本建过的 v2_subscription.idx_group 在升级时删除，并补建新索引。
+func testDropIdxGroup(t *testing.T, driver string) {
+	db := openTestDB(t, driver)
+	runMigrate(t, db, driver)
+	if err := db.Exec(CreateIndexSQL(driver, "v2_subscription", Index{Name: "idx_group", Cols: []string{"group_id"}})).Error; err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`DELETE FROM v2_gvb_migration WHERE id = '2026111501_subscription_drop_idx_group'`)
+	runMigrate(t, db, driver)
+
+	m := New(db, driver)
+	for _, tc := range []struct {
+		table, index string
+		want         bool
+	}{
+		{"v2_subscription", "idx_group", false},
+		{"v2_subscription", "idx_group_expired", true},
+		{"v2_user", "idx_banned", true},
+	} {
+		ok, err := m.indexExists(db, tc.table, tc.index)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok != tc.want {
+			t.Errorf("%s.%s 存在=%v，期望 %v", tc.table, tc.index, ok, tc.want)
+		}
+	}
+}
+
+func TestMigrateDropIdxGroupMySQL(t *testing.T) { testDropIdxGroup(t, config.DriverMySQL) }
+
+func TestMigrateDropIdxGroupPostgres(t *testing.T) { testDropIdxGroup(t, config.DriverPostgres) }
