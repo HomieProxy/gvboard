@@ -1,0 +1,28 @@
+{
+    "x25519": [
+        {
+            "private": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+            "public": "pOCSkrZRwni5dyxWn1-puxPZBrRqtoyd-dwrRAn4ogk"
+        },
+        {
+            "private": "__________________________________________8",
+            "public": "hHwNLDdSNPNl5mCVUYejc1oPdhPRYJ06ak2MU66qWiI"
+        },
+        {
+            "private": "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo",
+            "public": "hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo"
+        }
+    ],
+    "ech": [
+        {
+            "sni": "cover.example.com",
+            "key": "AEz+DQBI/gAgACAsJOPZ8b3QkYDI1ww8ROoAgntFRpSx+7MkiFAzHvgZWQAMAAEAAQABAAIAAQADABFjb3Zlci5leGFtcGxlLmNvbQAAAAH+ACAdiY0s1JcS+Lg8MDfJRv7isG4uF3yJwQKrKQG+nqwYCQ==",
+            "config": "/g0ASP4AIAAgLCTj2fG90JGAyNcMPETqAIJ7RUaUsfuzJIhQMx74GVkADAABAAEAAQACAAEAAwARY292ZXIuZXhhbXBsZS5jb20AAA=="
+        },
+        {
+            "sni": "a.b",
+            "key": "AD7+DQA6eQAgACDZoXgEJ+tePULA1jdJBDByejhNcuLSRB6t2WDSTJI3CgAMAAEAAQABAAIAAQADAANhLmIAAAABeQAgfzSnwhaCXEo+bE6By3gebNKCP4KXpBakdyvTaV4Brdc=",
+            "config": "/g0AOnkAIAAg2aF4BCfrXj1CwNY3SQQwcno4TXLi0kQerdlg0kySNwoADAABAAEAAQACAAEAAwADYS5iAAA="
+        }
+    ]
+}

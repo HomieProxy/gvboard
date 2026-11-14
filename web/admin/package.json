@@ -1,0 +1,16 @@
+{
+  "name": "admin",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "build": "vue-tsc --noEmit -p tsconfig.json && vite build"
+  },
+  "dependencies": {
+    "@gv/shared": "1.0.0",
+    "echarts": "^6.0.0",
+    "vue-echarts": "^8.0.1"
+  }
+}

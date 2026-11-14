@@ -1,0 +1,14 @@
+.git
+**/node_modules
+web/*/dist
+bin
+dist
+storage
+deploy
+docs
+*.exe
+*.exe~
+*.log
+config.yaml
+**/*_test.go
+**/testdata

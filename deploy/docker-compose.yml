@@ -1,0 +1,84 @@
+# Gvboard + MySQL 8.0 + Redis 一键部署（不分离部署）
+# 用法见 docs/部署文档.md：
+#   cp .env.example .env               # 修改其中的密码
+#   docker compose build
+#   docker compose run --rm gvboard init
+#   docker compose run --rm gvboard migrate
+#   docker compose run --rm gvboard create-admin admin@example.com
+#   docker compose up -d
+# 只有 Gvboard 端口绑定到本机 127.0.0.1，由宿主机的 Nginx 反向代理并配置 HTTPS（见 nginx/embedded.conf）。
+
+name: gvboard
+
+x-gvboard-env: &gvboard-env
+  TZ: ${TZ:-Asia/Shanghai}
+  # 以下环境变量覆盖 config.yaml 中的同名配置（GVB_ + 大写路径）
+  GVB_DATABASE_DRIVER: mysql
+  GVB_DATABASE_HOST: mysql
+  GVB_DATABASE_PORT: "3306"
+  GVB_DATABASE_NAME: ${DB_NAME:-gvboard}
+  GVB_DATABASE_USER: ${DB_USER:-gvboard}
+  GVB_DATABASE_PASSWORD: ${DB_PASSWORD:?请在 .env 中设置 DB_PASSWORD}
+  GVB_REDIS_ADDR: redis:6379
+  GVB_REDIS_PASSWORD: ${REDIS_PASSWORD:?请在 .env 中设置 REDIS_PASSWORD}
+  # 容器内看到的来源地址是 Docker 网关，需信任 Docker 网段才能取得 Nginx 传来的真实 IP
+  GVB_SERVER_TRUSTED_PROXIES: "127.0.0.1,::1,172.16.0.0/12"
+
+services:
+  gvboard:
+    build:
+      context: ..
+      args:
+        GOPROXY: ${GOPROXY:-https://proxy.golang.org,direct}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
+    image: gvboard:latest
+    restart: unless-stopped
+    environment: *gvboard-env
+    volumes:
+      - gvboard-data:/app/data
+      # 外部主题（可选）：把主题目录放到 ./themes 下，每个子目录一个主题
+      - ./themes:/app/data/themes:ro
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      MYSQL_DATABASE: ${DB_NAME:-gvboard}
+      MYSQL_USER: ${DB_USER:-gvboard}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?请在 .env 中设置 DB_ROOT_PASSWORD}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+volumes:
+  gvboard-data:
+  mysql-data:
+  redis-data:

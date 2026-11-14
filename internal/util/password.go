@@ -1,0 +1,54 @@
+package util
+
+import (
+	"crypto/md5"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+
+	"golang.org/x/crypto/bcrypt"
+)
+
+// 密码算法（v2_user.password_algo），兼容从其他面板导入的用户。空值表示 bcrypt。
+const (
+	PasswordAlgoMD5     = "md5"
+	PasswordAlgoSHA256  = "sha256"
+	PasswordAlgoMD5Salt = "md5salt"
+)
+
+// VerifyPassword 与原项目 Helper::multiPasswordVerify 一致，比较使用常量时间。
+func VerifyPassword(algo, salt, password, hash string) bool {
+	switch algo {
+	case PasswordAlgoMD5:
+		sum := md5.Sum([]byte(password))
+		return constEq(hex.EncodeToString(sum[:]), hash)
+	case PasswordAlgoSHA256:
+		sum := sha256.Sum256([]byte(password))
+		return constEq(hex.EncodeToString(sum[:]), hash)
+	case PasswordAlgoMD5Salt:
+		sum := md5.Sum([]byte(password + salt))
+		return constEq(hex.EncodeToString(sum[:]), hash)
+	default:
+		return bcrypt.CompareHashAndPassword([]byte(hash), bcryptInput(password)) == nil
+	}
+}
+
+// HashPassword 生成 bcrypt 哈希（与 PHP password_hash 默认参数相同，cost 10）。
+func HashPassword(password string) (string, error) {
+	b, err := bcrypt.GenerateFromPassword(bcryptInput(password), bcrypt.DefaultCost)
+	return string(b), err
+}
+
+// bcrypt 只使用前 72 字节。PHP 静默截断，Go 对超长密码直接报错，这里按 PHP 的方式截断，
+// 保证原项目用超长密码生成的哈希仍能校验通过。
+func bcryptInput(password string) []byte {
+	b := []byte(password)
+	if len(b) > 72 {
+		b = b[:72]
+	}
+	return b
+}
+
+func constEq(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}

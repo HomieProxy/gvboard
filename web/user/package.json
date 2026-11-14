@@ -1,0 +1,20 @@
+{
+  "name": "user",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "build": "vue-tsc --noEmit -p tsconfig.json && vite build"
+  },
+  "dependencies": {
+    "@gv/shared": "1.0.0",
+    "markdown-it": "^14.3.3",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.2.0",
+    "@types/qrcode": "^1.5.5"
+  }
+}

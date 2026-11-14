@@ -1,0 +1,9 @@
+/config.yaml
+/bin/
+/dist/
+*.exe
+*.log
+/storage/
+node_modules/
+web/*/dist/
+.DS_Store

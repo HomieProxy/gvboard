@@ -1,0 +1,15 @@
+{
+  "code": "daily_bonus",
+  "name": "每日签到送余额",
+  "version": "1.0.0",
+  "author": "Gvboard",
+  "description": "用户每天可签到一次，获得管理员设置的余额奖励；连续签到天数达到设置值时额外奖励。JS 插件示例。",
+  "main": "main.js",
+  "http": [],
+  "permissions": ["user.read", "user.balance"],
+  "config": [
+    { "key": "reward", "label": "每次签到奖励（分）", "type": "number", "default": 10, "required": true },
+    { "key": "streak_days", "label": "连续签到天数（0 表示不额外奖励）", "type": "number", "default": 7 },
+    { "key": "streak_reward", "label": "连续签到额外奖励（分）", "type": "number", "default": 100 }
+  ]
+}
