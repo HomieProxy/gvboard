@@ -164,6 +164,9 @@ type Message struct {
 	Chat           Chat     `json:"chat"`
 	Text           string   `json:"text"`
 	ReplyToMessage *Message `json:"reply_to_message"`
+	// MessageThreadID 话题群组中消息所在的话题，IsTopicMessage 为 false 时（General 话题）无意义。
+	MessageThreadID int64 `json:"message_thread_id"`
+	IsTopicMessage  bool  `json:"is_topic_message"`
 }
 
 type CallbackQuery struct {
@@ -199,11 +202,13 @@ type InlineKeyboard struct {
 
 // OutMessage 发送的消息。
 type OutMessage struct {
-	ChatID      int64           `json:"chat_id"`
-	Text        string          `json:"text"`
-	ParseMode   string          `json:"parse_mode,omitempty"`
-	Preview     *PreviewOptions `json:"link_preview_options,omitempty"`
-	ReplyMarkup *InlineKeyboard `json:"reply_markup,omitempty"`
+	ChatID int64 `json:"chat_id"`
+	// MessageThreadID 发到话题群组的指定话题，0 为 General 话题或非话题会话。
+	MessageThreadID int64           `json:"message_thread_id,omitempty"`
+	Text            string          `json:"text"`
+	ParseMode       string          `json:"parse_mode,omitempty"`
+	Preview         *PreviewOptions `json:"link_preview_options,omitempty"`
+	ReplyMarkup     *InlineKeyboard `json:"reply_markup,omitempty"`
 }
 
 type PreviewOptions struct {

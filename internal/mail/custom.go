@@ -58,7 +58,10 @@ type customSet struct {
 
 // customTemplates 解析设置中的自定义模板，设置内容未变化时使用缓存。无法解析的项忽略（保存时已校验）。
 func (m *Mailer) customTemplates() *customSet {
-	raw := m.settings.String(CustomKey)
+	var raw string
+	if m.settings != nil {
+		raw = m.settings.String(CustomKey)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.custom != nil && m.custom.raw == raw {

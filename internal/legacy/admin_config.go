@@ -47,7 +47,7 @@ func (m *Module) adminTestMail(c *gin.Context) {
 	p := map[string]any{"app_name": m.Settings.String("app_name")}
 	rec := m.SysConfig.TestMail(c.Request.Context(), auth.Current(c).Email,
 		m.tr(c, "Test email from :app_name", p),
-		m.tr(c, "This is a test email. If you received it, the email settings are working.", p))
+		m.tr(c, "This is a test email. If you received it, the email settings are working.", p), nil)
 	c.JSON(http.StatusOK, gin.H{"data": true, "log": rec})
 }
 

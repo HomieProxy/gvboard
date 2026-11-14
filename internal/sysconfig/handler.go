@@ -127,9 +127,15 @@ func (m *Module) save(c *gin.Context) {
 }
 
 func (m *Module) testMail(c *gin.Context) {
+	var in struct {
+		Server *int `json:"server"`
+	}
+	if c.Request.ContentLength != 0 && !bindBody(c, &in) {
+		return
+	}
 	params := map[string]any{"app_name": m.Svc.Settings.String("app_name")}
 	rec := m.Svc.TestMail(c.Request.Context(), auth.Current(c).Email,
 		m.Translate(c, "Test email from :app_name", params),
-		m.Translate(c, "This is a test email. If you received it, the email settings are working.", params))
+		m.Translate(c, "This is a test email. If you received it, the email settings are working.", params), in.Server)
 	httpx.OK(c, rec)
 }

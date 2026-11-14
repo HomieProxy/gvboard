@@ -24,6 +24,8 @@ type Payload struct {
 	TemplateValue map[string]any `json:"template_value"`
 	// TrustedHTML 为 true 时 content 按 HTML 原样输出，仅用于管理员群发等可信内容。
 	TrustedHTML bool `json:"trusted_html,omitempty"`
+	// Server 不为空时只用 email_smtp_servers 中该序号的服务器发送（管理端测试单个服务器）。
+	Server *int `json:"server,omitempty"`
 }
 
 // sendInterval 每封邮件发送前等待，与原项目一致，降低被邮件服务商限流的概率。
@@ -77,7 +79,11 @@ func (m *Mailer) Deliver(ctx context.Context, db *gorm.DB, log *zap.Logger, p Pa
 	}
 	theme := m.Theme()
 	rec := model.MailLog{Email: p.Email, Subject: p.Subject, TemplateName: "mail." + theme + "." + p.TemplateName}
-	if err := m.Send(ctx, p.Email, p.Subject, theme, p.TemplateName, vars); err != nil {
+	server := -1
+	if p.Server != nil {
+		server = *p.Server
+	}
+	if err := m.SendVia(ctx, server, p.Email, p.Subject, theme, p.TemplateName, vars); err != nil {
 		msg := err.Error()
 		rec.Error = &msg
 		log.Warn("邮件发送失败", zap.String("template", p.TemplateName), zap.Error(err))

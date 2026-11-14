@@ -1,7 +1,7 @@
 // 系统配置表单定义，键名与后端设置项一致（见 docs/接口参考/管理端-系统.md 1.2）。
 // 分组、标题、说明文字与原版管理端保持一致。
 
-export type ConfigKind = 'text' | 'textarea' | 'password' | 'int' | 'float' | 'switch' | 'select' | 'radio' | 'tags' | 'plan' | 'clients'
+export type ConfigKind = 'text' | 'textarea' | 'password' | 'int' | 'float' | 'switch' | 'select' | 'radio' | 'tags' | 'plan' | 'clients' | 'smtp'
 
 export interface ConfigField {
   key: string
@@ -248,12 +248,19 @@ export const configGroups: ConfigGroup[] = [
     title: '邮件',
     notice: '本页配置保存后立即生效，无需重启服务。',
     fields: [
-      { key: 'email_host', label: 'SMTP服务器地址', kind: 'text', help: '由邮件服务商提供的服务地址', placeholder: '请输入' },
-      { key: 'email_port', label: 'SMTP服务端口', kind: 'int', help: '常见的端口有25, 465, 587', placeholder: '请输入' },
-      { key: 'email_encryption', label: 'SMTP加密方式', kind: 'text', help: '465端口加密方式一般为SSL，587端口加密方式一般为TLS', placeholder: '请输入' },
-      { key: 'email_username', label: 'SMTP账号', kind: 'text', help: '由邮件服务商提供的账号', placeholder: '请输入' },
-      { key: 'email_password', label: 'SMTP密码', kind: 'password', help: '由邮件服务商提供的密码', placeholder: '请输入' },
-      { key: 'email_from_address', label: '发件地址', kind: 'text', help: '由邮件服务商提供的发件地址', placeholder: '请输入' },
+      {
+        key: 'email_smtp_servers',
+        label: 'SMTP 服务器',
+        kind: 'smtp',
+        help: '可添加多个，未启用的不参与发送。第一个服务器同时作为原项目的单个 SMTP 配置。',
+      },
+      {
+        key: 'email_smtp_mode',
+        label: '多服务器发送方式',
+        kind: 'select',
+        help: '故障转移：总是先用排在前面的服务器，失败后依次换下一个。轮询：每封邮件轮流从下一个服务器开始，失败后同样依次尝试其余服务器。',
+        options: sel(['failover', '故障转移'], ['round_robin', '轮询']),
+      },
       { key: 'email_template', label: '邮件模板', kind: 'select', help: '可在「邮件模板」标签页修改、预览或新增模板', options: [] },
     ],
   },
@@ -275,6 +282,24 @@ export const configGroups: ConfigGroup[] = [
       { key: 'telegram_proxy', label: '代理', kind: 'password', help: '访问 Telegram 使用的代理，留空不使用。', placeholder: 'socks5://127.0.0.1:1080' },
       { key: 'telegram_webhook_secret', label: 'Webhook 密钥', kind: 'password', help: '留空时「一键设置」会自动生成。' },
       { key: 'telegram_welcome', label: '欢迎消息', kind: 'textarea', help: 'Telegram HTML，可使用 {app_name}，留空使用内置文案。' },
+      {
+        key: 'telegram_admin_chat_id',
+        label: '管理员话题群组 ID',
+        kind: 'text',
+        help: '以 -100 开头的数字。填写后管理员通知只发到该群组的对应话题；留空时私聊已绑定 Telegram 的管理员。',
+        placeholder: '-1001234567890',
+      },
+      { key: 'telegram_topic_order', label: '订单消息话题 ID', kind: 'int', help: '收款通知。0 为 General 话题。', placeholder: '0' },
+      { key: 'telegram_topic_ticket', label: '工单消息话题 ID', kind: 'int', help: '新工单、工单回复、提现申请。0 为 General 话题。', placeholder: '0' },
+      {
+        key: 'telegram_topic_alert',
+        label: '告警消息话题 ID',
+        kind: 'int',
+        help: '节点掉线、流量重置失败、已取消订单收到付款。0 为 General 话题。',
+        placeholder: '0',
+      },
+      { key: 'telegram_topic_daily', label: '每日统计话题 ID', kind: 'int', help: '每天 0:20 发送前一天的统计。0 为 General 话题。', placeholder: '0' },
+      { key: 'telegram_daily_report', label: '每日统计消息', kind: 'switch', help: '开启后每天 0:20 发送前一天的收款、订单、注册、佣金、流量与工单统计。' },
     ],
   },
   {

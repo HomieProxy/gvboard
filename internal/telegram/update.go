@@ -37,13 +37,15 @@ type Callback struct {
 
 // Context 一次命令、回复或按钮动作的上下文。
 type Context struct {
-	Svc     *Service
-	Msg     *Message
-	From    *User
-	ChatID  int64
-	Private bool
-	Locale  string
-	Args    []string
+	Svc    *Service
+	Msg    *Message
+	From   *User
+	ChatID int64
+	// ThreadID 话题群组中消息所在的话题，回复发到同一话题。
+	ThreadID int64
+	Private  bool
+	Locale   string
+	Args     []string
 
 	// CallbackID 按钮动作的回调 ID，MessageID 为按钮所在消息。
 	CallbackID string
@@ -66,7 +68,9 @@ func (c *Context) Reply(ctx context.Context, text string, kb *InlineKeyboard) er
 	if err != nil {
 		return err
 	}
-	return cl.SendMessage(ctx, htmlMessage(c.ChatID, text, kb))
+	m := htmlMessage(c.ChatID, text, kb)
+	m.MessageThreadID = c.ThreadID
+	return cl.SendMessage(ctx, m)
 }
 
 // Show 按钮动作中原地修改按钮所在的消息（无法修改时发送新消息），其他情况发送新消息。
@@ -215,6 +219,9 @@ func (s *Service) handleMessage(ctx context.Context, m *Message) {
 	c := &Context{
 		Svc: s, Msg: m, From: m.From, ChatID: m.Chat.ID,
 		Private: m.Chat.Type == "private", Locale: s.LocaleOf(m.From.LanguageCode),
+	}
+	if m.IsTopicMessage {
+		c.ThreadID = m.MessageThreadID
 	}
 	// 回复某条消息时只处理工单回复（与原项目一致）。
 	if m.ReplyToMessage != nil && m.ReplyToMessage.Text != "" {

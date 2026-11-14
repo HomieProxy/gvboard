@@ -9,9 +9,10 @@ import (
 // Masked 敏感值的替代内容。
 const Masked = "***"
 
-// sensitiveWords 键名（转小写后）包含这些词即脱敏。
+// sensitiveWords 键名（转小写后）包含这些词即脱敏。smtp_servers 为 SMTP 服务器列表（JSON 字符串，内含密码，决策 D72）。
 var sensitiveWords = []string{
 	"password", "passwd", "secret", "token", "private", "credential", "cookie", "apikey", "appkey", "authorization",
+	"smtp_servers",
 }
 
 // sensitiveParts 键名按 _ - . 与大小写边界拆分后，任一部分等于这些词即脱敏（如 key、pkey、secure_path）。

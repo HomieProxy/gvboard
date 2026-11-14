@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 
@@ -47,6 +48,7 @@ type Module struct {
 //
 //	POST telegram/apply                      按当前设置初始化机器人（命令菜单、Webhook 或长轮询）
 //	GET  telegram/info                       Webhook 状态
+//	POST telegram/test-topic                 向管理员话题群组的指定话题发送测试消息，{"topic":"order|ticket|alert|daily"}
 func (m *Module) Register(r *server.Router) {
 	r.API.POST(webhookPath+":secret", m.webhook)
 	if r.Config.Compat.LegacyCallback {
@@ -61,6 +63,7 @@ func (m *Module) Register(r *server.Router) {
 	a := m.Auth.AdminGroup(r.API, func() string { return m.Svc.Settings.String("secure_path") })
 	a.POST("/telegram/apply", m.apply)
 	a.GET("/telegram/info", m.info)
+	a.POST("/telegram/test-topic", m.testTopic)
 }
 
 func equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
@@ -132,4 +135,15 @@ func (m *Module) apply(c *gin.Context) {
 func (m *Module) info(c *gin.Context) {
 	w, err := m.Svc.Info(c.Request.Context())
 	respond(c, w, err)
+}
+
+func (m *Module) testTopic(c *gin.Context) {
+	var in struct {
+		Topic string `json:"topic"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil || !slices.Contains(Topics, in.Topic) {
+		httpx.Fail(c, errInvalid)
+		return
+	}
+	respond(c, true, m.Svc.TestTopic(c.Request.Context(), in.Topic))
 }

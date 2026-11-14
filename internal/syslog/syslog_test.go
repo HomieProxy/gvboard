@@ -26,13 +26,13 @@ func TestSensitive(t *testing.T) {
 	for _, k := range []string{
 		"password", "new_password", "email_password", "telegram_bot_token", "server_token", "app_secret", "AppSecret",
 		"alipay_private_key", "recaptcha_key", "recaptcha_site_key", "secure_path", "sql", "pkey", "stripe_sk_live",
-		"uuid", "card_number", "Authorization", "sessionId", "api-key", "sign", "pass",
+		"uuid", "card_number", "Authorization", "sessionId", "api-key", "sign", "pass", "email_smtp_servers",
 	} {
 		if !Sensitive(k) {
 			t.Errorf("%s 应脱敏", k)
 		}
 	}
-	for _, k := range []string{"email", "id", "plan_id", "transfer_enable", "keyword", "monkey", "passport", "designer", "skip", "status"} {
+	for _, k := range []string{"email", "id", "plan_id", "transfer_enable", "keyword", "monkey", "passport", "designer", "skip", "status", "email_smtp_mode"} {
 		if Sensitive(k) {
 			t.Errorf("%s 不应脱敏", k)
 		}

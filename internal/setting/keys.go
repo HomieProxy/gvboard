@@ -160,6 +160,16 @@ func validateTelegramProxy(v any) error {
 	return nil
 }
 
+var chatIDPattern = regexp.MustCompile(`^-?[0-9]{1,20}$`)
+
+// validateChatID Telegram 群组 ID：为空或整数（超级群组为 -100 开头）。
+func validateChatID(v any) error {
+	if s, _ := v.(string); s != "" && !chatIDPattern.MatchString(s) {
+		return fmt.Errorf("群组 ID 必须是数字，如 -1001234567890")
+	}
+	return nil
+}
+
 var headerNamePattern = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
 
 // validateLogHeaders 订阅日志额外记录的请求头：最多 10 个合法请求头名。
@@ -252,6 +262,9 @@ var defs = []Def{
 	{Key: "email_password", Type: TypeString, Default: "", Group: GroupEmail, Secret: true},
 	{Key: "email_encryption", Type: TypeString, Default: "", Group: GroupEmail},
 	{Key: "email_from_address", Type: TypeString, Default: "", Group: GroupEmail},
+	// Gvboard 新增（决策 D72）：多个 SMTP 服务器（JSON 数组，非空时取代上面的单个配置）及使用方式。
+	{Key: "email_smtp_servers", Type: TypeString, Default: "", Group: GroupEmail, Secret: true, Validate: validateSMTPServers},
+	{Key: "email_smtp_mode", Type: TypeString, Default: "failover", Group: GroupEmail, Validate: oneOf("failover", "round_robin")},
 
 	// Telegram
 	{Key: "telegram_bot_enable", Type: TypeBool, Default: 0, Group: GroupTelegram},
@@ -266,6 +279,13 @@ var defs = []Def{
 	{Key: "telegram_webhook_secret", Type: TypeString, Default: "", Group: GroupTelegram, Secret: true},
 	// 欢迎消息（Telegram HTML，变量 {app_name}），为空使用内置文案（决策 D52）。
 	{Key: "telegram_welcome", Type: TypeString, Default: "", Group: GroupTelegram, Validate: maxLen(3000)},
+	// 管理员通知发送到话题群组（决策 D72）：群组 ID 为空时仍私聊通知管理员；话题 ID 为 0 时发到群组的 General 话题。
+	{Key: "telegram_admin_chat_id", Type: TypeString, Default: "", Group: GroupTelegram, Validate: validateChatID},
+	{Key: "telegram_topic_order", Type: TypeInt, Default: 0, Group: GroupTelegram, Validate: intRange(0, 1<<31-1)},
+	{Key: "telegram_topic_ticket", Type: TypeInt, Default: 0, Group: GroupTelegram, Validate: intRange(0, 1<<31-1)},
+	{Key: "telegram_topic_alert", Type: TypeInt, Default: 0, Group: GroupTelegram, Validate: intRange(0, 1<<31-1)},
+	{Key: "telegram_topic_daily", Type: TypeInt, Default: 0, Group: GroupTelegram, Validate: intRange(0, 1<<31-1)},
+	{Key: "telegram_daily_report", Type: TypeBool, Default: 1, Group: GroupTelegram},
 
 	// App
 	{Key: "windows_version", Type: TypeString, Default: "", Group: GroupApp},

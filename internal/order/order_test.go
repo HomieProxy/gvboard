@@ -167,6 +167,7 @@ func TestOrder(t *testing.T) {
 				"超时取消与幂等":   testTimeoutAndIdempotent,
 				"管理端套餐与优惠券": testAdminPlanCoupon,
 				"管理端订单":     testAdminOrder,
+				"已取消订单补单":   testAdminRestore,
 				"HTTP":      testHTTP,
 				"插件事件与金额过滤": testHooks,
 			} {
@@ -846,6 +847,63 @@ func testAdminOrder(t *testing.T, e *env) {
 	if _, err := e.AdminDetail(ctx, "x"); !errors.Is(err, errAdminOrderNone) {
 		t.Error("不存在的订单应报错")
 	}
+}
+
+func testAdminRestore(t *testing.T, e *env) {
+	ctx := context.Background()
+	u := e.user(t, "r@x.com", 300)
+	p := e.plan(t, "补单套餐", nil)
+	no, err := e.Create(ctx, u.ID, CreateInput{PlanID: p.ID, Period: PeriodMonth})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o := e.order(t, no); val(o.BalanceAmount) != 300 || o.TotalAmount != 700 {
+		t.Fatalf("订单金额不正确: %+v", o)
+	}
+	wantErr(t, e.AdminRestore(ctx, no, ""), errAdminOnlyCancelled)
+	if err := e.Cancel(ctx, u.ID, no); err != nil {
+		t.Fatal(err)
+	}
+	// 取消时退回的余额已被用掉：不能补单，订单保持已取消
+	e.DB.Model(u).Update("balance", 100)
+	wantErr(t, e.AdminRestore(ctx, no, ""), errAdminRestoreBalance)
+	if o := e.order(t, no); o.Status != model.OrderStatusCancelled || e.balance(t, u.ID) != 100 {
+		t.Fatal("余额不足时不应修改订单与余额")
+	}
+	e.DB.Model(u).Update("balance", 500)
+	e.dispatched = nil
+	if err := e.AdminRestore(ctx, no, " PAY123 "); err != nil {
+		t.Fatal(err)
+	}
+	o := e.order(t, no)
+	if o.Status != model.OrderStatusProcessing || o.PaidAt == nil || *o.CallbackNo != "PAY123" || e.balance(t, u.ID) != 200 ||
+		len(e.dispatched) != 1 || e.dispatched[0] != no {
+		t.Fatalf("补单后状态、余额或开通任务不正确: %+v balance=%d", o, e.balance(t, u.ID))
+	}
+	wantErr(t, e.AdminRestore(ctx, no, ""), errAdminOnlyCancelled)
+	if err := e.Handle(ctx, no); err != nil {
+		t.Fatal(err)
+	}
+	if o := e.order(t, no); o.Status != model.OrderStatusCompleted || o.SubscriptionID == nil {
+		t.Fatalf("补单后应开通: %+v", o)
+	}
+	d, err := e.AdminDetail(ctx, no)
+	if err != nil || d.PlanName != "补单套餐" || d.SubscriptionName != "补单套餐" || d.Email != "r@x.com" {
+		t.Fatalf("订单详情应包含套餐名、订阅名与邮箱: %+v %v", d, err)
+	}
+	e.DB.Model(&model.Subscription{}).Where("id = ?", *d.SubscriptionID).Update("name", "家里用")
+	if d, _ = e.AdminDetail(ctx, no); d.SubscriptionName != "家里用" {
+		t.Fatalf("订阅有名称时应显示订阅名: %q", d.SubscriptionName)
+	}
+
+	// 没有余额抵扣的订单：未填写回调单号时记为 manual_restore
+	e.DB.Model(u).Update("balance", 0)
+	no2, _ := e.Create(ctx, u.ID, CreateInput{PlanID: p.ID, Period: PeriodMonth})
+	e.DB.Model(&model.Order{}).Where("trade_no = ?", no2).Update("status", model.OrderStatusCancelled)
+	if err := e.AdminRestore(ctx, no2, ""); err != nil || *e.order(t, no2).CallbackNo != "manual_restore" {
+		t.Fatalf("补单失败: %v", err)
+	}
+	wantErr(t, e.AdminRestore(ctx, "none", ""), errAdminOrderNone)
 }
 
 func testHTTP(t *testing.T, e *env) {

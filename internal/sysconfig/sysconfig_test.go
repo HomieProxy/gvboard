@@ -26,7 +26,7 @@ import (
 	"gvboard/internal/testutil"
 )
 
-type sent struct{ to, subject, body string }
+type sent struct{ to, subject, body, host string }
 
 type env struct {
 	*Service
@@ -34,6 +34,8 @@ type env struct {
 	mu   sync.Mutex
 	sent []sent
 	fail error
+	// failHosts 这些 SMTP 服务器发送失败。
+	failHosts map[string]bool
 }
 
 func newEnv(t *testing.T, driver string) *env {
@@ -49,10 +51,13 @@ func newEnv(t *testing.T, driver string) *env {
 		t.Fatal(err)
 	}
 	e := &env{auth: auth.New(db, c, "base64:c3lzY29uZmlnLXRlc3Qta2V5LTAxMjM0NTY3ODk=")}
-	m.SetTransport(func(_ context.Context, _ mail.SMTPConfig, to, subject, body string) error {
+	m.SetTransport(func(_ context.Context, c mail.SMTPConfig, to, subject, body string) error {
 		e.mu.Lock()
 		defer e.mu.Unlock()
-		e.sent = append(e.sent, sent{to, subject, body})
+		if e.failHosts[c.Host] {
+			return errors.New("连接失败")
+		}
+		e.sent = append(e.sent, sent{to, subject, body, c.Host})
 		return e.fail
 	})
 	e.Service = &Service{DB: db, Settings: st, Mailer: m}
@@ -97,7 +102,7 @@ func TestFetchSave(t *testing.T) {
 			t.Errorf("默认值错误：%v %v", all["site"]["app_name"], all["gvboard"]["subscription_limit"])
 		}
 		one, err := e.Fetch("email")
-		if err != nil || len(one) != 1 || len(one["email"]) != 7 {
+		if err != nil || len(one) != 1 || len(one["email"]) != 9 {
 			t.Fatalf("按分组获取错误：%v %v", one, err)
 		}
 		if _, err := e.Fetch("legacy"); err == nil {
@@ -161,24 +166,119 @@ func TestFetchSave(t *testing.T) {
 func TestTestMail(t *testing.T) {
 	eachDriver(t, func(t *testing.T, e *env) {
 		ctx := context.Background()
-		rec := e.TestMail(ctx, "a@x.com", "主题", "内容")
+		rec := e.TestMail(ctx, "a@x.com", "主题", "内容", nil)
 		if rec.Error == nil || *rec.Error != mail.ErrNotConfigured.Error() || len(e.sent) != 0 {
 			t.Fatalf("未配置时应记录错误：%+v", rec)
 		}
 		if err := e.Settings.Set(ctx, map[string]any{"email_host": "smtp.x.com", "email_from_address": "no-reply@x.com", "app_name": "站<点>"}); err != nil {
 			t.Fatal(err)
 		}
-		rec = e.TestMail(ctx, "a@x.com", "主题", "<i>内容</i>")
+		rec = e.TestMail(ctx, "a@x.com", "主题", "<i>内容</i>", nil)
 		if rec.Error != nil || rec.ID == 0 || len(e.sent) != 1 || e.sent[0].to != "a@x.com" || e.sent[0].subject != "主题" ||
 			!strings.Contains(e.sent[0].body, "&lt;i&gt;内容&lt;/i&gt;") || strings.Contains(strings.ToLower(e.sent[0].body), "v2board") {
 			t.Fatalf("测试邮件错误：%+v %+v", rec, e.sent)
 		}
 		e.fail = errors.New("535 auth failed")
-		rec = e.TestMail(ctx, "a@x.com", "主题", "内容")
+		rec = e.TestMail(ctx, "a@x.com", "主题", "内容", nil)
 		var n int64
 		e.DB.Model(&model.MailLog{}).Count(&n)
 		if rec.Error == nil || *rec.Error != "535 auth failed" || n != 3 {
 			t.Fatalf("发送失败应写入日志：%+v %d", rec, n)
+		}
+	})
+}
+
+func TestMultiSMTP(t *testing.T) {
+	eachDriver(t, func(t *testing.T, e *env) {
+		ctx := context.Background()
+		servers := `[{"name":"A","host":"a.com","from_address":"n@a.com","password":"pa","enable":true},` +
+			`{"name":"B","host":"b.com","port":587,"encryption":"tls","from_address":"n@b.com","enable":true},` +
+			`{"name":"C","host":"c.com","from_address":"n@c.com","enable":false}]`
+		wantValidation(t, e.Save(ctx, map[string]any{"email_smtp_servers": `[{"host":"","from_address":"n@a.com"}]`}), "服务器地址")
+		wantValidation(t, e.Save(ctx, map[string]any{"email_smtp_servers": `[{"host":"a.com","from_address":"bad"}]`}), "发件地址")
+		wantValidation(t, e.Save(ctx, map[string]any{"email_smtp_servers": `{}`}), "格式")
+		wantValidation(t, e.Save(ctx, map[string]any{"email_smtp_mode": "random"}), "取值")
+		if err := e.Save(ctx, map[string]any{"email_smtp_servers": servers}); err != nil {
+			t.Fatal(err)
+		}
+		if e.Settings.String("email_host") != "a.com" || e.Settings.String("email_password") != "pa" || e.Settings.String("email_from_address") != "n@a.com" {
+			t.Fatal("第一个服务器应同步到原单个 SMTP 设置")
+		}
+		hosts := func() (out []string) {
+			for _, s := range e.sent {
+				out = append(out, s.host)
+			}
+			e.sent = nil
+			return
+		}
+		send := func() *string { return e.TestMail(ctx, "a@x.com", "s", "c", nil).Error }
+
+		// 故障转移：总是先用第一个，失败后换下一个；未启用的不使用
+		send()
+		send()
+		if h := strings.Join(hosts(), ","); h != "a.com,a.com" {
+			t.Fatalf("故障转移应一直使用第一个：%s", h)
+		}
+		e.failHosts = map[string]bool{"a.com": true}
+		if err := send(); err != nil || strings.Join(hosts(), ",") != "b.com" {
+			t.Fatalf("第一个失败应换第二个：%v", err)
+		}
+		e.failHosts = map[string]bool{"a.com": true, "b.com": true}
+		if err := send(); err == nil || !strings.Contains(*err, "A: 连接失败") || !strings.Contains(*err, "B: 连接失败") || len(hosts()) != 0 {
+			t.Fatalf("全部失败应记录每个服务器的错误：%v", err)
+		}
+
+		// 轮询：每次换一个起点，失败时继续尝试其余服务器
+		e.failHosts = nil
+		if err := e.Save(ctx, map[string]any{"email_smtp_mode": "round_robin"}); err != nil {
+			t.Fatal(err)
+		}
+		for range 4 {
+			send()
+		}
+		if h := hosts(); h[0] == h[1] || h[0] != h[2] || h[1] != h[3] {
+			t.Fatalf("轮询应交替使用：%v", h)
+		}
+		e.failHosts = map[string]bool{"b.com": true}
+		for range 2 {
+			if err := send(); err != nil {
+				t.Fatalf("轮询中失败应换其它服务器：%v", *err)
+			}
+		}
+		if h := strings.Join(hosts(), ","); h != "a.com,a.com" {
+			t.Fatalf("轮询失败转移错误：%s", h)
+		}
+
+		// 测试指定服务器：只用该服务器，未启用的也可以测试
+		e.failHosts = nil
+		two, nine := 2, 9
+		if rec := e.TestMail(ctx, "a@x.com", "s", "c", &two); rec.Error != nil || strings.Join(hosts(), ",") != "c.com" {
+			t.Fatalf("测试指定服务器错误：%+v", rec)
+		}
+		if rec := e.TestMail(ctx, "a@x.com", "s", "c", &nine); rec.Error == nil || *rec.Error != mail.ErrNoServer.Error() {
+			t.Fatalf("不存在的服务器应报错：%+v", rec)
+		}
+
+		// 全部停用时视为未配置
+		if err := e.Save(ctx, map[string]any{"email_smtp_servers": `[{"host":"a.com","from_address":"n@a.com","enable":false}]`}); err != nil {
+			t.Fatal(err)
+		}
+		if err := send(); err == nil || *err != mail.ErrNotConfigured.Error() {
+			t.Fatalf("全部停用应为未配置：%v", err)
+		}
+		// 列表为空（未使用过多服务器，如从原项目迁移）时使用原单个配置
+		if err := e.Settings.Set(ctx, map[string]any{"email_smtp_servers": "", "email_host": "legacy.com"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := send(); err != nil || strings.Join(hosts(), ",") != "legacy.com" {
+			t.Fatal("列表为空时应使用原单个配置")
+		}
+		// 在管理端清空列表时一并清空单个配置
+		if err := e.Save(ctx, map[string]any{"email_smtp_servers": "[]"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := send(); err == nil || *err != mail.ErrNotConfigured.Error() || e.Settings.String("email_host") != "" {
+			t.Fatalf("清空列表后应为未配置：%v", err)
 		}
 	})
 }

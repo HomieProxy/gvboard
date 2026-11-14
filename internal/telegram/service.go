@@ -38,8 +38,9 @@ const (
 )
 
 var (
-	errDisabled    = httpx.BadRequest("Telegram bot is not enabled")
-	errUnavailable = httpx.BadRequest("Request failed, please try again later")
+	errDisabled     = httpx.BadRequest("Telegram bot is not enabled")
+	errUnavailable  = httpx.BadRequest("Request failed, please try again later")
+	errNoAdminGroup = httpx.BadRequest("Telegram admin group is not set")
 )
 
 // PaymentMethods 已启用的支付方式（payment.Service 实现）。

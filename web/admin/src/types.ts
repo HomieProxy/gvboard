@@ -115,6 +115,7 @@ export interface Order {
   updated_at: number
   plan_name?: string
   email?: string
+  subscription_name?: string
 }
 
 export interface OrderDetail extends Order {

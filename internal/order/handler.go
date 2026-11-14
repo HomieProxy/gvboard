@@ -69,6 +69,7 @@ func (m *Module) Register(r *server.Router) {
 	a.GET("/orders/:trade_no", m.adminDetail)
 	a.POST("/orders/:trade_no/paid", m.adminPaid)
 	a.POST("/orders/:trade_no/cancel", m.adminCancel)
+	a.POST("/orders/:trade_no/restore", m.adminRestore)
 	a.PUT("/orders/:trade_no", m.adminUpdateOrder)
 }
 
@@ -317,6 +318,16 @@ func (m *Module) adminAssign(c *gin.Context) {
 func (m *Module) adminDetail(c *gin.Context) {
 	v, err := m.Svc.AdminDetail(c.Request.Context(), c.Param("trade_no"))
 	respond(c, v, err)
+}
+
+func (m *Module) adminRestore(c *gin.Context) {
+	var in struct {
+		CallbackNo string `json:"callback_no"`
+	}
+	if !bind(c, &in) {
+		return
+	}
+	respond(c, true, m.Svc.AdminRestore(c.Request.Context(), c.Param("trade_no"), in.CallbackNo))
 }
 
 func (m *Module) adminPaid(c *gin.Context) {

@@ -8,6 +8,7 @@ import (
 
 	"gvboard/internal/cache"
 	"gvboard/internal/node"
+	"gvboard/internal/telegram"
 )
 
 // offlineAfter 节点超过该时间（秒）未拉取用户即视为掉线（与原项目一致为 30 分钟）。
@@ -48,7 +49,7 @@ func (s *Service) CheckServers(ctx context.Context) ([]Offline, error) {
 		o := Offline{Type: srv.Type, ID: c.ID, Name: c.Name, Host: c.Host}
 		out = append(out, o)
 		if s.Notify != nil {
-			s.Notify.NotifyAdmins(ctx, false, func(locale string) string {
+			s.Notify.NotifyAdmins(ctx, telegram.TopicAlert, false, func(locale string) string {
 				return s.tr(locale, "telegram.server_offline", map[string]any{
 					"name": html.EscapeString(o.Name), "host": html.EscapeString(o.Host),
 				})

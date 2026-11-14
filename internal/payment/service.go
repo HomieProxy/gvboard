@@ -38,6 +38,8 @@ type Service struct {
 	Now       func() time.Time
 	// OnPaid 回调确认收款后调用（Telegram 通知管理员等），只在订单由待支付变为已支付时触发一次。
 	OnPaid func(ctx context.Context, o *model.Order)
+	// OnCancelledPaid 已取消的订单收到验签通过的支付回调时调用（决策 D72）：订单不做任何修改，只通知管理员补单。
+	OnCancelledPaid func(ctx context.Context, o *model.Order, paymentName, callbackNo string)
 }
 
 var defaultHTTP = &http.Client{Timeout: 30 * time.Second}
@@ -299,6 +301,12 @@ func (s *Service) Notify(ctx context.Context, method, uuid string, n *Notificati
 		}
 		if changed && s.OnPaid != nil {
 			s.OnPaid(ctx, &o)
+		}
+	} else if o.Status == model.OrderStatusCancelled {
+		log.Warn("已取消的订单收到支付回调，未做处理，需管理员确认后补单",
+			zap.String("trade_no", o.TradeNo), zap.String("callback_no", paid.CallbackNo))
+		if s.OnCancelledPaid != nil {
+			s.OnCancelledPaid(ctx, &o, p.Name, paid.CallbackNo)
 		}
 	}
 	if paid.Reply != "" {

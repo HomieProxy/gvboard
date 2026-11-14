@@ -42,6 +42,7 @@ const (
 	KeyTelegramUpdate               KeyName = "telegram_update"                // 已处理的 update_id（Webhook 重发去重）
 	KeyTelegramOffset               KeyName = "telegram_offset"                // 长轮询的下一个 update_id
 	KeyTelegramDraft                KeyName = "telegram_draft"                 // 机器人中购买套餐的草稿（含待输入的优惠券），唯一值为 Telegram 用户 ID
+	KeyCancelledPaidNotify          KeyName = "cancelled_paid_notify"          // 已取消订单收到支付回调的通知去重，唯一值为订单号
 )
 
 // KeyOf 生成带前缀的业务键，unique 为空时只有键名。

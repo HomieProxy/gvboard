@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { SearchIcon, RefreshCwIcon, PlusIcon, ChevronDownIcon, XIcon, CopyIcon } from '@lucide/vue'
+import { SearchIcon, RefreshCwIcon, PlusIcon, ChevronDownIcon, XIcon, CopyIcon, Loader2Icon, RotateCcwIcon } from '@lucide/vue'
 import { copyText, formatMoney, formatTime } from '@gv/shared'
 import { Button } from '@gv/shared/ui/button'
 import { Input } from '@gv/shared/ui/input'
@@ -11,7 +11,9 @@ import { Separator } from '@gv/shared/ui/separator'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@gv/shared/ui/dropdown-menu'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@gv/shared/ui/sheet'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
+import { Alert, AlertDescription } from '@gv/shared/ui/alert'
+import FormItem from '../components/common/FormItem.vue'
 import PageHeader from '../components/common/PageHeader.vue'
 import DataTable, { type Column } from '../components/common/DataTable.vue'
 import Pager from '../components/common/Pager.vue'
@@ -94,6 +96,7 @@ const columns: Column[] = [
 
 const paid = (o: Order) => o.total_amount + (o.handling_amount || 0)
 const planLabel = (o: Order) => (o.plan_id === 0 ? '充值' : o.plan_name || `#${o.plan_id}`)
+const subLabel = (o: Order) => (o.subscription_name ? `${o.subscription_name}（#${o.subscription_id}）` : `订阅 #${o.subscription_id}`)
 
 // ---------- 状态操作 ----------
 async function markPaid(o: Order) {
@@ -105,6 +108,28 @@ async function cancel(o: Order) {
 async function setCommission(o: Order, status: number) {
   if (await run(() => admin.put(`/orders/${o.trade_no}`, { commission_status: status }), '操作成功')) load()
 }
+// 已取消订单补单：支付方掉单（取消后才收到付款）时使用，会重新扣回下单时抵扣的余额
+const restoring = ref<Order | null>(null)
+const restoreShow = ref(false)
+const restoreNo = ref('')
+const restoreBusy = ref(false)
+function restore(o: Order) {
+  restoring.value = o
+  restoreNo.value = ''
+  restoreShow.value = true
+}
+async function submitRestore() {
+  const o = restoring.value
+  if (!o) return
+  restoreBusy.value = true
+  const ok = await run(() => admin.post(`/orders/${o.trade_no}/restore`, { callback_no: restoreNo.value.trim() }), '补单成功，系统将自动开通')
+  restoreBusy.value = false
+  if (!ok) return
+  restoreShow.value = false
+  load()
+  if (sheet.value && detail.value?.trade_no === o.trade_no) open(o)
+}
+
 const commissionMarks = [
   { label: '待确认', value: 0 },
   { label: '有效', value: 1 },
@@ -175,7 +200,7 @@ onMounted(() => {
       <template #cell-plan="{ row }">
         <div class="grid leading-tight">
           <span>{{ planLabel(row) }}</span>
-          <span v-if="row.subscription_id" class="text-xs text-muted-foreground">订阅 #{{ row.subscription_id }}</span>
+          <span v-if="row.subscription_id" class="max-w-48 truncate text-xs text-muted-foreground">{{ subLabel(row) }}</span>
         </div>
       </template>
       <template #cell-period="{ row }"><span class="whitespace-nowrap">{{ periodLabels[row.period] || row.period }}</span></template>
@@ -191,6 +216,17 @@ onMounted(() => {
           <DropdownMenuContent align="start">
             <DropdownMenuItem @click="markPaid(row)">标记为 已支付</DropdownMenuItem>
             <DropdownMenuItem variant="destructive" @click="cancel(row)">标记为 取消</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu v-else-if="row.status === 2">
+          <DropdownMenuTrigger as-child>
+            <button class="inline-flex items-center gap-0.5">
+              <StatusBadge :tone="orderStatus[row.status]?.[1]" dot>{{ orderStatus[row.status]?.[0] }}</StatusBadge>
+              <ChevronDownIcon class="size-3.5 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem @click="restore(row)">补单（已收到付款）</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <StatusBadge v-else :tone="orderStatus[row.status]?.[1]" dot>{{ orderStatus[row.status]?.[0] }}</StatusBadge>
@@ -225,30 +261,35 @@ onMounted(() => {
 
     <AssignOrder v-model:show="assign" @done="reload" />
 
-    <Sheet v-model:open="sheet">
-      <SheetContent class="w-full gap-0 overflow-y-auto p-0 sm:max-w-lg">
-        <SheetHeader class="border-b px-6 py-4">
-          <SheetTitle>订单信息</SheetTitle>
-          <SheetDescription v-if="detail" class="flex items-center gap-2">
+    <Dialog v-model:open="sheet">
+      <DialogContent class="max-h-[90vh] gap-0 overflow-y-auto p-0 sm:max-w-xl">
+        <DialogHeader class="border-b px-6 py-4">
+          <DialogTitle>订单信息</DialogTitle>
+          <DialogDescription v-if="detail" class="flex items-center gap-2">
             <span class="font-mono">{{ detail.trade_no }}</span>
             <CopyIcon class="size-3.5 cursor-pointer hover:text-foreground" @click="copy(detail.trade_no)" />
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
         <div v-if="detail" class="grid gap-5 px-6 py-5 text-sm">
           <div class="flex items-center gap-2">
             <StatusBadge :tone="orderStatus[detail.status]?.[1]" dot>{{ orderStatus[detail.status]?.[0] }}</StatusBadge>
             <StatusBadge>{{ orderType[detail.type] }}</StatusBadge>
             <StatusBadge v-if="detail.immediate" tone="warning">立即生效</StatusBadge>
+            <Button v-if="detail.status === 2" size="sm" variant="outline" class="ml-auto" @click="restore(detail)"><RotateCcwIcon />补单</Button>
           </div>
           <dl class="grid grid-cols-[6rem_1fr] gap-x-4 gap-y-2.5">
             <dt class="text-muted-foreground">邮箱</dt>
             <dd>
               <button class="hover:text-primary hover:underline" @click="router.push({ path: '/users', query: { id: detail.user_id } })">
-                {{ detailRow?.email || `#${detail.user_id}` }}
+                {{ detail.email || detailRow?.email || `#${detail.user_id}` }}
               </button>
             </dd>
             <dt class="text-muted-foreground">订阅计划</dt>
-            <dd>{{ planLabel(detail) }} · {{ periodLabels[detail.period] || detail.period }}<span v-if="detail.subscription_id" class="text-muted-foreground">（订阅 #{{ detail.subscription_id }}）</span></dd>
+            <dd>{{ planLabel(detail) }} · {{ periodLabels[detail.period] || detail.period }}</dd>
+            <template v-if="detail.subscription_id">
+              <dt class="text-muted-foreground">订阅</dt>
+              <dd>{{ subLabel(detail) }}</dd>
+            </template>
             <dt class="text-muted-foreground">回调单号</dt>
             <dd class="break-all font-mono text-xs">{{ detail.callback_no || '-' }}</dd>
             <dt class="text-muted-foreground">支付时间</dt>
@@ -308,7 +349,32 @@ onMounted(() => {
             </div>
           </template>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="restoreShow">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>已取消订单补单</DialogTitle>
+          <DialogDescription v-if="restoring" class="font-mono">{{ restoring.trade_no }}</DialogDescription>
+        </DialogHeader>
+        <Alert>
+          <AlertDescription class="text-xs leading-relaxed">
+            用于支付方掉单：订单超时取消后才收到用户付款。补单后订单变为已支付并由系统自动开通。
+            下单时使用了余额抵扣的，会重新扣回取消时退回的余额；用户余额不足时无法补单。请先在支付平台核实已到账。
+          </AlertDescription>
+        </Alert>
+        <FormItem label="支付方单号" help="可选，留空记为 manual_restore">
+          <Input v-model="restoreNo" placeholder="支付平台的交易号" maxlength="255" />
+        </FormItem>
+        <DialogFooter>
+          <Button variant="outline" @click="restoreShow = false">取消</Button>
+          <Button :disabled="restoreBusy" @click="submitRestore">
+            <Loader2Icon v-if="restoreBusy" class="animate-spin" />
+            确认补单
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

@@ -399,11 +399,89 @@ type OrderQuery struct {
 	Filter       []OrderFilter `json:"filter"`
 }
 
-// AdminOrder 管理端订单，附带套餐名称与用户邮箱。
+// AdminOrder 管理端订单，附带套餐名称、订阅名称与用户邮箱。
 type AdminOrder struct {
 	model.Order
-	PlanName string `json:"plan_name,omitempty"`
-	Email    string `json:"email"`
+	PlanName         string `json:"plan_name,omitempty"`
+	SubscriptionName string `json:"subscription_name,omitempty"`
+	Email            string `json:"email"`
+}
+
+// subscriptionNames 订单关联订阅的名称。
+func subscriptionNames(db *gorm.DB, orders []model.Order) (map[int64]string, error) {
+	var ids []int64
+	for _, o := range orders {
+		if o.SubscriptionID != nil {
+			ids = append(ids, *o.SubscriptionID)
+		}
+	}
+	out := map[int64]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var subs []model.Subscription
+	if err := db.Select("id", "name", "plan_id").Where("id IN ?", ids).Find(&subs).Error; err != nil {
+		return nil, err
+	}
+	var planIDs []int64
+	for _, s := range subs {
+		if s.Name == "" && s.PlanID != nil {
+			planIDs = append(planIDs, *s.PlanID)
+		}
+	}
+	plans := map[int64]string{}
+	if len(planIDs) > 0 {
+		var ps []model.Plan
+		if err := db.Select("id", "name").Where("id IN ?", planIDs).Find(&ps).Error; err != nil {
+			return nil, err
+		}
+		for _, p := range ps {
+			plans[p.ID] = p.Name
+		}
+	}
+	// 未自定义名称的订阅与管理端其他页面一致，显示其当前套餐名
+	for _, s := range subs {
+		out[s.ID] = s.Name
+		if s.Name == "" && s.PlanID != nil {
+			out[s.ID] = plans[*s.PlanID]
+		}
+	}
+	return out, nil
+}
+
+// decorate 为订单附加套餐名称、订阅名称与用户邮箱。
+func decorate(db *gorm.DB, orders []model.Order) ([]AdminOrder, error) {
+	names, err := planNames(db, orders)
+	if err != nil {
+		return nil, err
+	}
+	subNames, err := subscriptionNames(db, orders)
+	if err != nil {
+		return nil, err
+	}
+	emails := map[int64]string{}
+	if len(orders) > 0 {
+		ids := make([]int64, 0, len(orders))
+		for _, o := range orders {
+			ids = append(ids, o.UserID)
+		}
+		var users []model.User
+		if err := db.Select("id", "email").Where("id IN ?", ids).Find(&users).Error; err != nil {
+			return nil, err
+		}
+		for _, u := range users {
+			emails[u.ID] = u.Email
+		}
+	}
+	out := make([]AdminOrder, 0, len(orders))
+	for _, o := range orders {
+		a := AdminOrder{Order: o, PlanName: names[o.PlanID], Email: emails[o.UserID]}
+		if o.SubscriptionID != nil {
+			a.SubscriptionName = subNames[*o.SubscriptionID]
+		}
+		out = append(out, a)
+	}
+	return out, nil
 }
 
 var (
@@ -454,34 +532,16 @@ func (s *Service) AdminOrders(ctx context.Context, in OrderQuery) (*PageResult[A
 	if err := q.Order("created_at DESC").Order("id DESC").Offset(offset).Limit(limit).Find(&orders).Error; err != nil {
 		return nil, err
 	}
-	names, err := planNames(db, orders)
+	out, err := decorate(db, orders)
 	if err != nil {
 		return nil, err
-	}
-	emails := map[int64]string{}
-	if len(orders) > 0 {
-		ids := make([]int64, 0, len(orders))
-		for _, o := range orders {
-			ids = append(ids, o.UserID)
-		}
-		var users []model.User
-		if err := db.Select("id", "email").Where("id IN ?", ids).Find(&users).Error; err != nil {
-			return nil, err
-		}
-		for _, u := range users {
-			emails[u.ID] = u.Email
-		}
-	}
-	out := make([]AdminOrder, 0, len(orders))
-	for _, o := range orders {
-		out = append(out, AdminOrder{Order: o, PlanName: names[o.PlanID], Email: emails[o.UserID]})
 	}
 	return &PageResult[AdminOrder]{Data: out, Total: total}, nil
 }
 
 // AdminOrderDetail 管理端订单详情，附带佣金记录与被折抵的订单。
 type AdminOrderDetail struct {
-	model.Order
+	AdminOrder
 	CommissionLog []model.CommissionLog `json:"commission_log"`
 	SurplusOrders []model.Order         `json:"surplus_orders"`
 }
@@ -502,7 +562,11 @@ func (s *Service) AdminDetail(ctx context.Context, tradeNo string) (*AdminOrderD
 	if err != nil {
 		return nil, err
 	}
-	d := &AdminOrderDetail{Order: *o, CommissionLog: []model.CommissionLog{}, SurplusOrders: []model.Order{}}
+	rows, err := decorate(db, []model.Order{*o})
+	if err != nil {
+		return nil, err
+	}
+	d := &AdminOrderDetail{AdminOrder: rows[0], CommissionLog: []model.CommissionLog{}, SurplusOrders: []model.Order{}}
 	if err := db.Where("trade_no = ?", o.TradeNo).Find(&d.CommissionLog).Error; err != nil {
 		return nil, err
 	}
@@ -524,6 +588,52 @@ func (s *Service) AdminPaid(ctx context.Context, tradeNo string) error {
 		return errAdminOnlyPending
 	}
 	return s.Paid(ctx, o.TradeNo, "manual_operation")
+}
+
+// AdminRestore 补单：把已取消的订单改为已支付并开通（支付平台掉单时由管理员处理，决策 D72）。
+// 取消时退回的余额抵扣重新扣回，余额不足时不能补单。callbackNo 为空时记为 manual_restore。
+func (s *Service) AdminRestore(ctx context.Context, tradeNo, callbackNo string) error {
+	db := s.DB.WithContext(ctx)
+	o, err := s.adminOrder(db, tradeNo)
+	if err != nil {
+		return err
+	}
+	if o.Status != model.OrderStatusCancelled {
+		return errAdminOnlyCancelled
+	}
+	if callbackNo = strings.TrimSpace(callbackNo); callbackNo == "" {
+		callbackNo = "manual_restore"
+	}
+	if len(callbackNo) > 255 {
+		return errAdminInvalid
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if b := val(o.BalanceAmount); b > 0 {
+			res := tx.Model(&model.User{}).Where("id = ? AND balance >= ?", o.UserID, b).
+				Update("balance", gorm.Expr("balance - ?", b))
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected != 1 {
+				return errAdminRestoreBalance
+			}
+		}
+		res := tx.Model(&model.Order{}).Where("id = ? AND status = ?", o.ID, model.OrderStatusCancelled).
+			Updates(map[string]any{"status": model.OrderStatusProcessing, "paid_at": s.now().Unix(), "callback_no": callbackNo})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected != 1 {
+			return errAdminOnlyCancelled
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	s.emitOrderByNo(ctx, hook.EventOrderPaid, tradeNo)
+	s.dispatch(ctx, tradeNo)
+	return nil
 }
 
 // AdminCancel 取消待支付订单（对应原项目 admin/order/cancel）。

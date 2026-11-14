@@ -37,6 +37,7 @@ type notice struct {
 	kind  telegram.NotifyKind
 	text  string
 	staff bool
+	topic string
 }
 
 type fakeNotify struct {
@@ -44,10 +45,10 @@ type fakeNotify struct {
 	sent []notice
 }
 
-func (f *fakeNotify) NotifyAdmins(_ context.Context, staff bool, build func(string) string) {
+func (f *fakeNotify) NotifyAdmins(_ context.Context, topic string, staff bool, build func(string) string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.sent = append(f.sent, notice{text: build("zh-CN"), staff: staff})
+	f.sent = append(f.sent, notice{text: build("zh-CN"), staff: staff, topic: topic})
 }
 
 func (f *fakeNotify) NotifyUser(_ context.Context, userID int64, kind telegram.NotifyKind, build func(string) string) {
@@ -132,7 +133,7 @@ func ptr[T any](v T) *T { return &v }
 
 func TestJobs(t *testing.T) {
 	want := map[string]string{
-		"statistics": "10 0 * * *", "reset_traffic": "0 0 * * *", "reset_log": "0 0 * * *",
+		"statistics": "10 0 * * *", "daily_report": "20 0 * * *", "reset_traffic": "0 0 * * *", "reset_log": "0 0 * * *",
 		"send_remind_mail": "30 11 * * *", "check_server": "*/5 * * * *",
 	}
 	jobs := (&Service{}).Jobs()
@@ -201,6 +202,45 @@ func TestStatistics(t *testing.T) {
 		e.DB.Where("record_type = ?", "d").Find(&rows)
 		if len(rows) != 1 || rows[0].PaidCount != 3 || rows[0].PaidTotal != 2200 {
 			t.Fatalf("重复执行应覆盖：%+v", rows)
+		}
+	})
+}
+
+func TestDailyReport(t *testing.T) {
+	eachDriver(t, func(t *testing.T, e *env) {
+		ctx := context.Background()
+		day := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
+		from := time.Date(2026, 11, 13, 0, 0, 0, 0, time.Local).Unix()
+		a, _ := e.user(t, "a@x.com")
+		e.DB.Model(a).Update("created_at", from+10)
+		e.create(t, &model.Ticket{UserID: a.ID, Subject: "s", Level: 0, CreatedAt: from + 1, UpdatedAt: from + 1})
+		e.create(t, &model.Ticket{UserID: a.ID, Subject: "s", Level: 0, CreatedAt: from - 1, UpdatedAt: from - 1})
+		e.create(t, &model.Order{UserID: a.ID, PlanID: 1, Period: "month_price", TradeNo: "D1", TotalAmount: 1234, Status: 3,
+			CreatedAt: from + 1, PaidAt: ptr(from + 2)})
+		e.create(t, &model.StatServer{ServerID: 1, ServerType: "vmess", U: 1 << 30, D: 1 << 30, RecordType: "d", RecordAt: from})
+
+		// 统计记录不存在时先生成
+		if err := e.DailyReport(ctx, day); err != nil {
+			t.Fatal(err)
+		}
+		var n int64
+		e.DB.Model(&model.Stat{}).Where("record_at = ?", from).Count(&n)
+		if n != 1 || len(e.notify.sent) != 1 {
+			t.Fatalf("应生成统计并发送一条：%d %+v", n, e.notify.sent)
+		}
+		got := e.notify.sent[0]
+		for _, s := range []string{"2026-11-13", "12.34", "2 GB"} {
+			if !strings.Contains(got.text, s) {
+				t.Errorf("每日统计缺少 %q：%s", s, got.text)
+			}
+		}
+		if got.topic != telegram.TopicDaily || got.user != 0 || !strings.Contains(got.text, "tickets:1") {
+			t.Fatalf("每日统计内容错误：%+v", got)
+		}
+
+		e.Notify = nil
+		if err := e.DailyReport(ctx, day); err != nil {
+			t.Fatal(err)
 		}
 	})
 }

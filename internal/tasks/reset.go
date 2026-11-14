@@ -13,6 +13,7 @@ import (
 
 	"gvboard/internal/cache"
 	"gvboard/internal/model"
+	"gvboard/internal/telegram"
 )
 
 // 流量重置方式（v2_plan.reset_traffic_method，为空时使用设置项 reset_traffic_method）。
@@ -150,7 +151,7 @@ func (s *Service) notifyResetFailed(ctx context.Context, now time.Time, err erro
 	if s.Notify == nil {
 		return
 	}
-	s.Notify.NotifyAdmins(ctx, false, func(locale string) string {
+	s.Notify.NotifyAdmins(ctx, telegram.TopicAlert, false, func(locale string) string {
 		return s.tr(locale, "telegram.reset_failed", map[string]any{
 			"time": now.Format("2006/01/02 15:04:05"), "error": html.EscapeString(fmt.Sprint(err)),
 		})

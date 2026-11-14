@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"gvboard/internal/cache"
 	"gvboard/internal/i18n"
 	"gvboard/internal/model"
 	"gvboard/internal/queue"
@@ -63,7 +64,11 @@ func (s *Service) deliver(ctx context.Context, m OutMessage) error {
 
 // Send 投递一条 HTML 消息到发送队列；未配置队列时直接发送。
 func (s *Service) Send(ctx context.Context, chatID int64, text string) {
-	m := OutMessage{ChatID: chatID, Text: text, ParseMode: "HTML", Preview: &PreviewOptions{IsDisabled: true}}
+	s.sendThread(ctx, chatID, 0, text)
+}
+
+func (s *Service) sendThread(ctx context.Context, chatID, threadID int64, text string) {
+	m := OutMessage{ChatID: chatID, MessageThreadID: threadID, Text: text, ParseMode: "HTML", Preview: &PreviewOptions{IsDisabled: true}}
 	var err error
 	if s.Queue == nil {
 		err = s.deliver(ctx, m)
@@ -75,10 +80,37 @@ func (s *Service) Send(ctx context.Context, chatID int64, text string) {
 	}
 }
 
-// NotifyAdmins 通知已绑定 Telegram 的管理员，staff 为 true 时同时通知客服（原项目 sendMessageWithAdmin）。
+// 管理员通知类别，各对应话题群组中的一个话题（决策 D72）。
+const (
+	TopicOrder  = "order"  // 收款
+	TopicTicket = "ticket" // 工单、提现申请
+	TopicAlert  = "alert"  // 节点掉线、流量重置失败、已取消订单收到付款等需要处理的告警
+	TopicDaily  = "daily"  // 每日统计
+)
+
+// Topics 全部管理员通知类别。
+var Topics = []string{TopicOrder, TopicTicket, TopicAlert, TopicDaily}
+
+// AdminGroup 管理员话题群组 ID，未设置时返回 false。
+func (s *Service) AdminGroup() (int64, bool) {
+	id, err := strconv.ParseInt(s.Settings.String("telegram_admin_chat_id"), 10, 64)
+	return id, err == nil && id != 0
+}
+
+// TopicID 通知类别对应的话题 ID，0 为 General 话题。
+func (s *Service) TopicID(topic string) int64 {
+	return s.Settings.Int("telegram_topic_" + topic)
+}
+
+// NotifyAdmins 通知管理员。设置了管理员话题群组时只发到群组中 topic 对应的话题（决策 D72，语言为站点默认语言）；
+// 否则私聊已绑定 Telegram 的管理员，staff 为 true 时同时通知客服（原项目 sendMessageWithAdmin）。
 // build 按接收者语言生成 HTML 文本。
-func (s *Service) NotifyAdmins(ctx context.Context, staff bool, build func(locale string) string) {
+func (s *Service) NotifyAdmins(ctx context.Context, topic string, staff bool, build func(locale string) string) {
 	if !s.Enabled() {
+		return
+	}
+	if chat, ok := s.AdminGroup(); ok {
+		s.sendThread(ctx, chat, s.TopicID(topic), build(s.I18n.Fallback()))
 		return
 	}
 	var rows []struct {
@@ -127,8 +159,53 @@ func (s *Service) NotifyUser(ctx context.Context, userID int64, kind NotifyKind,
 // OnPaid 支付回调确认收款：通知管理员（原项目）与下单用户（D51）。
 func (s *Service) OnPaid(ctx context.Context, o *model.Order) {
 	params := i18n.Params{"amount": money(o.TotalAmount), "trade_no": "<code>" + esc(o.TradeNo) + "</code>"}
-	s.NotifyAdmins(ctx, false, func(locale string) string { return s.T(locale, "telegram.paid_admin", params) })
+	s.NotifyAdmins(ctx, TopicOrder, false, func(locale string) string { return s.T(locale, "telegram.paid_admin", params) })
 	s.NotifyUser(ctx, o.UserID, NotifyOrder, func(locale string) string { return s.T(locale, "telegram.paid_user", params) })
+}
+
+// cancelledPaidTTL 同一订单的重复回调在该时间内只通知一次。
+const cancelledPaidTTL = 24 * time.Hour
+
+// OnCancelledPaid 已取消的订单收到支付回调：订单不做处理，发告警提醒管理员核实后补单（决策 D72）。
+func (s *Service) OnCancelledPaid(ctx context.Context, o *model.Order, paymentName, callbackNo string) {
+	if !s.Enabled() {
+		return
+	}
+	ok, err := s.Cache.SetNX(ctx, s.Cache.KeyOf(cache.KeyCancelledPaidNotify, o.TradeNo), 1, cancelledPaidTTL).Result()
+	if err != nil {
+		s.log().Warn("已取消订单回调通知去重失败", zap.Error(err))
+	} else if !ok {
+		return
+	}
+	var u model.User
+	s.DB.WithContext(ctx).Select("id", "email").Where("id = ?", o.UserID).Take(&u)
+	amount := o.TotalAmount
+	if o.HandlingAmount != nil {
+		amount += *o.HandlingAmount
+	}
+	params := i18n.Params{
+		"trade_no": "<code>" + esc(o.TradeNo) + "</code>", "email": "<code>" + esc(u.Email) + "</code>",
+		"amount": money(amount), "payment": esc(paymentName), "callback_no": "<code>" + esc(callbackNo) + "</code>",
+	}
+	s.NotifyAdmins(ctx, TopicAlert, false, func(locale string) string { return s.T(locale, "telegram.cancelled_paid", params) })
+}
+
+// TestTopic 向管理员话题群组的 topic 话题直接发送一条测试消息，返回 Telegram 的错误（管理端配置检查用）。
+func (s *Service) TestTopic(ctx context.Context, topic string) error {
+	chat, ok := s.AdminGroup()
+	if !ok {
+		return errNoAdminGroup
+	}
+	cl, err := s.Client()
+	if err != nil {
+		return err
+	}
+	text := s.T(s.I18n.Fallback(), "telegram.topic_test", i18n.Params{"topic": s.T(s.I18n.Fallback(), "telegram.topic_"+topic, nil)})
+	m := OutMessage{ChatID: chat, MessageThreadID: s.TopicID(topic), Text: text, ParseMode: "HTML", Preview: &PreviewOptions{IsDisabled: true}}
+	if err := cl.SendMessage(ctx, m); err != nil {
+		return errApply.With(map[string]any{"reason": err.Error()})
+	}
+	return nil
 }
 
 // OnTicket 用户新建、回复工单或申请提现时通知管理员与客服（原项目 TicketController::sendNotify）。
@@ -142,7 +219,7 @@ func (s *Service) OnTicket(ctx context.Context, e ticket.Event) {
 		"message": esc(truncate(e.Message, maxContent)),
 	}
 	if e.Kind == ticket.EventWithdraw {
-		s.NotifyAdmins(ctx, true, func(locale string) string { return s.T(locale, "telegram.ticket_short", base) })
+		s.NotifyAdmins(ctx, TopicTicket, true, func(locale string) string { return s.T(locale, "telegram.ticket_short", base) })
 		return
 	}
 	info, err := s.ticketUserInfo(ctx, e)
@@ -150,7 +227,7 @@ func (s *Service) OnTicket(ctx context.Context, e ticket.Event) {
 		s.log().Error("查询工单用户信息失败", zap.Error(err))
 		return
 	}
-	s.NotifyAdmins(ctx, true, func(locale string) string {
+	s.NotifyAdmins(ctx, TopicTicket, true, func(locale string) string {
 		p := i18n.Params{}
 		for k, v := range base {
 			p[k] = v

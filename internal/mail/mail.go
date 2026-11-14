@@ -14,11 +14,13 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	gomail "github.com/wneessen/go-mail"
 
 	"gvboard/internal/hook"
+	"gvboard/internal/setting"
 )
 
 //go:embed templates
@@ -44,6 +46,7 @@ type Settings interface {
 
 // SMTPConfig SMTP 连接参数。
 type SMTPConfig struct {
+	Name       string // 多个服务器时的名称，用于错误信息
 	Host       string
 	Port       int
 	Encryption string // ssl：隐式 TLS；tls：STARTTLS；空：服务器支持时使用 STARTTLS
@@ -67,6 +70,7 @@ type Mailer struct {
 
 	mu     sync.Mutex
 	custom *customSet
+	rr     atomic.Uint64 // 轮询计数
 }
 
 // New 加载内置模板。
@@ -155,19 +159,13 @@ func (m *Mailer) Render(theme, name string, vars map[string]any) (string, error)
 // ErrNotConfigured 未配置 SMTP。
 var ErrNotConfigured = errors.New("邮件服务未配置")
 
-// Config 从业务设置读取 SMTP 参数。每次发送时读取，管理端修改后立即生效。
-func (m *Mailer) Config() (SMTPConfig, error) {
+// ErrNoServer 指定的 SMTP 服务器不存在（指定服务器时不检查是否启用，便于测试停用的服务器）。
+var ErrNoServer = errors.New("指定的 SMTP 服务器不存在")
+
+func newConfig(name, host string, port int, enc, user, pass, from, fromName string) SMTPConfig {
 	c := SMTPConfig{
-		Host:       strings.TrimSpace(m.settings.String("email_host")),
-		Port:       int(m.settings.Int("email_port")),
-		Encryption: strings.ToLower(strings.TrimSpace(m.settings.String("email_encryption"))),
-		Username:   m.settings.String("email_username"),
-		Password:   m.settings.String("email_password"),
-		From:       strings.TrimSpace(m.settings.String("email_from_address")),
-		FromName:   m.settings.String("app_name"),
-	}
-	if c.Host == "" || c.From == "" {
-		return c, ErrNotConfigured
+		Name: name, Host: strings.TrimSpace(host), Port: port, Encryption: strings.ToLower(strings.TrimSpace(enc)),
+		Username: user, Password: pass, From: strings.TrimSpace(from), FromName: fromName,
 	}
 	if c.Port == 0 {
 		switch c.Encryption {
@@ -179,24 +177,109 @@ func (m *Mailer) Config() (SMTPConfig, error) {
 			c.Port = 25
 		}
 	}
-	return c, nil
+	return c
+}
+
+// Servers 从业务设置读取可用的 SMTP 服务器，按配置顺序排列。每次发送时读取，管理端修改后立即生效。
+// 设置了多个 SMTP 服务器（email_smtp_servers，决策 D72）时只使用其中已启用的，否则使用原项目的单个配置。
+func (m *Mailer) Servers() ([]SMTPConfig, error) {
+	fromName := m.settings.String("app_name")
+	list, err := setting.ParseSMTPServers(m.settings.String("email_smtp_servers"))
+	if err != nil {
+		return nil, err
+	}
+	if len(list) > 0 {
+		out := []SMTPConfig{}
+		for i, s := range list {
+			if !s.Enable {
+				continue
+			}
+			name := s.Name
+			if name == "" {
+				name = fmt.Sprintf("SMTP %d", i+1)
+			}
+			out = append(out, newConfig(name, s.Host, s.Port, s.Encryption, s.Username, s.Password, s.FromAddress, fromName))
+		}
+		if len(out) == 0 {
+			return nil, ErrNotConfigured
+		}
+		return out, nil
+	}
+	c := newConfig("", m.settings.String("email_host"), int(m.settings.Int("email_port")), m.settings.String("email_encryption"),
+		m.settings.String("email_username"), m.settings.String("email_password"), m.settings.String("email_from_address"), fromName)
+	if c.Host == "" || c.From == "" {
+		return nil, ErrNotConfigured
+	}
+	return []SMTPConfig{c}, nil
+}
+
+// Config 第一个可用的 SMTP 服务器。
+func (m *Mailer) Config() (SMTPConfig, error) {
+	list, err := m.Servers()
+	if err != nil {
+		return SMTPConfig{}, err
+	}
+	return list[0], nil
+}
+
+// order 本次发送尝试服务器的顺序：故障转移从第一个开始；轮询每次换一个起点。失败时都依次尝试后面的服务器。
+func (m *Mailer) order(n int) []int {
+	start := 0
+	if n > 1 && m.settings.String("email_smtp_mode") == "round_robin" {
+		start = int(m.rr.Add(1)-1) % n
+	}
+	out := make([]int, n)
+	for i := range out {
+		out[i] = (start + i) % n
+	}
+	return out
 }
 
 // Send 渲染并发送邮件。
 func (m *Mailer) Send(ctx context.Context, to, subject, theme, name string, vars map[string]any) error {
+	return m.SendVia(ctx, -1, to, subject, theme, name, vars)
+}
+
+// SendVia 同 Send；server 不小于 0 时只用 email_smtp_servers 中该序号的服务器（测试单个服务器用，不论是否启用）。
+func (m *Mailer) SendVia(ctx context.Context, server int, to, subject, theme, name string, vars map[string]any) error {
 	body, err := m.Render(theme, name, vars)
 	if err != nil {
 		return err
 	}
-	c, err := m.Config()
-	if err != nil {
+	var servers []SMTPConfig
+	if server >= 0 {
+		list, err := setting.ParseSMTPServers(m.settings.String("email_smtp_servers"))
+		if err != nil {
+			return err
+		}
+		if server >= len(list) {
+			return ErrNoServer
+		}
+		s := list[server]
+		servers = []SMTPConfig{newConfig(s.Name, s.Host, s.Port, s.Encryption, s.Username, s.Password, s.FromAddress, m.settings.String("app_name"))}
+	} else if servers, err = m.Servers(); err != nil {
 		return err
 	}
 	if m.Hooks != nil {
 		v := hook.Apply(m.Hooks, ctx, hook.FilterMailMessage, hook.MailMessage{To: to, Subject: subject, Template: name, HTML: body})
 		subject, body = v.Subject, v.HTML
 	}
-	return m.send(ctx, c, to, subject, body)
+	var errs []error
+	for _, i := range m.order(len(servers)) {
+		c := servers[i]
+		err := m.send(ctx, c, to, subject, body)
+		if err == nil {
+			return nil
+		}
+		if len(servers) == 1 {
+			return err
+		}
+		errs = append(errs, fmt.Errorf("%s: %w", c.Name, err))
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // SMTPTransport 通过 SMTP 发送。

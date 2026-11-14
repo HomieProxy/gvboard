@@ -48,7 +48,10 @@ var (
 	errAdminCouponDup    = httpx.Conflict("券码已存在")
 	errAdminOrderNone    = httpx.NotFoundErr("订单不存在")
 	errAdminOnlyPending  = httpx.BadRequest("只能对待支付的订单进行操作")
-	errAdminUserNone     = httpx.NotFoundErr("该用户不存在")
-	errAdminUserPending  = httpx.Conflict("该用户还有待支付的订单，无法分配")
-	errAdminResetNeedSub = httpx.Validation("购买流量重置包必须指定订阅")
+	// errAdminOnlyCancelled 补单只针对已取消的订单。
+	errAdminOnlyCancelled  = httpx.BadRequest("只能对已取消的订单补单")
+	errAdminRestoreBalance = httpx.BadRequest("用户余额不足以扣回下单时抵扣的余额，无法补单")
+	errAdminUserNone       = httpx.NotFoundErr("该用户不存在")
+	errAdminUserPending    = httpx.Conflict("该用户还有待支付的订单，无法分配")
+	errAdminResetNeedSub   = httpx.Validation("购买流量重置包必须指定订阅")
 )

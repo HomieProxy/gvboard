@@ -5,7 +5,7 @@ import { InfoIcon, Loader2Icon, MailIcon, SendIcon, ActivityIcon, ChevronDownIco
 import { formatTime } from '@gv/shared'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@gv/shared/ui/tabs'
 import { Card, CardContent } from '@gv/shared/ui/card'
-import { Alert, AlertDescription } from '@gv/shared/ui/alert'
+import { Alert, AlertDescription, AlertTitle } from '@gv/shared/ui/alert'
 import { Input } from '@gv/shared/ui/input'
 import { Textarea } from '@gv/shared/ui/textarea'
 import { Button } from '@gv/shared/ui/button'
@@ -28,6 +28,7 @@ import { loadPlans, planOptions } from '../refs'
 
 const CodeEditor = defineAsyncComponent(() => import('../components/common/CodeEditor.vue'))
 const MailTemplates = defineAsyncComponent(() => import('../components/MailTemplates.vue'))
+const SmtpServers = defineAsyncComponent(() => import('../components/SmtpServers.vue'))
 
 type Value = string | number | string[] | null
 interface Template {
@@ -58,6 +59,7 @@ async function load() {
     ])
     const flat: Record<string, Value> = {}
     for (const g of Object.values(all || {})) Object.assign(flat, g)
+    legacySmtp(flat)
     values.value = { ...flat }
     origin.value = JSON.parse(JSON.stringify(flat))
     templates.value = tpls || []
@@ -143,16 +145,44 @@ async function moveSecurePath(next: string) {
 }
 
 // ---------- 邮件 / Telegram ----------
+// 还没有使用过多服务器列表时（如从原项目迁移），把原单个 SMTP 配置显示为列表中的第一个服务器
+function legacySmtp(flat: Record<string, Value>) {
+  if (flat.email_smtp_servers || !flat.email_host) return
+  const s = (k: string) => (flat[k] === null || flat[k] === undefined ? '' : String(flat[k]))
+  const enc = s('email_encryption').toLowerCase()
+  flat.email_smtp_servers = JSON.stringify([{
+    name: '', host: s('email_host'), port: Number(flat.email_port) || 0, encryption: enc === 'ssl' || enc === 'tls' ? enc : '',
+    username: s('email_username'), password: s('email_password'), from_address: s('email_from_address'), enable: true,
+  }])
+}
+
 const mailBusy = ref(false)
-async function testMail() {
+const mailTesting = ref<number | null>(null)
+async function testMail(server?: number) {
   if (dirty.value.length && !(await save())) return
   mailBusy.value = true
+  mailTesting.value = server ?? -1
   await run(async () => {
-    const r = await admin.post<{ error: string | null; email: string }>('/config/test-mail')
+    const r = await admin.post<{ error: string | null; email: string }>('/config/test-mail', server === undefined ? undefined : { server })
     if (r.error) message.error(`发送失败：${r.error}`)
     else message.success(`测试邮件已发送到 ${r.email}`)
   })
   mailBusy.value = false
+  mailTesting.value = null
+}
+
+const topics = [
+  { name: 'order', label: '订单' },
+  { name: 'ticket', label: '工单' },
+  { name: 'alert', label: '告警' },
+  { name: 'daily', label: '每日统计' },
+]
+const topicBusy = ref('')
+async function testTopic(topic: string, label: string) {
+  if (dirty.value.length && !(await save())) return
+  topicBusy.value = topic
+  await run(() => admin.post('/telegram/test-topic', { topic }), `已向「${label}」话题发送测试消息`)
+  topicBusy.value = ''
 }
 
 const tgBusy = ref(false)
@@ -221,6 +251,19 @@ onMounted(load)
               <InfoIcon />
               <AlertDescription>{{ g.notice }}</AlertDescription>
             </Alert>
+            <Alert v-if="g.name === 'telegram'" class="mb-4">
+              <InfoIcon />
+              <AlertTitle>管理员通知发到话题群组</AlertTitle>
+              <AlertDescription>
+                <ol class="list-decimal space-y-1 pl-4">
+                  <li>在 Telegram 新建一个群组，进入群组设置开启「话题」（Topics），按需要建立订单、工单、告警、每日统计等话题，也可以都发到同一个话题。</li>
+                  <li>把机器人拉进群组并设为管理员（至少需要「发送消息」权限），并确认上方已开启机器人通知、完成「一键设置」。</li>
+                  <li>在群组的任意话题中发送 <code class="rounded bg-muted px-1">/chatid</code>，机器人会回复「群组 ID」和当前话题的「话题 ID」；在每个话题里各发一次即可得到全部话题 ID。</li>
+                  <li>把群组 ID 填到「管理员话题群组 ID」，各话题 ID 填到对应项（General 话题填 0），保存后用下方「测试发送」检查每个话题。</li>
+                  <li>填写群组 ID 后管理员通知只发到群组，不再私聊管理员；留空时仍私聊已绑定 Telegram 的管理员（与原项目一致）。群组中的成员都能看到通知，请只邀请管理人员。</li>
+                </ol>
+              </AlertDescription>
+            </Alert>
 
             <FieldRow
               v-for="f in visible(g)"
@@ -229,6 +272,13 @@ onMounted(load)
               :help="f.help"
             >
               <BoolSwitch v-if="f.kind === 'switch'" :model-value="values[f.key] as number" @update:model-value="(v) => set(f.key, v as number)" />
+              <SmtpServers
+                v-else-if="f.kind === 'smtp'"
+                :model-value="str(f.key)"
+                :testing="mailTesting"
+                @update:model-value="(v) => set(f.key, v)"
+                @test="testMail"
+              />
               <NumInput
                 v-else-if="f.kind === 'int' || f.kind === 'float'"
                 class="w-full max-w-60"
@@ -290,9 +340,18 @@ onMounted(load)
               />
             </FieldRow>
 
-            <FieldRow v-if="g.name === 'email'" label="发送测试邮件" help="邮件将会发送到当前登陆用户邮箱">
-              <Button variant="outline" :disabled="mailBusy" @click="testMail">
-                <Loader2Icon v-if="mailBusy" class="animate-spin" />
+            <FieldRow v-if="g.name === 'telegram'" label="测试发送" help="保存后向管理员话题群组的对应话题发送一条测试消息">
+              <div class="flex flex-wrap gap-2">
+                <Button v-for="t in topics" :key="t.name" variant="outline" size="sm" :disabled="!!topicBusy" @click="testTopic(t.name, t.label)">
+                  <Loader2Icon v-if="topicBusy === t.name" class="animate-spin" />
+                  <SendIcon v-else />
+                  {{ t.label }}
+                </Button>
+              </div>
+            </FieldRow>
+            <FieldRow v-if="g.name === 'email'" label="发送测试邮件" help="按当前发送方式发送到当前登录用户邮箱；单独测试某台服务器请用列表中的「测试」">
+              <Button variant="outline" :disabled="mailBusy" @click="testMail()">
+                <Loader2Icon v-if="mailTesting === -1" class="animate-spin" />
                 <MailIcon v-else />
                 发送测试邮件
               </Button>

@@ -217,6 +217,26 @@ func testNotify(t *testing.T, e *svcEnv) {
 	if reply, err := e.Notify(ctx, "EPay", p.UUID, epayNotify(p, o.TradeNo, "TRADE_SUCCESS")); err != nil || reply != "success" {
 		t.Errorf("重复回调: %q %v", reply, err)
 	}
+	// 已取消的订单收到回调：应答成功、订单不变，只通知管理员
+	var cancelled []string
+	e.OnCancelledPaid = func(_ context.Context, o *model.Order, name, cb string) {
+		cancelled = append(cancelled, o.TradeNo+"|"+name+"|"+cb)
+	}
+	oc := e.deposit(t, e.user(t, "nc@x.com").ID, 1000)
+	e.DB.Model(&model.Order{}).Where("id = ?", oc.ID).Update("status", model.OrderStatusCancelled)
+	if reply, err := e.Notify(ctx, "EPay", p.UUID, epayNotify(p, oc.TradeNo, "TRADE_SUCCESS")); err != nil || reply != "success" {
+		t.Errorf("已取消订单回调: %q %v", reply, err)
+	}
+	e.reload(t, &oc)
+	if oc.Status != model.OrderStatusCancelled || oc.PaidAt != nil || oc.CallbackNo != nil || e.paid.Load() != 1 ||
+		len(cancelled) != 1 || cancelled[0] != oc.TradeNo+"|EPay|CB"+oc.TradeNo {
+		t.Errorf("已取消订单不应被修改且应通知管理员: %+v %v", oc, cancelled)
+	}
+	// 已开通的订单再回调不通知
+	e.Notify(ctx, "EPay", p.UUID, epayNotify(p, o.TradeNo, "TRADE_SUCCESS"))
+	if len(cancelled) != 1 {
+		t.Error("只有已取消的订单才通知")
+	}
 
 	// 自定义应答与金额校验（EPaySubmitQrcode：订单金额 + 手续费）
 	sp := e.payment(t, "EPaySubmitQrcode", `{"url":"https://pay.example.com","pid":"1001","key":"k3y"}`, nil)

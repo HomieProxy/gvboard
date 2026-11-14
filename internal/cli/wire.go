@@ -80,6 +80,7 @@ func newServices(a *app.App) (*services, error) {
 	}
 	telegram.RegisterTask(a.Queue, sv.bot)
 	sv.pays.OnPaid = sv.bot.OnPaid
+	sv.pays.OnCancelledPaid = sv.bot.OnCancelledPaid
 	sv.tickets.OnEvent = sv.bot.OnTicket
 	sv.tickets.OnAdminReply = sv.bot.OnAdminReply
 	sv.tasks = &tasks.Service{

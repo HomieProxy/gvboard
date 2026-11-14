@@ -21,9 +21,10 @@ type MailDispatcher interface {
 	Dispatch(ctx context.Context, p mail.Payload) error
 }
 
-// Notifier Telegram 通知（telegram.Service），build 按接收者语言生成 HTML 文本。
+// Notifier Telegram 通知（telegram.Service），topic 为管理员话题群组中的类别（telegram.Topic*），
+// build 按接收者语言生成 HTML 文本。
 type Notifier interface {
-	NotifyAdmins(ctx context.Context, staff bool, build func(locale string) string)
+	NotifyAdmins(ctx context.Context, topic string, staff bool, build func(locale string) string)
 	NotifyUser(ctx context.Context, userID int64, kind telegram.NotifyKind, build func(locale string) string)
 }
 
@@ -68,6 +69,12 @@ func (s *Service) Jobs() []scheduler.Job {
 	return []scheduler.Job{
 		{Name: "statistics", Spec: "10 0 * * *", NoOverlap: true, Run: func(ctx context.Context) error {
 			return s.Statistics(ctx, s.now().AddDate(0, 0, -1))
+		}},
+		{Name: "daily_report", Spec: "20 0 * * *", NoOverlap: true, Run: func(ctx context.Context) error {
+			if !s.Settings.Bool("telegram_daily_report") {
+				return nil
+			}
+			return s.DailyReport(ctx, s.now().AddDate(0, 0, -1))
 		}},
 		{Name: "reset_traffic", Spec: "0 0 * * *", NoOverlap: true, Run: func(ctx context.Context) error {
 			_, err := s.ResetTraffic(ctx)

@@ -533,6 +533,76 @@ func TestTicketNotifications(t *testing.T) {
 	})
 }
 
+func TestAdminTopicGroup(t *testing.T) {
+	eachDriver(t, func(t *testing.T, e *env) {
+		ctx := context.Background()
+		admin, _ := e.user(t)
+		e.DB.Model(admin).Update("is_admin", 1)
+		e.bindDirect(t, admin, 2101)
+		buyer, _ := e.user(t)
+		threadOf := func(chat int64) float64 {
+			calls := e.api.called("sendMessage")
+			for i := len(calls) - 1; i >= 0; i-- {
+				if chatOf(calls[i]) == chat {
+					v, _ := calls[i].Params["message_thread_id"].(float64)
+					return v
+				}
+			}
+			return -1
+		}
+
+		// 未设置群组：私聊管理员，测试发送报错
+		e.OnPaid(ctx, &model.Order{UserID: buyer.ID, TradeNo: "G1", TotalAmount: 100})
+		wantContains(t, e.api.last(2101), "💰成功收款 1 元")
+		if err := e.TestTopic(ctx, TopicOrder); err != errNoAdminGroup {
+			t.Fatalf("未设置群组应报错：%v", err)
+		}
+
+		e.set(t, map[string]any{"telegram_admin_chat_id": "-1001234", "telegram_topic_order": 11, "telegram_topic_alert": 33})
+		e.api.reset()
+		e.OnPaid(ctx, &model.Order{UserID: buyer.ID, TradeNo: "G2", TotalAmount: 100})
+		wantContains(t, e.api.last(-1001234), "💰成功收款 1 元", "G2")
+		if threadOf(-1001234) != 11 || len(e.api.messages(2101)) != 0 {
+			t.Fatal("设置群组后只发到群组的订单话题")
+		}
+		// 未设置话题 ID 的类别发到 General（不带 message_thread_id）
+		e.OnTicket(ctx, ticket.Event{Kind: ticket.EventWithdraw, Ticket: model.Ticket{ID: 9, Subject: "s"}, Message: "m"})
+		if threadOf(-1001234) != 0 {
+			t.Fatal("工单话题未设置时应发到 General")
+		}
+
+		// 已取消订单收到付款：告警话题，同一订单只通知一次
+		o := &model.Order{UserID: buyer.ID, TradeNo: "G3", TotalAmount: 500}
+		e.OnCancelledPaid(ctx, o, "支付宝", "PAY<1>")
+		e.OnCancelledPaid(ctx, o, "支付宝", "PAY<1>")
+		msgs := e.api.messages(-1001234)
+		wantContains(t, msgs[len(msgs)-1], "已取消的订单收到付款", "G3", "5 元", "PAY&lt;1&gt;", "补单")
+		if threadOf(-1001234) != 33 || len(msgs) != 3 {
+			t.Fatalf("告警应发到告警话题且只发一次：%d", len(msgs))
+		}
+
+		if err := e.TestTopic(ctx, TopicAlert); err != nil || threadOf(-1001234) != 33 {
+			t.Fatalf("测试发送失败：%v", err)
+		}
+		wantContains(t, e.api.last(-1001234), "「告警」")
+		e.api.fail["sendMessage"] = 400
+		if err := e.TestTopic(ctx, TopicOrder); err == nil || err.Error() != errApply.Msg {
+			t.Fatalf("Telegram 报错应返回：%v", err)
+		}
+		delete(e.api.fail, "sendMessage")
+
+		// /chatid 在话题中回复群组与话题 ID
+		up := message(2101, "zh", "/chatid")
+		up.Message.Chat = Chat{ID: -1001234, Type: "supergroup"}
+		up.Message.IsTopicMessage, up.Message.MessageThreadID = true, 77
+		e.HandleUpdate(ctx, up)
+		wantContains(t, e.api.last(-1001234), "群组 ID：<code>-1001234</code>", "话题 ID：<code>77</code>")
+		if threadOf(-1001234) != 77 {
+			t.Fatal("/chatid 应回复到同一话题")
+		}
+	})
+}
+
 func TestJoinRequest(t *testing.T) {
 	eachDriver(t, func(t *testing.T, e *env) {
 		ok, okSub := e.user(t)

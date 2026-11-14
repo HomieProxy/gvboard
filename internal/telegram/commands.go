@@ -45,7 +45,15 @@ func (s *Service) builtinCommands() []Command {
 		{Name: "unbind", Description: "Unbind your account", Private: true, Handle: s.cmdUnbind},
 		{Name: "traffic", Description: "Check traffic usage", Private: true, Handle: s.cmdTraffic},
 		{Name: "getlatesturl", Description: "Get the latest website URL", Handle: s.cmdLatestURL},
+		{Name: "chatid", Handle: s.cmdChatID},
 	}
+}
+
+// cmdChatID 回复当前会话与话题的 ID，管理员在话题群组中发送以获取通知配置所需的 ID（决策 D72）。
+func (s *Service) cmdChatID(ctx context.Context, c *Context) error {
+	return c.Reply(ctx, s.T(c.Locale, "telegram.chatid", i18n.Params{
+		"chat": "<code>" + strconv.FormatInt(c.ChatID, 10) + "</code>", "thread": "<code>" + strconv.FormatInt(c.ThreadID, 10) + "</code>",
+	}), nil)
 }
 
 // cmdStart 欢迎信息；带 bind_ 参数时为网站一键绑定（t.me/机器人?start=bind_xxx）。
@@ -236,7 +244,7 @@ func (s *Service) replyTicket(ctx context.Context, c *Context) error {
 	if err := c.Reply(ctx, c.T("Ticket #:id has been replied", i18n.Params{"id": "<code>" + m[1] + "</code>"}), nil); err != nil {
 		s.log().Warn("回复 Telegram 消息失败", zap.Error(err))
 	}
-	s.NotifyAdmins(ctx, true, func(locale string) string {
+	s.NotifyAdmins(ctx, TopicTicket, true, func(locale string) string {
 		return s.T(locale, "Ticket #:id has been replied by :email", i18n.Params{
 			"id": "<code>" + m[1] + "</code>", "email": esc(u.Email),
 		})

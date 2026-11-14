@@ -84,7 +84,31 @@ func (s *Service) Save(ctx context.Context, values map[string]any) error {
 		}
 		clean[k] = cv
 	}
+	mirrorSMTP(clean)
 	return s.Settings.Set(ctx, clean)
+}
+
+// mirrorSMTP 保存多个 SMTP 服务器时，把第一个同步到原项目的单个 SMTP 设置项，兼容层与旧管理端看到的仍是可用配置；
+// 保存空列表时一并清空单个配置，否则删光服务器后仍会用旧配置发信。
+func mirrorSMTP(clean map[string]any) {
+	raw, ok := clean["email_smtp_servers"].(string)
+	if !ok {
+		return
+	}
+	list, err := setting.ParseSMTPServers(raw)
+	if err != nil {
+		return
+	}
+	var first setting.SMTPServer
+	if len(list) > 0 {
+		first = list[0]
+	}
+	clean["email_host"] = first.Host
+	clean["email_port"] = int64(first.Port)
+	clean["email_encryption"] = first.Encryption
+	clean["email_username"] = first.Username
+	clean["email_password"] = first.Password
+	clean["email_from_address"] = first.FromAddress
 }
 
 func httpURL(_ *Service, v any) error {
@@ -199,9 +223,10 @@ var saveRules = map[string]func(*Service, any) error{
 func (s *Service) EmailTemplates() []string { return s.Mailer.Themes() }
 
 // TestMail 立即向 to 发送一封测试邮件并写入邮件日志，返回日志记录（对应原项目 admin/config/testSendMail）。
-func (s *Service) TestMail(ctx context.Context, to, subject, content string) model.MailLog {
+// server 不为空时只用该序号的 SMTP 服务器发送（决策 D72）。
+func (s *Service) TestMail(ctx context.Context, to, subject, content string, server *int) model.MailLog {
 	return s.Mailer.Deliver(ctx, s.DB, s.log(), mail.Payload{
-		Email: to, Subject: subject, TemplateName: mail.TplNotify,
+		Email: to, Subject: subject, TemplateName: mail.TplNotify, Server: server,
 		TemplateValue: map[string]any{
 			"name": s.Settings.String("app_name"), "url": s.Settings.String("app_url"), "content": content,
 		},
