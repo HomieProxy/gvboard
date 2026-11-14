@@ -46,7 +46,7 @@ func (s *Service) Fetch(group string) (map[string]map[string]any, error) {
 	out := map[string]map[string]any{}
 	all := s.Settings.All()
 	for _, d := range setting.Defs() {
-		if d.Group == setting.GroupLegacy || (group != "" && d.Group != group) {
+		if !d.Editable() || (group != "" && d.Group != group) {
 			continue
 		}
 		if out[d.Group] == nil {
@@ -70,7 +70,7 @@ func (s *Service) Save(ctx context.Context, values map[string]any) error {
 	clean := make(map[string]any, len(values))
 	for k, v := range values {
 		d, ok := setting.Lookup(k)
-		if !ok || d.Group == setting.GroupLegacy {
+		if !ok || !d.Editable() {
 			return httpx.Validation(fmt.Sprintf("未知配置项：%s", k))
 		}
 		cv, err := setting.Coerce(d, v)
@@ -186,7 +186,7 @@ var saveRules = map[string]func(*Service, any) error{
 		}
 		return nil
 	},
-	// 邮件模板只能选择内置模板（决策 D53）。
+	// 邮件模板只能选择内置或已新增的模板（决策 D53、D71）。
 	"email_template": func(s *Service, v any) error {
 		if t, _ := v.(string); !slices.Contains(s.EmailTemplates(), t) {
 			return fmt.Errorf("邮件模板不存在")

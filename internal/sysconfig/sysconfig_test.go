@@ -266,5 +266,72 @@ func TestHTTP(t *testing.T) {
 		if len(e.sent) != 1 || e.sent[0].to != "admin@x.com" || e.sent[0].subject != "Test email from 测试站" {
 			t.Fatalf("测试邮件收件人或主题错误：%+v", e.sent)
 		}
+		const p = "newsecurepath0123456/config/mail-templates"
+		if w := do("POST", p+"/preview", `{"name":"verify","content":"<b>{{.name}} {{.code}}</b>"}`, adminTok); w.Code != 200 ||
+			!strings.Contains(w.Body.String(), `测试站 123456`) {
+			t.Fatalf("预览错误：%s", w.Body)
+		}
+		if w := do("PUT", p+"/brand/verify", `{"content":"x"}`, userTok); w.Code != http.StatusNotFound {
+			t.Fatalf("普通用户应 404，实际 %d", w.Code)
+		}
+		if w := do("POST", p, `{"theme":"brand","from":"classic"}`, adminTok); w.Code != 200 {
+			t.Fatalf("新增模板失败：%s", w.Body)
+		}
+		if w := do("GET", p+"/brand/verify", "", adminTok); w.Code != 200 || !strings.Contains(w.Body.String(), `"custom":true`) ||
+			!strings.Contains(w.Body.String(), `"default":""`) {
+			t.Fatalf("新增模板内容错误：%s", w.Body)
+		}
+		if w := do("PUT", p+"/brand/verify", `{"content":"{{if}}"}`, adminTok); w.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("语法错误应 422，实际 %d", w.Code)
+		}
+		if w := do("PUT", p+"/brand/verify", `{"content":""}`, adminTok); w.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("新增模板内容为空应 422，实际 %d", w.Code)
+		}
+		if w := do("PUT", p+"/brand/verify", `{"content":"<p>品牌 {{.code}}</p>"}`, adminTok); w.Code != 200 {
+			t.Fatalf("保存模板失败：%s", w.Body)
+		}
+		if w := do("PUT", "newsecurepath0123456/config", `{"email_template":"brand"}`, adminTok); w.Code != 200 {
+			t.Fatalf("切换到新增模板失败：%s", w.Body)
+		}
+		if w := do("PUT", "newsecurepath0123456/config", `{"email_templates_custom":"{}"}`, adminTok); w.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("系统配置接口不能修改自定义模板，实际 %d", w.Code)
+		}
+		if w := do("GET", "newsecurepath0123456/config", "", adminTok); strings.Contains(w.Body.String(), "email_templates_custom") {
+			t.Fatal("系统配置接口不应返回自定义模板")
+		}
+		classic, _ := e.Mailer.Render("classic", mail.TplNotify, map[string]any{"content": "c"})
+		if out, _ := e.Mailer.Render("brand", mail.TplNotify, map[string]any{"content": "c"}); out != classic {
+			t.Fatal("新增模板中未修改的模板应与来源模板一致")
+		}
+		if out, _ := e.Mailer.Render(e.Mailer.Theme(), mail.TplVerify, map[string]any{"code": "7"}); out != "<p>品牌 7</p>" {
+			t.Fatalf("切换模板后未使用新增模板：%s", out)
+		}
+		if w := do("DELETE", p+"/brand", "", adminTok); w.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("正在使用的模板不能删除，实际 %d", w.Code)
+		}
+		if w := do("DELETE", p+"/default", "", adminTok); w.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("内置模板不能删除，实际 %d", w.Code)
+		}
+		if w := do("PUT", p+"/default/verify", `{"content":"<p>改 {{.code}}</p>"}`, adminTok); w.Code != 200 {
+			t.Fatalf("修改内置模板失败：%s", w.Body)
+		}
+		if out, _ := e.Mailer.Render("default", mail.TplVerify, map[string]any{"code": "9"}); out != "<p>改 9</p>" {
+			t.Fatalf("修改内置模板未生效：%s", out)
+		}
+		if w := do("PUT", p+"/default/verify", `{"content":""}`, adminTok); w.Code != 200 {
+			t.Fatalf("恢复默认失败：%s", w.Body)
+		}
+		e.Settings.Set(ctx, map[string]any{"email_template": "default"})
+		if w := do("DELETE", p+"/brand", "", adminTok); w.Code != 200 {
+			t.Fatalf("删除模板失败：%s", w.Body)
+		}
+		if e.Settings.String(mail.CustomKey) != "" {
+			t.Fatalf("全部恢复后自定义模板应为空：%s", e.Settings.String(mail.CustomKey))
+		}
+		for _, bad := range []string{`{"theme":"../x","from":"default"}`, `{"theme":"default","from":"default"}`, `{"theme":"n","from":"nope"}`} {
+			if w := do("POST", p, bad, adminTok); w.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("%s 应 422，实际 %d", bad, w.Code)
+			}
+		}
 	})
 }

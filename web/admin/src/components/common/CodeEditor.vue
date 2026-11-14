@@ -8,6 +8,7 @@ import { StreamLanguage, indentUnit, syntaxHighlighting } from '@codemirror/lang
 import { yaml } from '@codemirror/lang-yaml'
 import { json } from '@codemirror/lang-json'
 import { properties } from '@codemirror/legacy-modes/mode/properties'
+import { html } from '@codemirror/legacy-modes/mode/xml'
 import { classHighlighter } from '@lezer/highlight'
 
 const props = withDefaults(defineProps<{ modelValue: string; lang?: string; placeholder?: string }>(), { lang: 'text', placeholder: '' })
@@ -19,6 +20,7 @@ let view: EditorView | undefined
 function language(lang: string): Extension {
   if (lang === 'yaml') return [yaml(), indentUnit.of('  ')]
   if (lang === 'json') return json()
+  if (lang === 'html') return [StreamLanguage.define(html), indentUnit.of('  ')]
   // Surge / QuantumultX 等 INI 风格的模板
   return StreamLanguage.define(properties)
 }

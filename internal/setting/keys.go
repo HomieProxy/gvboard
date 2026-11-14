@@ -46,8 +46,12 @@ const (
 	GroupApp       = "app"
 	GroupClient    = "client"
 	GroupGvboard   = "gvboard"
-	GroupLegacy    = "legacy" // 原项目中存在但已不在管理端展示的项
+	GroupLegacy    = "legacy"   // 原项目中存在但已不在管理端展示的项
+	GroupInternal  = "internal" // 由专用接口维护，不在系统配置中读取与保存
 )
+
+// Editable 是否可通过系统配置读取与保存。
+func (d Def) Editable() bool { return d.Group != GroupLegacy && d.Group != GroupInternal }
 
 // 原项目默认值（Dict.php）
 var (
@@ -313,6 +317,9 @@ var defs = []Def{
 	{Key: "subscribe_share_ip_limit", Type: TypeInt, Default: 0, Group: GroupGvboard, Validate: intRange(0, 10000)},
 	{Key: "subscribe_share_window", Type: TypeInt, Default: 24, Group: GroupGvboard, Validate: intRange(1, 168)},
 	{Key: "subscribe_share_action", Type: TypeString, Default: "log", Group: GroupGvboard, Validate: oneOf("log", "empty", "deny")},
+
+	// 自定义邮件模板，JSON：{"风格": {"模板名": "内容"}}，内置风格中的项覆盖内置内容（决策 D71）。
+	{Key: "email_templates_custom", Type: TypeString, Default: "", Group: GroupInternal},
 
 	// 原项目遗留项
 	{Key: "stripe_pk_live", Type: TypeString, Default: "", Group: GroupLegacy},

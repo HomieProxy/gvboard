@@ -194,9 +194,10 @@ onMounted(load)
             <Textarea v-else-if="f.type === 'text'" :model-value="String(cfgValues[f.key] ?? '')" rows="4" @update:model-value="(v) => (cfgValues[f.key] = v)" />
             <Input
               v-else
-              :type="f.type === 'password' ? 'password' : 'text'"
+              :class="f.type === 'password' ? 'font-mono' : ''"
               :model-value="String(cfgValues[f.key] ?? '')"
               autocomplete="off"
+              spellcheck="false"
               @update:model-value="(v) => (cfgValues[f.key] = v)"
             />
           </FormItem>

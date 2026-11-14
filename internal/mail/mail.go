@@ -13,6 +13,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	gomail "github.com/wneessen/go-mail"
@@ -58,15 +59,19 @@ type Transport func(ctx context.Context, c SMTPConfig, to, subject, htmlBody str
 // Mailer 邮件服务。
 type Mailer struct {
 	settings  Settings
-	templates map[string]*template.Template // 键为 "风格/模板名"
+	templates map[string]*template.Template // 内置模板，键为 "风格/模板名"
+	sources   map[string]string             // 内置模板源码，键同上
 	send      Transport
 	// Hooks 插件过滤器（邮件内容），启动时设置，可为 nil。
 	Hooks hook.Hooks
+
+	mu     sync.Mutex
+	custom *customSet
 }
 
 // New 加载内置模板。
 func New(s Settings) (*Mailer, error) {
-	m := &Mailer{settings: s, templates: map[string]*template.Template{}, send: SMTPTransport}
+	m := &Mailer{settings: s, templates: map[string]*template.Template{}, sources: map[string]string{}, send: SMTPTransport}
 	err := fs.WalkDir(templateFS, "templates", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || path.Ext(p) != ".html" {
 			return err
@@ -76,24 +81,32 @@ func New(s Settings) (*Mailer, error) {
 			return err
 		}
 		rel := strings.TrimSuffix(strings.TrimPrefix(p, "templates/"), ".html")
-		t, err := template.New(rel).Funcs(template.FuncMap{"nl2br": nl2br}).Option("missingkey=zero").Parse(string(b))
+		t, err := parse(rel, string(b))
 		if err != nil {
 			return fmt.Errorf("邮件模板 %s 解析失败: %w", rel, err)
 		}
 		m.templates[rel] = t
+		m.sources[rel] = string(b)
 		return nil
 	})
 	return m, err
 }
 
+func parse(name, src string) (*template.Template, error) {
+	return template.New(name).Funcs(template.FuncMap{"nl2br": nl2br}).Option("missingkey=zero").Parse(src)
+}
+
 // SetTransport 替换发送实现（测试用）。
 func (m *Mailer) SetTransport(t Transport) { m.send = t }
 
-// Themes 返回可用的模板风格。
+// Themes 返回可用的模板风格（内置与自定义）。
 func (m *Mailer) Themes() []string {
 	seen := map[string]bool{}
 	for k := range m.templates {
 		seen[strings.SplitN(k, "/", 2)[0]] = true
+	}
+	for theme := range m.customTemplates().src {
+		seen[theme] = true
 	}
 	out := make([]string, 0, len(seen))
 	for k := range seen {
@@ -103,20 +116,30 @@ func (m *Mailer) Themes() []string {
 	return out
 }
 
+// Builtin 是否为内置风格。
+func (m *Mailer) Builtin(theme string) bool {
+	_, ok := m.templates[theme+"/"+TplVerify]
+	return ok
+}
+
 // Theme 返回当前设置的模板风格，不存在时使用默认风格。
 func (m *Mailer) Theme() string {
 	theme := m.settings.String("email_template")
-	for k := range m.templates {
-		if strings.HasPrefix(k, theme+"/") {
-			return theme
-		}
+	if m.Builtin(theme) {
+		return theme
+	}
+	if _, ok := m.customTemplates().src[theme]; ok {
+		return theme
 	}
 	return DefaultTheme
 }
 
-// Render 渲染模板。
+// Render 渲染模板：依次使用该风格的自定义内容、内置内容、默认风格的内置内容。
 func (m *Mailer) Render(theme, name string, vars map[string]any) (string, error) {
-	t, ok := m.templates[theme+"/"+name]
+	t, ok := m.customTemplates().tpls[theme+"/"+name]
+	if !ok {
+		t, ok = m.templates[theme+"/"+name]
+	}
 	if !ok {
 		if t, ok = m.templates[DefaultTheme+"/"+name]; !ok {
 			return "", fmt.Errorf("邮件模板不存在: %s", name)

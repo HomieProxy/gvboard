@@ -30,7 +30,7 @@ func (m *Module) adminConfigSave(c *gin.Context) {
 	in := params(c)
 	values := map[string]any{}
 	for k, v := range in {
-		if d, found := setting.Lookup(k); found && d.Group != setting.GroupLegacy {
+		if d, found := setting.Lookup(k); found && d.Editable() {
 			values[k] = v
 		}
 	}

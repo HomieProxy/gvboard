@@ -27,6 +27,7 @@ import { configGroups, type ConfigField, type ConfigGroup } from '../configSpec'
 import { loadPlans, planOptions } from '../refs'
 
 const CodeEditor = defineAsyncComponent(() => import('../components/common/CodeEditor.vue'))
+const MailTemplates = defineAsyncComponent(() => import('../components/MailTemplates.vue'))
 
 type Value = string | number | string[] | null
 interface Template {
@@ -83,7 +84,8 @@ const same = (a: Value, b: Value) => JSON.stringify(a ?? null) === JSON.stringif
 const currentKeys = computed(() => {
   const g = configGroups.find((x) => x.name === tab.value)
   if (g) return keysOf(g)
-  return templates.value.map((t) => t.setting_key)
+  if (tab.value === 'templates') return templates.value.map((t) => t.setting_key)
+  return []
 })
 const dirty = computed(() => currentKeys.value.filter((k) => !same(values.value[k], origin.value[k])))
 
@@ -99,7 +101,11 @@ function set(k: string, v: Value) {
   values.value[k] = v
 }
 
-const tabItems = computed(() => [...configGroups.map((g) => ({ name: g.name, title: g.title })), { name: 'templates', title: '订阅模板' }])
+const tabItems = computed(() => [
+  ...configGroups.map((g) => ({ name: g.name, title: g.title })),
+  { name: 'templates', title: '订阅模板' },
+  { name: 'mail', title: '邮件模板' },
+])
 const tabCls =
   'h-11 flex-none rounded-none border-0 border-b-2 border-transparent px-3 text-muted-foreground hover:text-foreground ' +
   'data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none ' +
@@ -167,6 +173,18 @@ async function tgStatus() {
     tgInfo.value = await admin.get('/telegram/info')
     tgShow.value = true
   })
+}
+
+// ---------- 邮件模板 ----------
+const mailRef = ref<{ reload: () => Promise<void> }>()
+async function reloadMailThemes() {
+  mailTemplates.value = (await admin.get<string[]>('/config/email-templates')) || mailTemplates.value
+}
+async function activateMail(theme: string) {
+  const prev = values.value.email_template
+  values.value.email_template = theme
+  if (!(await save(['email_template']))) values.value.email_template = prev
+  await mailRef.value?.reload()
 }
 
 // ---------- 订阅模板 ----------
@@ -263,8 +281,9 @@ onMounted(load)
               </div>
               <Input
                 v-else
-                :type="f.kind === 'password' ? 'password' : 'text'"
-                autocomplete="new-password"
+                :class="f.kind === 'password' ? 'font-mono' : ''"
+                autocomplete="off"
+                spellcheck="false"
                 :model-value="str(f.key)"
                 :placeholder="f.placeholder"
                 @update:model-value="(v) => set(f.key, String(v))"
@@ -331,6 +350,10 @@ onMounted(load)
             </CollapsibleContent>
           </Collapsible>
         </div>
+      </TabsContent>
+
+      <TabsContent value="mail" class="px-4 py-5 md:px-8">
+        <MailTemplates ref="mailRef" @changed="reloadMailThemes" @activate="activateMail" />
       </TabsContent>
     </Tabs>
     </Card>

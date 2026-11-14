@@ -254,7 +254,7 @@ export const configGroups: ConfigGroup[] = [
       { key: 'email_username', label: 'SMTP账号', kind: 'text', help: '由邮件服务商提供的账号', placeholder: '请输入' },
       { key: 'email_password', label: 'SMTP密码', kind: 'password', help: '由邮件服务商提供的密码', placeholder: '请输入' },
       { key: 'email_from_address', label: '发件地址', kind: 'text', help: '由邮件服务商提供的发件地址', placeholder: '请输入' },
-      { key: 'email_template', label: '邮件模板', kind: 'select', help: '你可以在文档查看如何自定义邮件模板', options: [] },
+      { key: 'email_template', label: '邮件模板', kind: 'select', help: '可在「邮件模板」标签页修改、预览或新增模板', options: [] },
     ],
   },
   {
