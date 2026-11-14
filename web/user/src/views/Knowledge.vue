@@ -71,8 +71,8 @@ onMounted(() => {
   <div>
     <PageHeader :title="t('nav.knowledge')">
       <div class="relative w-64 max-w-full">
-        <SearchIcon class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input v-model="keyword" class="pl-8" :placeholder="t('knowledge.search')" />
+        <SearchIcon class="pointer-events-none absolute top-1/2 start-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input v-model="keyword" class="ps-8" :placeholder="t('knowledge.search')" />
       </div>
     </PageHeader>
     <div v-if="loading && !groups.length" class="grid gap-6 lg:grid-cols-2">
@@ -88,7 +88,7 @@ onMounted(() => {
             v-for="a in g.articles"
             :key="a.id"
             type="button"
-            class="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent"
+            class="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-start transition-colors hover:bg-accent"
             @click="open(a.id)"
           >
             <FileTextIcon class="size-4 shrink-0 text-muted-foreground" />

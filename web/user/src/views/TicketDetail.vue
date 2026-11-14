@@ -110,7 +110,7 @@ onUnmounted(() => clearInterval(poll))
         <StatusBadge>{{ t(`ticket.levels.${ticket.level}`) }}</StatusBadge>
         <StatusBadge v-if="ticket.status === 1" dot>{{ t('ticket.closed') }}</StatusBadge>
         <span v-if="subLabel" class="text-sm text-muted-foreground">{{ t('ticket.subscription') }}：{{ subLabel }}</span>
-        <Button v-if="ticket.status === 0" variant="outline" size="sm" class="ml-auto" @click="close">{{ t('ticket.close') }}</Button>
+        <Button v-if="ticket.status === 0" variant="outline" size="sm" class="ms-auto" @click="close">{{ t('ticket.close') }}</Button>
       </div>
 
       <Card class="gap-0 py-0">

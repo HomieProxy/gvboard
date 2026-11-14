@@ -50,6 +50,26 @@ func TestGenerateAndLoad(t *testing.T) {
 	}
 }
 
+// 安装脚本通过 init 参数写入连接信息，特殊字符（引号、反斜杠、#、换行）必须原样保留。
+func TestGenerateConnection(t *testing.T) {
+	pass := "p\"a#s\\s: x\n'y"
+	cfg, err := Load(writeConfig(t, generated(t, GenerateOptions{
+		Listen: "127.0.0.1:9000", DBHost: "db.local", DBPort: 3307, DBName: "gv", DBUser: "u#1",
+		DBPassword: pass, RedisAddr: "127.0.0.1:6380", RedisPassword: "r'p", RedisDB: 5,
+	})))
+	if err != nil {
+		t.Fatalf("加载生成的配置失败: %v", err)
+	}
+	d, r := cfg.Database, cfg.Redis
+	if cfg.Server.Listen != "127.0.0.1:9000" || d.Host != "db.local" || d.Port != 3307 || d.Name != "gv" || d.User != "u#1" ||
+		d.Password != pass || r.Addr != "127.0.0.1:6380" || r.Password != "r'p" || r.DB != 5 {
+		t.Fatalf("连接信息不正确: listen=%s db=%+v redis=%+v", cfg.Server.Listen, d, r)
+	}
+	if _, err := Generate(GenerateOptions{DBPort: 70000}); err == nil {
+		t.Fatal("端口超出范围应报错")
+	}
+}
+
 func TestGenerateRandomness(t *testing.T) {
 	a, _ := Generate(GenerateOptions{})
 	b, _ := Generate(GenerateOptions{})

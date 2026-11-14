@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { createStore } from '@gv/shared'
 import zhCN from './locales/zh-CN'
@@ -16,6 +17,9 @@ export type Locale = (typeof locales)[number]['value']
 export type Messages = typeof zhCN
 
 const prefs = createStore('gvu')
+
+/** 当前语言是否从右往左书写（侧边栏随之放到右侧）。 */
+export const rtl = ref(false)
 
 export const i18n = createI18n({
   legacy: false,
@@ -47,7 +51,8 @@ export async function setLocale(l: Locale, save = true) {
   }
   i18n.global.locale.value = l
   document.documentElement.lang = l
-  document.documentElement.dir = l === 'fa-IR' ? 'rtl' : 'ltr'
+  rtl.value = l === 'fa-IR'
+  document.documentElement.dir = rtl.value ? 'rtl' : 'ltr'
   if (save) prefs.set('locale', l)
 }
 

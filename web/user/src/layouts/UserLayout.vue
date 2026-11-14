@@ -15,6 +15,7 @@ import { confirm } from '../ui'
 import { nav } from '../router'
 import { clearSession, loadBiz, loadMe, me } from '../store'
 import TopActions from '../components/TopActions.vue'
+import { rtl } from '../i18n'
 import type { Session } from '../types'
 
 const { t } = useI18n()
@@ -57,7 +58,7 @@ onMounted(() => {
 
 <template>
   <SidebarProvider class="min-h-svh">
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" :side="rtl ? 'right' : 'left'">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -106,7 +107,7 @@ onMounted(() => {
                     <AvatarFallback class="rounded-lg">{{ (me?.email || '?').slice(0, 1).toUpperCase() }}</AvatarFallback>
                   </Avatar>
                   <span class="truncate text-sm">{{ me?.email }}</span>
-                  <ChevronsUpDownIcon class="ml-auto size-4" />
+                  <ChevronsUpDownIcon class="ms-auto size-4" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" align="start" class="w-(--reka-dropdown-menu-trigger-width) min-w-56">
@@ -124,10 +125,10 @@ onMounted(() => {
 
     <SidebarInset class="min-w-0">
       <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-card/90 px-4 backdrop-blur">
-        <SidebarTrigger class="-ml-1" />
-        <Separator orientation="vertical" class="mr-1 data-[orientation=vertical]:h-4" />
+        <SidebarTrigger class="-ms-1" />
+        <Separator orientation="vertical" class="me-1 data-[orientation=vertical]:h-4" />
         <span class="truncate text-sm font-medium">{{ current ? t(`nav.${current.key}`) : '' }}</span>
-        <div class="ml-auto"><TopActions /></div>
+        <div class="ms-auto"><TopActions /></div>
       </header>
       <main class="flex-1">
         <div class="mx-auto w-full max-w-7xl p-4 md:p-6">

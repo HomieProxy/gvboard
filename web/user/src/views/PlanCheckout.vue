@@ -178,7 +178,7 @@ onMounted(async () => {
                   type="button"
                   :class="
                     cn(
-                      'relative rounded-lg border p-3 pr-8 text-left transition-colors hover:border-primary/60',
+                      'relative rounded-lg border p-3 pe-8 text-start transition-colors hover:border-primary/60',
                       immediate === m.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : '',
                     )
                   "
@@ -186,7 +186,7 @@ onMounted(async () => {
                 >
                   <div class="text-sm font-medium">{{ m.title }}</div>
                   <div class="mt-1 text-xs text-muted-foreground">{{ m.hint }}</div>
-                  <CheckIcon v-if="immediate === m.value" class="absolute top-2.5 right-2.5 size-4 text-primary" />
+                  <CheckIcon v-if="immediate === m.value" class="absolute top-2.5 end-2.5 size-4 text-primary" />
                 </button>
               </div>
               <Alert v-if="changing && biz && !biz.plan_change" variant="destructive">
@@ -213,7 +213,7 @@ onMounted(async () => {
                   type="button"
                   :class="
                     cn(
-                      'relative rounded-lg border p-3 text-left transition-colors hover:border-primary/60',
+                      'relative rounded-lg border p-3 text-start transition-colors hover:border-primary/60',
                       period === p.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : '',
                     )
                   "
@@ -221,7 +221,7 @@ onMounted(async () => {
                 >
                   <div class="text-sm text-muted-foreground">{{ p.label }}</div>
                   <div class="mt-1 text-lg font-semibold tabular-nums">{{ money(p.price) }}</div>
-                  <CheckIcon v-if="period === p.value" class="absolute top-2.5 right-2.5 size-4 text-primary" />
+                  <CheckIcon v-if="period === p.value" class="absolute top-2.5 end-2.5 size-4 text-primary" />
                 </button>
               </div>
               <p v-else class="text-sm text-muted-foreground">{{ t('plan.noPeriod') }}</p>
@@ -236,8 +236,8 @@ onMounted(async () => {
           <CardContent class="space-y-4">
             <div class="flex gap-2">
               <div class="relative flex-1">
-                <TicketPercentIcon class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input v-model="couponCode" class="pl-8" :placeholder="t('plan.couponPlaceholder')" @keyup.enter="applyCoupon" />
+                <TicketPercentIcon class="pointer-events-none absolute top-1/2 start-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input v-model="couponCode" class="ps-8" :placeholder="t('plan.couponPlaceholder')" @keyup.enter="applyCoupon" />
               </div>
               <Button variant="outline" :disabled="!couponCode.trim() || !period || checking" @click="applyCoupon">
                 <Loader2Icon v-if="checking" class="animate-spin" />{{ t('plan.apply') }}

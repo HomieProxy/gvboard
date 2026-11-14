@@ -59,7 +59,7 @@ onUnmounted(pause)
       />
     </template>
     <div :class="cn('absolute inset-0', image(current) ? 'bg-gradient-to-t from-black/75 via-black/30 to-transparent' : '')" />
-    <button type="button" class="absolute inset-0 flex flex-col justify-end p-5 text-left text-white sm:p-6" @click="emit('open', current)">
+    <button type="button" class="absolute inset-0 flex flex-col justify-end p-5 text-start text-white sm:p-6" @click="emit('open', current)">
       <span class="mb-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-white/20 px-2.5 py-0.5 text-xs backdrop-blur">
         <MegaphoneIcon class="size-3.5" />{{ t('dashboard.notices') }}
       </span>
@@ -69,19 +69,19 @@ onUnmounted(pause)
     <template v-if="notices.length > 1">
       <button
         type="button"
-        class="absolute top-1/2 left-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/25 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/40"
+        class="absolute top-1/2 start-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/25 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/40"
         @click="step(-1)"
       >
         <ChevronLeftIcon class="size-4 rtl:rotate-180" />
       </button>
       <button
         type="button"
-        class="absolute top-1/2 right-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/25 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/40"
+        class="absolute top-1/2 end-2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/25 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/40"
         @click="step(1)"
       >
         <ChevronRightIcon class="size-4 rtl:rotate-180" />
       </button>
-      <div class="absolute right-5 bottom-5 flex gap-1.5 sm:right-6 sm:bottom-6">
+      <div class="absolute end-5 bottom-5 flex gap-1.5 sm:end-6 sm:bottom-6">
         <button
           v-for="(n, i) in notices"
           :key="n.id"

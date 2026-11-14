@@ -44,7 +44,7 @@ const modes = computed(() => [
         <DropdownMenuItem v-for="m in modes" :key="m.key" @click="setAppearance(m.key)">
           <component :is="m.icon" />
           {{ m.label }}
-          <CheckIcon v-if="(appearance || 'auto') === m.key" class="ml-auto" />
+          <CheckIcon v-if="(appearance || 'auto') === m.key" class="ms-auto" />
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

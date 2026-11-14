@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { InfoIcon, Loader2Icon, MailIcon, SendIcon, ActivityIcon, ChevronDownIcon } from '@lucide/vue'
 import { formatTime } from '@gv/shared'
@@ -25,6 +25,8 @@ import { admin, cfg } from '../api'
 import { ask, errText, message, run } from '../ui'
 import { configGroups, type ConfigField, type ConfigGroup } from '../configSpec'
 import { loadPlans, planOptions } from '../refs'
+
+const CodeEditor = defineAsyncComponent(() => import('../components/common/CodeEditor.vue'))
 
 type Value = string | number | string[] | null
 interface Template {
@@ -315,11 +317,11 @@ onMounted(load)
               <ChevronDownIcon :class="['ml-auto size-4 text-muted-foreground transition-transform', open ? 'rotate-180' : '']" />
             </CollapsibleTrigger>
             <CollapsibleContent class="border-t px-4 py-3">
-              <Textarea
+              <CodeEditor
                 :model-value="str(t.setting_key)"
-                class="min-h-64 font-mono text-xs"
+                :lang="t.format"
                 placeholder="留空使用内置默认模板"
-                @update:model-value="(v) => set(t.setting_key, String(v))"
+                @update:model-value="(v) => set(t.setting_key, v)"
               />
               <div class="mt-3 flex gap-2">
                 <Button size="sm" :disabled="saving || same(values[t.setting_key], origin[t.setting_key])" @click="save([t.setting_key])">保存</Button>

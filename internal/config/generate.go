@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"text/template"
@@ -50,6 +51,17 @@ type GenerateOptions struct {
 	DBDriver  string
 	// Migrated 是否为从原项目迁移的站点，迁移站点默认开启旧订阅路径兼容。
 	Migrated bool
+
+	// 以下为空时使用默认值（数据库连接信息留空待填写）。
+	Listen        string
+	DBHost        string
+	DBPort        int
+	DBName        string
+	DBUser        string
+	DBPassword    string
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
 }
 
 // Generate 生成配置文件内容，未指定的密钥与前缀随机生成。
@@ -72,41 +84,54 @@ func Generate(opt GenerateOptions) ([]byte, error) {
 	if opt.DBDriver == "" {
 		opt.DBDriver = DriverMySQL
 	}
-	port := 3306
-	if opt.DBDriver == DriverPostgres {
-		port = 5432
+	if opt.DBPort == 0 {
+		opt.DBPort = 3306
+		if opt.DBDriver == DriverPostgres {
+			opt.DBPort = 5432
+		}
+	}
+	if opt.Listen == "" {
+		opt.Listen = "0.0.0.0:8080"
+	}
+	if opt.DBHost == "" {
+		opt.DBHost = "127.0.0.1"
+	}
+	if opt.RedisAddr == "" {
+		opt.RedisAddr = "127.0.0.1:6379"
+	}
+	if opt.DBPort < 1 || opt.DBPort > 65535 || opt.RedisDB < 0 || opt.RedisDB > 255 {
+		return nil, fmt.Errorf("数据库端口或 Redis 库号无效")
 	}
 
 	var buf bytes.Buffer
-	err = configTemplate.Execute(&buf, map[string]any{
-		"AppKey":    opt.AppKey,
-		"APIPrefix": opt.APIPrefix,
-		"Mode":      opt.Mode,
-		"DBDriver":  opt.DBDriver,
-		"DBPort":    port,
-		"Migrated":  opt.Migrated,
-	})
+	err = configTemplate.Execute(&buf, opt)
 	if err != nil {
 		return nil, fmt.Errorf("生成配置失败: %w", err)
 	}
 	return buf.Bytes(), nil
 }
 
-var configTemplate = template.Must(template.New("config").Parse(`# Gvboard 配置文件
+// yamlQuote 输出 YAML 双引号字符串（JSON 字符串是合法的 YAML）。
+func yamlQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+var configTemplate = template.Must(template.New("config").Funcs(template.FuncMap{"q": yamlQuote}).Parse(`# Gvboard 配置文件
 # 所有配置项都可以用环境变量覆盖，规则：GVB_ + 大写路径（点换成下划线），例如 GVB_DATABASE_PASSWORD
 
 app:
   # 签名密钥。接入原生产库时请改为原项目 .env 中的 APP_KEY（保留 "base64:" 前缀）
-  key: "{{.AppKey}}"
+  key: {{q .AppKey}}
   debug: false
   timezone: "Asia/Shanghai"
   # 默认语言：zh-CN / en-US
   locale: "zh-CN"
 
 server:
-  listen: "0.0.0.0:8080"
+  listen: {{q .Listen}}
   # all：不分离部署（API + 前端）；api：分离部署（仅 API）
-  mode: "{{.Mode}}"
+  mode: {{q .Mode}}
   # 反向代理地址，用于获取真实客户端 IP
   trusted_proxies: ["127.0.0.1", "::1"]
   read_timeout: 30s
@@ -120,16 +145,16 @@ server:
 
 api:
   # 原生 API 前缀（已随机生成）。修改后前端需同步
-  prefix: "{{.APIPrefix}}"
+  prefix: {{q .APIPrefix}}
 
 database:
   # mysql 或 postgres
-  driver: "{{.DBDriver}}"
-  host: "127.0.0.1"
+  driver: {{q .DBDriver}}
+  host: {{q .DBHost}}
   port: {{.DBPort}}
-  name: ""
-  user: ""
-  password: ""
+  name: {{q .DBName}}
+  user: {{q .DBUser}}
+  password: {{q .DBPassword}}
   charset: "utf8mb4"
   sslmode: "disable"
   max_open_conns: 100
@@ -138,9 +163,9 @@ database:
   slow_threshold: 500ms
 
 redis:
-  addr: "127.0.0.1:6379"
-  password: ""
-  db: 0
+  addr: {{q .RedisAddr}}
+  password: {{q .RedisPassword}}
+  db: {{.RedisDB}}
   prefix: "gvb:"
   pool_size: 50
 

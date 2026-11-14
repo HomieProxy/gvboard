@@ -9,7 +9,7 @@ import { useI18n } from 'vue-i18n'
 export interface Column {
   key: string
   title: string
-  /** 单元格附加类名，如 w-24、text-right */
+  /** 单元格附加类名，如 w-24、text-end */
   class?: string
   align?: 'left' | 'center' | 'right'
   sortable?: boolean
@@ -45,7 +45,7 @@ function toggleSort(c: Column) {
   else emit('update:sort', null)
 }
 
-const alignCls = (a?: string) => (a === 'right' ? 'text-right' : a === 'center' ? 'text-center' : '')
+const alignCls = (a?: string) => (a === 'right' ? 'text-end' : a === 'center' ? 'text-center' : '')
 const keyOf = (r: T) => (typeof props.rowKey === 'function' ? props.rowKey(r) : (r[props.rowKey] as string | number))
 const allChecked = computed(() => props.rows.length > 0 && props.rows.every((r) => props.selected.includes(keyOf(r))))
 const someChecked = computed(() => !allChecked.value && props.rows.some((r) => props.selected.includes(keyOf(r))))

@@ -143,7 +143,7 @@ onMounted(async () => {
               v-for="s in shortcuts"
               :key="s.title"
               type="button"
-              class="flex w-full items-center gap-4 rounded-xl border bg-card px-4 py-3.5 text-left shadow-sm transition-colors hover:bg-accent/40"
+              class="flex w-full items-center gap-4 rounded-xl border bg-card px-4 py-3.5 text-start shadow-sm transition-colors hover:bg-accent/40"
               @click="s.action ? s.action() : s.to && router.push(s.to)"
             >
               <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">

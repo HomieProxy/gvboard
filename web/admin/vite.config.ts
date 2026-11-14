@@ -41,6 +41,7 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (id.includes('echarts') || id.includes('zrender')) return 'charts'
+          if (id.includes('@codemirror') || id.includes('@lezer') || id.includes('node_modules/codemirror') || id.includes('crelt') || id.includes('style-mod') || id.includes('w3c-keyname')) return 'editor'
           if (id.includes('reka-ui') || id.includes('@floating-ui') || id.includes('@tanstack')) return 'ui'
           if (id.includes('node_modules')) return 'vendor'
         },

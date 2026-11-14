@@ -261,7 +261,7 @@ onUnmounted(() => clearInterval(timer))
                   type="button"
                   :class="
                     cn(
-                      'relative flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:border-primary/60',
+                      'relative flex items-center gap-3 rounded-lg border p-3 text-start transition-colors hover:border-primary/60',
                       method === m.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : '',
                     )
                   "
