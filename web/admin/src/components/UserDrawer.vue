@@ -176,11 +176,12 @@ function showTraffic(s: Sub) {
 
 const pct = (s: Sub) => (s.transfer_enable ? Math.min(100, Math.round(((s.u + s.d) / s.transfer_enable) * 100)) : 0)
 function expireText(s: Sub) {
+  if (!s.plan_id || s.expired_at === 0) return '-'
   if (s.expired_at === null) return '长期有效'
   if (s.expired_at <= nowUnix()) return `已到期 ${formatTime(s.expired_at, false)}`
   return `${formatTime(s.expired_at)}（剩余 ${daysLeft(s.expired_at)} 天）`
 }
-const expired = (s: Sub) => s.expired_at !== null && s.expired_at <= nowUnix()
+const expired = (s: Sub) => !!s.plan_id && !!s.expired_at && s.expired_at <= nowUnix()
 
 // ---------- 流量记录 ----------
 interface StatRow {

@@ -381,7 +381,7 @@ onMounted(async () => {
               <Button size="sm" @click="invalid.load"><SearchIcon />查询</Button>
             </div>
             <div v-if="invalid.loading.value" class="flex h-80 items-center justify-center"><Loader2Icon class="size-5 animate-spin text-muted-foreground" /></div>
-            <VChart v-else :option="invalidChart" autoresize class="h-80 w-full" />
+            <div v-else class="h-80"><VChart :option="invalidChart" autoresize /></div>
           </CardContent>
         </Card>
       </TabsContent>

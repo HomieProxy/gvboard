@@ -57,7 +57,7 @@ function subLabel(t: Ticket) {
 }
 function expireText(t: Ticket) {
   const e = t.subscription_expired_at
-  if (!t.subscription_id && !t.inferred_subscription_id) return '-'
+  if ((!t.subscription_id && !t.inferred_subscription_id) || !t.plan_name || e === 0) return '-'
   if (e === null) return '长期有效'
   return e <= nowUnix() ? `已到期 ${formatTime(e, false)}` : formatTime(e)
 }

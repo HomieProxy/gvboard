@@ -123,7 +123,7 @@ function lastOnline(r: UserRow) {
 }
 function expireInfo(r: UserRow): { text: string; tone: string } {
   const p = r.primary
-  if (!p) return { text: '-', tone: 'text-muted-foreground' }
+  if (!p || !p.plan_id || p.expired_at === 0) return { text: '-', tone: 'text-muted-foreground' }
   if (p.expired_at === null) return { text: '长期有效', tone: 'text-success' }
   const left = daysLeft(p.expired_at) ?? 0
   if (p.expired_at <= nowUnix()) return { text: `已到期 ${formatTime(p.expired_at, false)}`, tone: 'text-destructive' }

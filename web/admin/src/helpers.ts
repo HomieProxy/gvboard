@@ -55,6 +55,14 @@ export const giftcardTypeOptions = [
 
 // ---------- 单位换算（表单用元 / 毫秒，接口用分 / 秒） ----------
 
+/** 返回把 from 位置的元素移动到 to 位置后的新数组 */
+export function moveItem<T>(list: T[], from: number, to: number): T[] {
+  const out = [...list]
+  const [item] = out.splice(from, 1)
+  out.splice(to, 0, item)
+  return out
+}
+
 export function toYuan(cents: number | null | undefined): number | null {
   return centsToYuan(cents ?? null)
 }

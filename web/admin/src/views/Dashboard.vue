@@ -123,6 +123,12 @@ const stats = computed(() => {
   ]
 })
 
+const tones = [
+  'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+  'bg-amber-500/10 text-amber-600 dark:text-amber-400',
+]
 const palette = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6']
 const chart = computed(() => {
   const dark = colorMode.value === 'dark'
@@ -199,14 +205,16 @@ const dayText = computed(() => (day.value === 'today' ? '今日' : '昨日'))
       <template v-if="loading">
         <Skeleton v-for="i in 8" :key="i" class="h-[104px] rounded-xl" />
       </template>
-      <Card v-for="s in stats" v-else :key="s.label" class="gap-0 py-4">
-        <CardContent class="px-4">
-          <div class="flex items-center justify-between text-sm text-muted-foreground">
-            {{ s.label }}
-            <component :is="s.icon" class="size-4" />
+      <Card v-for="(s, i) in stats" v-else :key="s.label" class="gap-0 py-4">
+        <CardContent class="flex items-start gap-3 px-4">
+          <span :class="['flex size-10 shrink-0 items-center justify-center rounded-lg', tones[i % tones.length]]">
+            <component :is="s.icon" class="size-5" />
+          </span>
+          <div class="min-w-0">
+            <div class="text-sm text-muted-foreground">{{ s.label }}</div>
+            <div class="mt-1 truncate text-2xl font-semibold tabular-nums">{{ s.value }}</div>
+            <div class="mt-0.5 truncate text-xs text-muted-foreground">{{ s.sub }}</div>
           </div>
-          <div class="mt-2 text-2xl font-semibold tabular-nums">{{ s.value }}</div>
-          <div class="mt-1 text-xs text-muted-foreground">{{ s.sub }}</div>
         </CardContent>
       </Card>
     </div>
@@ -217,7 +225,7 @@ const dayText = computed(() => (day.value === 'today' ? '今日' : '昨日'))
         <CardDescription>最近 31 天的收款、佣金、注册与付款订单</CardDescription>
       </CardHeader>
       <CardContent>
-        <VChart v-if="days.length" :option="chart" autoresize class="h-80 w-full" />
+        <div v-if="days.length" class="h-80"><VChart :option="chart" autoresize /></div>
         <div v-else class="flex h-40 items-center justify-center text-sm text-muted-foreground">暂无统计数据（每日统计任务在次日生成）</div>
       </CardContent>
     </Card>

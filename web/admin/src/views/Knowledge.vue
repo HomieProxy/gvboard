@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { PlusIcon, RefreshCwIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon, Trash2Icon, Loader2Icon } from '@lucide/vue'
+import { PlusIcon, RefreshCwIcon, PencilIcon, Trash2Icon, Loader2Icon } from '@lucide/vue'
 import { formatTime } from '@gv/shared'
 import { Button } from '@gv/shared/ui/button'
 import { Input } from '@gv/shared/ui/input'
@@ -14,6 +14,7 @@ import SelectBox from '../components/common/SelectBox.vue'
 import { admin } from '../api'
 import { confirm, message, run } from '../ui'
 import { useList } from '../paged'
+import { moveItem } from '../helpers'
 import type { ArticleBrief } from '../types'
 
 const { rows, loading, load } = useList(() => admin.get<ArticleBrief[]>('/knowledge'))
@@ -31,7 +32,6 @@ const languages = [
 const langName = (v: string) => languages.find((l) => l.value === v)?.label || v
 
 const columns: Column[] = [
-  { key: 'sort', title: '排序', class: 'w-20' },
   { key: 'id', title: '文章ID', class: 'w-20' },
   { key: 'show', title: '显示', align: 'center', class: 'w-16' },
   { key: 'title', title: '标题' },
@@ -46,11 +46,8 @@ async function setShow(a: ArticleBrief, v: boolean) {
 async function remove(a: ArticleBrief) {
   if (await confirm(`确定要删除「${a.title}」吗？`, () => admin.del(`/knowledge/${a.id}`), '删除成功')) load()
 }
-async function move(i: number, d: number) {
-  const list = [...rows.value]
-  const j = i + d
-  if (j < 0 || j >= list.length) return
-  ;[list[i], list[j]] = [list[j], list[i]]
+async function reorder(from: number, to: number) {
+  const list = moveItem(rows.value, from, to)
   rows.value = list
   if (!(await run(() => admin.post('/knowledge/sort', { ids: list.map((a) => a.id) })))) load()
 }
@@ -100,13 +97,7 @@ onMounted(load)
       <Button @click="open(null)"><PlusIcon />新增</Button>
     </PageHeader>
 
-    <DataTable :columns="columns" :rows="rows" :loading="loading">
-      <template #cell-sort="{ index }">
-        <div class="flex gap-0.5">
-          <Button variant="ghost" size="icon" class="size-7" :disabled="index === 0" @click="move(index, -1)"><ArrowUpIcon /></Button>
-          <Button variant="ghost" size="icon" class="size-7" :disabled="index === rows.length - 1" @click="move(index, 1)"><ArrowDownIcon /></Button>
-        </div>
-      </template>
+    <DataTable :columns="columns" :rows="rows" :loading="loading" draggable @reorder="reorder">
       <template #cell-id="{ row }"><span class="text-muted-foreground tabular-nums">{{ row.id }}</span></template>
       <template #cell-show="{ row }"><Switch :model-value="!!row.show" @update:model-value="(v: boolean) => setShow(row, v)" /></template>
       <template #cell-title="{ row }">

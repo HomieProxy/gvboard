@@ -54,6 +54,11 @@ const groups = computed(() => {
 
 const current = computed(() => menu.find((m) => m.path === route.path))
 const darkSider = computed(() => cfg.value.theme.sidebar === 'dark' && colorMode.value !== 'dark')
+const darkHeader = computed(() => cfg.value.theme.header === 'dark' && colorMode.value !== 'dark')
+
+const activeCls =
+  'h-9 data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:shadow-sm ' +
+  'data-[active=true]:hover:bg-sidebar-primary/90 data-[active=true]:hover:text-sidebar-primary-foreground'
 
 function toggleDark() {
   colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark'
@@ -66,7 +71,7 @@ function logout() {
 
 <template>
   <SidebarProvider class="h-svh">
-    <Sidebar collapsible="icon" :class="darkSider ? 'dark' : ''">
+    <Sidebar collapsible="icon" :class="darkSider ? 'dark text-sidebar-foreground' : ''">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -87,11 +92,11 @@ function logout() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup v-for="g in groups" :key="g.name" class="py-1">
-          <SidebarGroupLabel v-if="g.name">{{ g.name }}</SidebarGroupLabel>
+          <SidebarGroupLabel v-if="g.name" class="text-[11px] tracking-wider text-sidebar-foreground/50">{{ g.name }}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem v-for="m in g.items" :key="m.path">
-                <SidebarMenuButton as-child :is-active="route.path === m.path" :tooltip="m.title">
+                <SidebarMenuButton as-child :is-active="route.path === m.path" :tooltip="m.title" :class="activeCls">
                   <RouterLink :to="m.path">
                     <component :is="icons[m.path]" />
                     <span>{{ m.title }}</span>
@@ -116,7 +121,12 @@ function logout() {
     </Sidebar>
 
     <SidebarInset class="min-w-0 overflow-hidden">
-      <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
+      <header
+        :class="[
+          'sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b px-4 backdrop-blur',
+          darkHeader ? 'dark bg-sidebar text-foreground' : 'bg-card/90',
+        ]"
+      >
         <SidebarTrigger class="-ml-1" />
         <Separator orientation="vertical" class="mr-1 data-[orientation=vertical]:h-4" />
         <nav class="flex min-w-0 items-center gap-1.5 text-sm">

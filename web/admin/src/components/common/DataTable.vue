@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="T extends Record<string, any>">
-import { computed } from 'vue'
-import { Loader2Icon, InboxIcon, ArrowDownIcon, ArrowUpIcon, ArrowUpDownIcon } from '@lucide/vue'
+import { computed, ref } from 'vue'
+import { Loader2Icon, InboxIcon, ArrowDownIcon, ArrowUpIcon, ArrowUpDownIcon, GripVerticalIcon } from '@lucide/vue'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@gv/shared/ui/table'
 import { Checkbox } from '@gv/shared/ui/checkbox'
 import { cn } from '@gv/shared/lib/utils'
@@ -30,10 +30,40 @@ const props = withDefaults(
     rowClass?: (row: T) => string
     clickable?: boolean
     sort?: SortState | null
+    /** 显示拖动手柄，拖动行后触发 reorder */
+    draggable?: boolean
   }>(),
-  { loading: false, rowKey: 'id', empty: '暂无数据', selectable: false, selected: () => [], clickable: false, sort: null },
+  { loading: false, rowKey: 'id', empty: '暂无数据', selectable: false, selected: () => [], clickable: false, sort: null, draggable: false },
 )
-const emit = defineEmits<{ 'update:selected': [ids: (string | number)[]]; rowClick: [row: T]; 'update:sort': [s: SortState | null] }>()
+const emit = defineEmits<{
+  'update:selected': [ids: (string | number)[]]
+  rowClick: [row: T]
+  'update:sort': [s: SortState | null]
+  reorder: [from: number, to: number]
+}>()
+
+// 只有按住手柄时行才可拖动，避免与行内开关、按钮、文字选择冲突
+const armed = ref(-1)
+const dragFrom = ref(-1)
+const dragOver = ref(-1)
+function onDragStart(i: number, e: DragEvent) {
+  dragFrom.value = i
+  e.dataTransfer?.setData('text/plain', String(i))
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+function onDrop(i: number) {
+  const from = dragFrom.value
+  resetDrag()
+  if (from >= 0 && from !== i) emit('reorder', from, i)
+}
+function resetDrag() {
+  armed.value = dragFrom.value = dragOver.value = -1
+}
+function dropCls(i: number) {
+  if (dragFrom.value < 0 || dragOver.value !== i || dragFrom.value === i) return ''
+  return dragFrom.value < i ? 'shadow-[inset_0_-2px_0_var(--primary)]' : 'shadow-[inset_0_2px_0_var(--primary)]'
+}
+const extraCols = computed(() => (props.selectable ? 1 : 0) + (props.draggable ? 1 : 0))
 
 function toggleSort(c: Column) {
   if (!c.sortable) return
@@ -63,6 +93,7 @@ function toggle(r: T, v: boolean | 'indeterminate') {
     <Table>
       <TableHeader class="bg-muted/40">
         <TableRow class="hover:bg-transparent">
+          <TableHead v-if="draggable" class="w-8" />
           <TableHead v-if="selectable" class="w-10">
             <Checkbox :model-value="allChecked ? true : someChecked ? 'indeterminate' : false" @update:model-value="toggleAll" />
           </TableHead>
@@ -87,10 +118,25 @@ function toggle(r: T, v: boolean | 'indeterminate') {
         <TableRow
           v-for="(r, i) in rows"
           :key="keyOf(r) ?? i"
-          :class="cn(rowClass?.(r), clickable ? 'cursor-pointer' : '')"
+          :class="cn(rowClass?.(r), clickable ? 'cursor-pointer' : '', dragFrom === i ? 'opacity-40' : '', dropCls(i))"
           :data-state="selected.includes(keyOf(r)) ? 'selected' : undefined"
+          :draggable="draggable && armed === i"
           @click="emit('rowClick', r)"
+          @dragstart="onDragStart(i, $event)"
+          @dragover.prevent="dragOver = i"
+          @drop.prevent="onDrop(i)"
+          @dragend="resetDrag"
         >
+          <TableCell v-if="draggable" class="w-8 pr-0" @click.stop>
+            <span
+              class="flex cursor-grab items-center text-muted-foreground hover:text-foreground active:cursor-grabbing"
+              title="拖动排序"
+              @mousedown="armed = i"
+              @mouseup="armed = -1"
+            >
+              <GripVerticalIcon class="size-4" />
+            </span>
+          </TableCell>
           <TableCell v-if="selectable" class="w-10" @click.stop>
             <Checkbox :model-value="selected.includes(keyOf(r))" @update:model-value="(v) => toggle(r, v)" />
           </TableCell>
@@ -101,7 +147,7 @@ function toggle(r: T, v: boolean | 'indeterminate') {
           </TableCell>
         </TableRow>
         <TableRow v-if="!loading && rows.length === 0" class="hover:bg-transparent">
-          <TableCell :colspan="columns.length + (selectable ? 1 : 0)" class="h-40 text-center text-muted-foreground">
+          <TableCell :colspan="columns.length + extraCols" class="h-40 text-center text-muted-foreground">
             <div class="flex flex-col items-center gap-2">
               <InboxIcon class="size-8 opacity-40" />
               <span class="text-sm">{{ empty }}</span>
@@ -109,7 +155,7 @@ function toggle(r: T, v: boolean | 'indeterminate') {
           </TableCell>
         </TableRow>
         <TableRow v-if="loading && rows.length === 0" class="hover:bg-transparent">
-          <TableCell :colspan="columns.length + (selectable ? 1 : 0)" class="h-40" />
+          <TableCell :colspan="columns.length + extraCols" class="h-40" />
         </TableRow>
       </TableBody>
     </Table>

@@ -74,11 +74,16 @@ onMounted(() => {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup v-for="g in groups" :key="g.name" class="py-1">
-          <SidebarGroupLabel v-if="t(`nav.groups.${g.name}`)">{{ t(`nav.groups.${g.name}`) }}</SidebarGroupLabel>
+          <SidebarGroupLabel v-if="t(`nav.groups.${g.name}`)" class="text-[11px] tracking-wider text-sidebar-foreground/50">{{ t(`nav.groups.${g.name}`) }}</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem v-for="n in g.items" :key="n.key">
-                <SidebarMenuButton as-child :is-active="active === n.key" :tooltip="t(`nav.${n.key}`)">
+                <SidebarMenuButton
+                  as-child
+                  :is-active="active === n.key"
+                  :tooltip="t(`nav.${n.key}`)"
+                  class="h-9 data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:shadow-sm data-[active=true]:hover:bg-sidebar-primary/90 data-[active=true]:hover:text-sidebar-primary-foreground"
+                >
                   <RouterLink :to="n.path">
                     <component :is="n.icon" />
                     <span>{{ t(`nav.${n.key}`) }}</span>
@@ -117,7 +122,7 @@ onMounted(() => {
     </Sidebar>
 
     <SidebarInset class="min-w-0">
-      <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
+      <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-card/90 px-4 backdrop-blur">
         <SidebarTrigger class="-ml-1" />
         <Separator orientation="vertical" class="mr-1 data-[orientation=vertical]:h-4" />
         <span class="truncate text-sm font-medium">{{ current ? t(`nav.${current.key}`) : '' }}</span>

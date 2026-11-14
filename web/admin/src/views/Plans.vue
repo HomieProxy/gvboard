@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { PlusIcon, RefreshCwIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon, Trash2Icon, Loader2Icon } from '@lucide/vue'
+import { PlusIcon, RefreshCwIcon, PencilIcon, Trash2Icon, Loader2Icon } from '@lucide/vue'
 import { formatMoney } from '@gv/shared'
 import { Button } from '@gv/shared/ui/button'
 import { Input } from '@gv/shared/ui/input'
@@ -18,7 +18,7 @@ import PlanContentEditor from '../components/PlanContentEditor.vue'
 import { admin } from '../api'
 import { confirm, message, run } from '../ui'
 import { useList } from '../paged'
-import { planPeriods, resetMethods, toCents, toYuan } from '../helpers'
+import { moveItem, planPeriods, resetMethods, toCents, toYuan } from '../helpers'
 import { groupName, groupOptions, invalidate, loadGroups } from '../refs'
 import type { Plan } from '../types'
 
@@ -43,11 +43,8 @@ async function patch(p: Plan, body: Record<string, number>) {
   }
 }
 
-async function move(i: number, d: number) {
-  const list = [...rows.value]
-  const j = i + d
-  if (j < 0 || j >= list.length) return
-  ;[list[i], list[j]] = [list[j], list[i]]
+async function reorder(from: number, to: number) {
+  const list = moveItem(rows.value, from, to)
   rows.value = list
   if (await run(() => admin.post('/plans/sort', { ids: list.map((p) => p.id) }))) invalidate('plans')
   else load()
@@ -64,7 +61,6 @@ const prices = (p: Plan) =>
   planPeriods.filter((k) => p[k as keyof Plan] !== null && p[k as keyof Plan] !== undefined).map((k) => ({ label: priceLabels[k], value: formatMoney(p[k as keyof Plan] as number) }))
 
 const columns: Column[] = [
-  { key: 'sort', title: '排序', class: 'w-20' },
   { key: 'id', title: 'ID', class: 'w-14' },
   { key: 'show', title: '销售状态', align: 'center' },
   { key: 'renew', title: '续费', align: 'center' },
@@ -187,13 +183,7 @@ onMounted(() => {
       <Button @click="openForm(null)"><PlusIcon />添加订阅</Button>
     </PageHeader>
 
-    <DataTable :columns="columns" :rows="rows" :loading="loading">
-      <template #cell-sort="{ index }">
-        <div class="flex gap-0.5">
-          <Button variant="ghost" size="icon" class="size-7" :disabled="index === 0" @click="move(index, -1)"><ArrowUpIcon /></Button>
-          <Button variant="ghost" size="icon" class="size-7" :disabled="index === rows.length - 1" @click="move(index, 1)"><ArrowDownIcon /></Button>
-        </div>
-      </template>
+    <DataTable :columns="columns" :rows="rows" :loading="loading" draggable @reorder="reorder">
       <template #cell-id="{ row }"><span class="text-muted-foreground tabular-nums">{{ row.id }}</span></template>
       <template #cell-show="{ row }"><Switch :model-value="!!row.show" @update:model-value="(v: boolean) => patch(row, { show: v ? 1 : 0 })" /></template>
       <template #cell-renew="{ row }">

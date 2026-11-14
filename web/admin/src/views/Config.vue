@@ -13,7 +13,7 @@ import { Label } from '@gv/shared/ui/label'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@gv/shared/ui/collapsible'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
 import PageHeader from '../components/common/PageHeader.vue'
-import SettingRow from '../components/common/SettingRow.vue'
+import FieldRow from '../components/common/FieldRow.vue'
 import SelectBox from '../components/common/SelectBox.vue'
 import NumInput from '../components/common/NumInput.vue'
 import BoolSwitch from '../components/common/BoolSwitch.vue'
@@ -94,6 +94,12 @@ function set(k: string, v: Value) {
   values.value[k] = v
 }
 
+const tabItems = computed(() => [...configGroups.map((g) => ({ name: g.name, title: g.title })), { name: 'templates', title: '订阅模板' }])
+const tabCls =
+  'h-11 flex-none rounded-none border-0 border-b-2 border-transparent px-3 text-muted-foreground hover:text-foreground ' +
+  'data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none ' +
+  'dark:data-[state=active]:border-primary dark:data-[state=active]:bg-transparent'
+
 function revert() {
   for (const k of dirty.value) values.value[k] = JSON.parse(JSON.stringify(origin.value[k] ?? null))
 }
@@ -170,40 +176,39 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="pb-20">
+  <div>
     <PageHeader title="系统配置" description="站点、安全、订阅、邀请、节点、邮件等全局设置" />
 
     <div v-if="loading" class="flex h-64 items-center justify-center text-muted-foreground">
       <Loader2Icon class="size-6 animate-spin" />
     </div>
 
-    <Tabs v-else v-model="tab" class="gap-4">
-      <div class="-mx-1 overflow-x-auto px-1 pb-1">
-        <TabsList class="h-auto w-max">
-          <TabsTrigger v-for="g in configGroups" :key="g.name" :value="g.name" class="px-3">{{ g.title }}</TabsTrigger>
-          <TabsTrigger value="templates" class="px-3">订阅模板</TabsTrigger>
+    <Card v-else class="gap-0 overflow-hidden py-0">
+    <Tabs v-model="tab" class="gap-0">
+      <div class="overflow-x-auto border-b px-4">
+        <TabsList class="h-auto w-max gap-1 rounded-none bg-transparent p-0">
+          <TabsTrigger v-for="t in tabItems" :key="t.name" :value="t.name" :class="tabCls">{{ t.title }}</TabsTrigger>
         </TabsList>
       </div>
 
       <TabsContent v-for="g in configGroups" :key="g.name" :value="g.name">
-        <Card class="py-2">
-          <CardContent class="px-6">
-            <Alert v-if="g.notice" class="mt-4 mb-2">
+        <CardContent class="px-4 py-5 md:px-8">
+          <div class="max-w-4xl">
+            <Alert v-if="g.notice" class="mb-4">
               <InfoIcon />
               <AlertDescription>{{ g.notice }}</AlertDescription>
             </Alert>
 
-            <SettingRow
+            <FieldRow
               v-for="f in visible(g)"
               :key="f.key"
               :label="f.label"
-              :description="f.help"
-              :wide="f.kind === 'textarea' || f.kind === 'tags' || !!f.key2"
+              :help="f.help"
             >
               <BoolSwitch v-if="f.kind === 'switch'" :model-value="values[f.key] as number" @update:model-value="(v) => set(f.key, v as number)" />
               <NumInput
                 v-else-if="f.kind === 'int' || f.kind === 'float'"
-                class="w-full"
+                class="w-full max-w-60"
                 :model-value="numVal(f.key)"
                 :step="f.kind === 'int' ? 1 : 0.01"
                 :placeholder="f.placeholder"
@@ -212,6 +217,7 @@ onMounted(load)
               />
               <SelectBox
                 v-else-if="f.kind === 'select' || f.kind === 'plan'"
+                class="w-full max-w-80"
                 :model-value="values[f.key] as string | number"
                 :options="optionsOf(f)"
                 :placeholder="f.placeholder || '请选择'"
@@ -253,30 +259,41 @@ onMounted(load)
                 :placeholder="f.placeholder"
                 @update:model-value="(v) => set(f.key, String(v))"
               />
-            </SettingRow>
+            </FieldRow>
 
-            <SettingRow v-if="g.name === 'email'" label="发送测试邮件" description="邮件将会发送到当前登陆用户邮箱">
-              <Button :disabled="mailBusy" @click="testMail">
+            <FieldRow v-if="g.name === 'email'" label="发送测试邮件" help="邮件将会发送到当前登陆用户邮箱">
+              <Button variant="outline" :disabled="mailBusy" @click="testMail">
                 <Loader2Icon v-if="mailBusy" class="animate-spin" />
                 <MailIcon v-else />
                 发送测试邮件
               </Button>
-            </SettingRow>
-            <SettingRow v-if="g.name === 'telegram'" label="设置Webhook" description="对机器人进行Webhook设置，不设置将无法收到Telegram通知。">
+            </FieldRow>
+            <FieldRow v-if="g.name === 'telegram'" label="设置Webhook" help="对机器人进行Webhook设置，不设置将无法收到Telegram通知。">
               <div class="flex gap-2">
                 <Button variant="outline" @click="tgStatus"><ActivityIcon />状态</Button>
-                <Button :disabled="tgBusy" @click="tgApply">
+                <Button variant="outline" :disabled="tgBusy" @click="tgApply">
                   <Loader2Icon v-if="tgBusy" class="animate-spin" />
                   <SendIcon v-else />
                   一键设置
                 </Button>
               </div>
-            </SettingRow>
-          </CardContent>
-        </Card>
+            </FieldRow>
+
+            <FieldRow label="">
+              <div class="flex items-center gap-3">
+                <Button :disabled="saving || !dirty.length" @click="save()">
+                  <Loader2Icon v-if="saving" class="animate-spin" />
+                  保存
+                </Button>
+                <Button v-if="dirty.length" variant="ghost" :disabled="saving" @click="revert">撤销修改</Button>
+                <span v-if="dirty.length" class="text-xs text-warning">有 {{ dirty.length }} 项修改未保存</span>
+              </div>
+            </FieldRow>
+          </div>
+        </CardContent>
       </TabsContent>
 
-      <TabsContent value="templates">
+      <TabsContent value="templates" class="px-4 py-5 md:px-8">
         <Alert class="mb-4">
           <InfoIcon />
           <AlertDescription>自定义模板为空时使用内置默认模板。YAML / JSON 模板保存时会校验格式。</AlertDescription>
@@ -297,6 +314,7 @@ onMounted(load)
                 @update:model-value="(v) => set(t.setting_key, String(v))"
               />
               <div class="mt-3 flex gap-2">
+                <Button size="sm" :disabled="saving || same(values[t.setting_key], origin[t.setting_key])" @click="save([t.setting_key])">保存</Button>
                 <Button size="sm" variant="outline" @click="loadDefault(t)">载入默认模板</Button>
                 <Button size="sm" variant="outline" @click="resetTemplate(t)">清空（恢复默认）</Button>
               </div>
@@ -305,22 +323,7 @@ onMounted(load)
         </div>
       </TabsContent>
     </Tabs>
-
-    <Transition
-      enter-from-class="translate-y-4 opacity-0"
-      leave-to-class="translate-y-4 opacity-0"
-      enter-active-class="transition"
-      leave-active-class="transition"
-    >
-      <div v-if="dirty.length" class="fixed bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-4 rounded-full border bg-background px-5 py-2.5 shadow-lg md:left-[calc(50%+8rem)]">
-        <span class="text-sm">有 {{ dirty.length }} 项修改未保存</span>
-        <Button size="sm" variant="ghost" :disabled="saving" @click="revert">撤销</Button>
-        <Button size="sm" :disabled="saving" @click="save()">
-          <Loader2Icon v-if="saving" class="animate-spin" />
-          保存
-        </Button>
-      </div>
-    </Transition>
+    </Card>
 
     <Dialog v-model:open="tgShow">
       <DialogContent class="sm:max-w-lg">
