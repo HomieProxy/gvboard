@@ -93,6 +93,8 @@ func access(c *gin.Context, flag string) Access {
 		UserAgent: c.GetHeader("User-Agent"),
 		Flag:      flag,
 		Header:    c.GetHeader,
+		Token:     input(c, "token"),
+		Path:      c.Request.URL.Path,
 	}
 }
 

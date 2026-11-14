@@ -4,10 +4,9 @@ import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   WalletIcon, CoinsIcon, MessageSquareIcon, UsersIcon, BookOpenIcon, DownloadIcon, RefreshCwIcon, LifeBuoyIcon,
-  ChevronRightIcon, MegaphoneIcon, TriangleAlertIcon,
+  ChevronRightIcon, TriangleAlertIcon,
 } from '@lucide/vue'
-import { formatTime } from '@gv/shared'
-import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@gv/shared/ui/card'
+import { Card, CardContent } from '@gv/shared/ui/card'
 import { Button } from '@gv/shared/ui/button'
 import { Alert, AlertDescription } from '@gv/shared/ui/alert'
 import { Skeleton } from '@gv/shared/ui/skeleton'
@@ -18,7 +17,7 @@ import type { Notice } from '../types'
 import SubCard from '../components/SubCard.vue'
 import ClientDownloads from '../components/ClientDownloads.vue'
 import NoticeDialog from '../components/NoticeDialog.vue'
-import StatusBadge from '../components/common/StatusBadge.vue'
+import NoticeCarousel from '../components/NoticeCarousel.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -89,6 +88,9 @@ onMounted(async () => {
       </AlertDescription>
     </Alert>
 
+    <Skeleton v-if="loading" class="h-44 w-full rounded-xl sm:h-52" />
+    <NoticeCarousel v-else :notices="notices.slice(0, 5)" @open="openNotice" />
+
     <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <Card v-for="c in cards" :key="c.label" class="cursor-pointer gap-2 py-4 transition-colors hover:bg-accent/40" @click="router.push(c.to)">
         <CardContent class="flex items-center justify-between gap-3 px-4">
@@ -104,8 +106,7 @@ onMounted(async () => {
       </Card>
     </div>
 
-    <div class="grid gap-6 xl:grid-cols-3">
-      <div class="space-y-6 xl:col-span-2">
+    <div class="space-y-6">
         <section>
           <div class="mb-3 flex items-center justify-between">
             <h2 class="text-base font-semibold">{{ t('dashboard.mySubscriptions') }}</h2>
@@ -137,56 +138,25 @@ onMounted(async () => {
 
         <section>
           <h2 class="mb-3 text-base font-semibold">{{ t('dashboard.shortcuts') }}</h2>
-          <Card class="py-0">
-            <CardContent class="divide-y px-0">
-              <button
-                v-for="s in shortcuts"
-                :key="s.title"
-                type="button"
-                class="flex w-full items-center gap-4 px-4 py-3.5 text-left transition-colors hover:bg-accent/40"
-                @click="s.action ? s.action() : s.to && router.push(s.to)"
-              >
-                <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  <component :is="s.icon" class="size-4.5" />
-                </div>
-                <div class="min-w-0 flex-1">
-                  <div class="font-medium">{{ s.title }}</div>
-                  <div class="truncate text-sm text-muted-foreground">{{ s.desc }}</div>
-                </div>
-                <ChevronRightIcon class="size-4 text-muted-foreground" />
-              </button>
-            </CardContent>
-          </Card>
-        </section>
-      </div>
-
-      <Card class="h-fit gap-3">
-        <CardHeader>
-          <CardTitle class="flex items-center gap-2 text-base"><MegaphoneIcon class="size-4" />{{ t('dashboard.notices') }}</CardTitle>
-          <CardAction>
-            <Button variant="link" size="sm" class="h-auto px-0" @click="router.push('/notices')">{{ t('common.view') }}</Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent class="px-2">
-          <div v-if="loading" class="space-y-2 px-2"><Skeleton v-for="i in 3" :key="i" class="h-10 w-full" /></div>
-          <div v-else-if="notices.length" class="space-y-0.5">
+          <div class="grid gap-3 sm:grid-cols-2">
             <button
-              v-for="n in notices.slice(0, 6)"
-              :key="n.id"
+              v-for="s in shortcuts"
+              :key="s.title"
               type="button"
-              class="w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-accent"
-              @click="openNotice(n)"
+              class="flex w-full items-center gap-4 rounded-xl border bg-card px-4 py-3.5 text-left shadow-sm transition-colors hover:bg-accent/40"
+              @click="s.action ? s.action() : s.to && router.push(s.to)"
             >
-              <div class="truncate text-sm font-medium">{{ n.title }}</div>
-              <div class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <StatusBadge v-for="tg in n.tags || []" :key="tg">{{ tg }}</StatusBadge>
-                <span>{{ formatTime(n.created_at, false) }}</span>
+              <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <component :is="s.icon" class="size-4.5" />
               </div>
+              <div class="min-w-0 flex-1">
+                <div class="font-medium">{{ s.title }}</div>
+                <div class="truncate text-sm text-muted-foreground">{{ s.desc }}</div>
+              </div>
+              <ChevronRightIcon class="size-4 text-muted-foreground rtl:rotate-180" />
             </button>
           </div>
-          <p v-else class="py-6 text-center text-sm text-muted-foreground">{{ t('notice.empty') }}</p>
-        </CardContent>
-      </Card>
+        </section>
     </div>
 
     <NoticeDialog v-model:open="noticeShow" :notice="notice" />

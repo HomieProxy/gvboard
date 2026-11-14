@@ -28,6 +28,9 @@ type Access struct {
 	Flag string
 	// Header 读取请求头，为 nil 时视为没有请求头。
 	Header func(name string) string
+	// Token、Path 只用于请求日志。
+	Token string
+	Path  string
 }
 
 func (a Access) header(name string) string {

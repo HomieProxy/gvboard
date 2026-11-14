@@ -160,6 +160,7 @@ const logQ = ref({
   user_agent: '',
   result: null as number | null,
   rule_id: null as number | null,
+  token: '',
   since: null as number | null,
   until: null as number | null,
 })
@@ -175,6 +176,7 @@ const logs = usePaged<SubscribeLog>(async (current, page_size) => {
     user_agent: q.user_agent.trim() || undefined,
     result: q.result ?? undefined,
     rule_id: q.rule_id ?? undefined,
+    token: q.token.trim() || undefined,
     since: q.since ?? undefined,
     until: q.until ?? undefined,
   })
@@ -182,18 +184,41 @@ const logs = usePaged<SubscribeLog>(async (current, page_size) => {
 })
 const logCols: Column[] = [
   { key: 'created_at', title: '时间' },
-  { key: 'subscription_id', title: '订阅 / 用户' },
+  { key: 'subscription_id', title: '用户 / 订阅' },
+  { key: 'token', title: 'Token' },
   { key: 'ip', title: 'IP' },
   { key: 'client', title: '客户端' },
   { key: 'user_agent', title: 'User-Agent' },
   { key: 'result', title: '结果' },
-  { key: 'rule_id', title: '规则', align: 'center' },
-  { key: 'headers', title: '请求头', align: 'right' },
+  { key: 'op', title: '操作', align: 'right' },
 ]
 const resultOptions = [{ label: '全部结果', value: null as number | null }, ...Object.entries(resultText).map(([v, t]) => ({ label: t[0], value: Number(v) as number | null }))]
-const headerView = ref({ open: false, text: '' })
+const ruleName = (id: number | null) => (id ? rules.rows.value.find((r) => r.id === id)?.name || `#${id}` : '-')
+const shortToken = (t: string | null) => (t ? (t.length > 14 ? `${t.slice(0, 6)}…${t.slice(-6)}` : t) : '-')
+function prettyHeaders(h: string | null) {
+  if (!h) return ''
+  try {
+    return Object.entries(JSON.parse(h) as Record<string, string>).map(([k, v]) => `${k}: ${v}`).join('\n')
+  } catch {
+    return h
+  }
+}
+const detail = ref<SubscribeLog | null>(null)
+const detailShow = ref(false)
+function openDetail(l: SubscribeLog) {
+  detail.value = l
+  detailShow.value = true
+}
+function viewUser(id: number) {
+  router.push({ path: '/users', query: { id } })
+}
+function filterLogs(patch: Partial<typeof logQ.value>) {
+  Object.assign(logQ.value, patch)
+  detailShow.value = false
+  logs.reload()
+}
 function resetLogQ() {
-  logQ.value = { subscription_id: null, user_id: null, ip: '', client: null, user_agent: '', result: null, rule_id: null, since: null, until: null }
+  logQ.value = { subscription_id: null, user_id: null, ip: '', client: null, user_agent: '', result: null, rule_id: null, token: '', since: null, until: null }
   logs.reload()
 }
 async function cleanLogs() {
@@ -284,7 +309,7 @@ onMounted(async () => {
             <InfoIcon class="mt-0.5 size-4 shrink-0" />
             <span>
               启用的规则按优先级从小到大匹配：命中“仅记录”继续匹配，命中其它动作即结束。频率限制、防分享等全局参数在
-              <button type="button" class="text-primary hover:underline" @click="router.push('/config')">系统配置 → 多订阅与风控</button>
+              <button type="button" class="text-primary hover:underline" @click="router.push({ path: '/config', query: { tab: 'gvboard' } })">系统配置 → 多订阅与风控</button>
               中设置。
             </span>
           </div>
@@ -320,9 +345,10 @@ onMounted(async () => {
             <Input v-model="logQ.user_agent" placeholder="UA 包含" />
             <SelectBox :model-value="logQ.result" :options="resultOptions" placeholder="结果" @update:model-value="(v) => (logQ.result = v as number | null)" />
             <NumInput v-model="logQ.rule_id" placeholder="规则 ID" />
+            <Input v-model="logQ.token" placeholder="Token" />
             <DateTimeInput v-model="logQ.since" />
             <DateTimeInput v-model="logQ.until" />
-            <div class="col-span-2 flex gap-2 md:col-span-3 xl:col-span-3 xl:justify-end">
+            <div class="col-span-2 flex gap-2 md:col-span-4 xl:col-span-2 xl:justify-end">
               <Button @click="logs.reload"><SearchIcon />查询</Button>
               <Button variant="outline" @click="resetLogQ">重置</Button>
               <Button variant="outline" @click="cleanLogs"><EraserIcon />清理过期日志</Button>
@@ -331,18 +357,20 @@ onMounted(async () => {
         </Card>
         <DataTable :columns="logCols" :rows="logs.rows.value" :loading="logs.loading.value">
           <template #cell-created_at="{ row }"><span class="whitespace-nowrap text-xs">{{ formatTime(row.created_at) }}</span></template>
-          <template #cell-subscription_id="{ row }"><span class="tabular-nums">#{{ row.subscription_id }} / #{{ row.user_id }}</span></template>
+          <template #cell-subscription_id="{ row }">
+            <button type="button" class="block max-w-48 truncate text-left text-primary hover:underline" :title="`${row.email}（在用户管理中查看）`" @click="viewUser(row.user_id)">
+              {{ row.email || `#${row.user_id}` }}
+            </button>
+            <span class="text-xs text-muted-foreground tabular-nums">订阅 #{{ row.subscription_id }}</span>
+          </template>
+          <template #cell-token="{ row }"><span class="font-mono text-xs" :title="row.token || ''">{{ shortToken(row.token) }}</span></template>
           <template #cell-ip="{ row }"><span class="font-mono text-xs">{{ row.ip }}</span></template>
           <template #cell-client="{ row }">{{ row.client || '-' }}</template>
           <template #cell-user_agent="{ row }"><span class="block max-w-xs truncate text-xs" :title="row.user_agent">{{ row.user_agent }}</span></template>
           <template #cell-result="{ row }">
             <StatusBadge :tone="resultText[row.result]?.[1] || 'default'">{{ resultText[row.result]?.[0] || row.result }}</StatusBadge>
           </template>
-          <template #cell-rule_id="{ row }">{{ row.rule_id ?? '-' }}</template>
-          <template #cell-headers="{ row }">
-            <Button v-if="row.headers" variant="ghost" size="sm" @click="headerView = { open: true, text: row.headers }">查看</Button>
-            <span v-else class="text-muted-foreground">-</span>
-          </template>
+          <template #cell-op="{ row }"><Button variant="ghost" size="sm" @click="openDetail(row)">详情</Button></template>
         </DataTable>
         <Pager :pager="logs.pager" @page="logs.setPage" @size="logs.setPageSize" />
       </TabsContent>
@@ -454,10 +482,49 @@ onMounted(async () => {
       </DialogContent>
     </Dialog>
 
-    <Dialog v-model:open="headerView.open">
-      <DialogContent class="sm:max-w-2xl">
-        <DialogHeader><DialogTitle>请求头</DialogTitle></DialogHeader>
-        <pre class="max-h-[60svh] overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{{ headerView.text }}</pre>
+    <Dialog v-model:open="detailShow">
+      <DialogContent class="max-h-[92svh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader><DialogTitle>请求详情</DialogTitle></DialogHeader>
+        <dl v-if="detail" class="grid grid-cols-[6.5rem_1fr] gap-x-4 gap-y-2.5 text-sm">
+          <dt class="text-muted-foreground">时间</dt>
+          <dd>{{ formatTime(detail.created_at) }}</dd>
+          <dt class="text-muted-foreground">用户</dt>
+          <dd class="flex flex-wrap items-center gap-2">
+            <span class="break-all">{{ detail.email || '（已删除）' }}</span>
+            <span class="text-muted-foreground tabular-nums">#{{ detail.user_id }}</span>
+            <Button variant="link" size="sm" class="h-auto px-0" @click="viewUser(detail.user_id)">在用户管理中查看</Button>
+          </dd>
+          <dt class="text-muted-foreground">订阅</dt>
+          <dd class="flex flex-wrap items-center gap-2">
+            <span class="tabular-nums">#{{ detail.subscription_id }}</span>
+            <Button variant="link" size="sm" class="h-auto px-0" @click="filterLogs({ subscription_id: detail.subscription_id })">只看该订阅的日志</Button>
+          </dd>
+          <dt class="text-muted-foreground">Token</dt>
+          <dd class="flex flex-wrap items-center gap-2">
+            <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all">{{ detail.token || '（未记录）' }}</code>
+            <Button v-if="detail.token" variant="link" size="sm" class="h-auto px-0" @click="filterLogs({ token: detail.token })">只看该 Token 的日志</Button>
+          </dd>
+          <dt class="text-muted-foreground">请求路径</dt>
+          <dd class="font-mono text-xs break-all">{{ detail.path || '-' }}</dd>
+          <dt class="text-muted-foreground">IP</dt>
+          <dd class="flex flex-wrap items-center gap-2">
+            <span class="font-mono text-xs">{{ detail.ip }}</span>
+            <Button variant="link" size="sm" class="h-auto px-0" @click="filterLogs({ ip: detail.ip })">只看该 IP 的日志</Button>
+          </dd>
+          <dt class="text-muted-foreground">客户端</dt>
+          <dd>{{ detail.client || '-' }}</dd>
+          <dt class="text-muted-foreground">User-Agent</dt>
+          <dd class="font-mono text-xs break-all">{{ detail.user_agent || '-' }}</dd>
+          <dt class="text-muted-foreground">结果</dt>
+          <dd><StatusBadge :tone="resultText[detail.result]?.[1] || 'default'">{{ resultText[detail.result]?.[0] || detail.result }}</StatusBadge></dd>
+          <dt class="text-muted-foreground">命中规则</dt>
+          <dd>{{ ruleName(detail.rule_id) }}</dd>
+          <dt class="text-muted-foreground">请求头</dt>
+          <dd>
+            <pre v-if="detail.headers" class="max-h-48 overflow-auto rounded-md bg-muted p-2 font-mono text-xs whitespace-pre-wrap">{{ prettyHeaders(detail.headers) }}</pre>
+            <span v-else class="text-muted-foreground">未记录（在系统配置中设置需要记录的请求头）</span>
+          </dd>
+        </dl>
       </DialogContent>
     </Dialog>
   </div>

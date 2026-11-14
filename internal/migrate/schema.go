@@ -472,6 +472,8 @@ func Schema() []Table {
 				col("result", "tinyint"),
 				null("rule_id", "int"),
 				col("created_at", "int"),
+				null("token", "varchar(64)"),
+				null("path", "varchar(128)"),
 			},
 			Indexes: []Index{
 				{Name: "idx_created", Cols: []string{"created_at"}, Ensure: true},

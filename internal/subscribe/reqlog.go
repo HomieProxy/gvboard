@@ -147,6 +147,14 @@ func (s *Service) newLogEntry(sub *model.Subscription, a Access, client string) 
 		Client:         truncate(client, 32),
 		CreatedAt:      s.now().Unix(),
 	}
+	if a.Token != "" {
+		t := truncate(a.Token, 64)
+		e.Token = &t
+	}
+	if a.Path != "" {
+		p := truncate(a.Path, 128)
+		e.Path = &p
+	}
 	if names := s.Settings.Strings("subscribe_log_headers"); len(names) > 0 {
 		h := map[string]string{}
 		for _, n := range names {
@@ -193,16 +201,23 @@ type LogQuery struct {
 	UserAgent      string `form:"user_agent"` // 包含匹配
 	Result         *int   `form:"result"`
 	RuleID         int64  `form:"rule_id"`
+	Token          string `form:"token"`
 	Since          int64  `form:"since"`
 	Until          int64  `form:"until"`
 	Current        int    `form:"current"`
 	PageSize       int    `form:"page_size"`
 }
 
+// LogView 请求日志与所属用户的邮箱（用户已删除时为空）。
+type LogView struct {
+	model.SubscribeLog
+	Email string `json:"email"`
+}
+
 // LogPage 请求日志分页结果。
 type LogPage struct {
-	Data  []model.SubscribeLog `json:"data"`
-	Total int64                `json:"total"`
+	Data  []LogView `json:"data"`
+	Total int64     `json:"total"`
 }
 
 // likeEscaper 使用 ! 作为 LIKE 转义符：反斜杠在 MySQL 与 PostgreSQL 字符串字面量中的含义不同。
@@ -232,13 +247,16 @@ func (s *Service) Logs(ctx context.Context, q LogQuery) (*LogPage, error) {
 	if q.RuleID > 0 {
 		db = db.Where("rule_id = ?", q.RuleID)
 	}
+	if q.Token != "" {
+		db = db.Where("token = ?", q.Token)
+	}
 	if q.Since > 0 {
 		db = db.Where("created_at >= ?", q.Since)
 	}
 	if q.Until > 0 {
 		db = db.Where("created_at < ?", q.Until)
 	}
-	out := &LogPage{Data: []model.SubscribeLog{}}
+	out := &LogPage{Data: []LogView{}}
 	if err := db.Count(&out.Total).Error; err != nil {
 		return nil, err
 	}
@@ -252,8 +270,28 @@ func (s *Service) Logs(ctx context.Context, q LogQuery) (*LogPage, error) {
 	if size > 100 {
 		size = 100
 	}
-	err := db.Order("id DESC").Offset((cur - 1) * size).Limit(size).Find(&out.Data).Error
-	return out, err
+	var rows []model.SubscribeLog
+	if err := db.Order("id DESC").Offset((cur - 1) * size).Limit(size).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.UserID)
+	}
+	var users []model.User
+	if len(ids) > 0 {
+		if err := s.DB.WithContext(ctx).Select("id", "email").Where("id IN ?", ids).Find(&users).Error; err != nil {
+			return nil, err
+		}
+	}
+	emails := make(map[int64]string, len(users))
+	for _, u := range users {
+		emails[u.ID] = u.Email
+	}
+	for _, r := range rows {
+		out.Data = append(out.Data, LogView{SubscribeLog: r, Email: emails[r.UserID]})
+	}
+	return out, nil
 }
 
 // SubStat 单个订阅在一段时间内的请求统计，用于发现分享或异常拉取。

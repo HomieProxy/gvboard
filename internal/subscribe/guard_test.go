@@ -316,6 +316,13 @@ func testDeliverGuard(t *testing.T, e *env) {
 		t.Errorf("HTTP 正常请求应返回 200，实际 %d", code)
 	}
 	e.set(t, map[string]any{"subscribe_log_enable": 1})
+	get("/api/v1/client/subscribe?token="+sub.Token, "clash")
+	if l := lastLog(t, e); l.Token == nil || *l.Token != sub.Token || l.Path == nil || *l.Path != "/api/v1/client/subscribe" {
+		t.Errorf("请求日志应记录 token 与路径: %+v", l)
+	}
+	if page, err := s.Logs(ctx, LogQuery{Token: sub.Token}); err != nil || page.Total != 1 || page.Data[0].Email != u.Email {
+		t.Errorf("按 token 查询日志并返回邮箱不正确: %+v %v", page, err)
+	}
 	for range 3 {
 		get("/api/v1/client/subscribe?token=bad", "clash")
 	}

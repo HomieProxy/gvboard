@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { InfoIcon, Loader2Icon, MailIcon, SendIcon, ActivityIcon, ChevronDownIcon } from '@lucide/vue'
 import { formatTime } from '@gv/shared'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@gv/shared/ui/tabs'
@@ -38,7 +39,8 @@ const values = ref<Record<string, Value>>({})
 const origin = ref<Record<string, Value>>({})
 const loading = ref(true)
 const saving = ref(false)
-const tab = ref('site')
+const route = useRoute()
+const tab = ref(typeof route.query.tab === 'string' ? route.query.tab : 'site')
 const templates = ref<Template[]>([])
 const mailTemplates = ref<string[]>([])
 

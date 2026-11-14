@@ -70,6 +70,10 @@ type SubscribeLog struct {
 	Result         int     `gorm:"column:result" json:"result"`
 	RuleID         *int64  `gorm:"column:rule_id" json:"rule_id"`
 	CreatedAt      int64   `gorm:"column:created_at" json:"created_at"`
+	// Token 请求使用的 token 原值（永久 token、一次性 token 或时效 token）。
+	Token *string `gorm:"column:token" json:"token"`
+	// Path 请求路径，用于区分订阅路径、原订阅路径与 App 接口。
+	Path *string `gorm:"column:path" json:"path"`
 }
 
 func (SubscribeLog) TableName() string { return "v2_subscribe_log" }

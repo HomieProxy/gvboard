@@ -5,14 +5,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gvboard/internal/model"
 )
 
-// examples/js-plugins 中的示例插件必须能安装并正常运行。
-func TestJSExampleDailyBonus(t *testing.T) {
-	dir := filepath.Join("..", "..", "examples", "js-plugins", "daily-bonus")
+func exampleFiles(t *testing.T, name string) map[string]string {
+	t.Helper()
+	dir := filepath.Join("..", "..", "examples", "js-plugins", name)
 	files := map[string]string{}
 	for _, name := range []string{"plugin.json", "main.js"} {
 		b, err := os.ReadFile(filepath.Join(dir, name))
@@ -21,6 +22,34 @@ func TestJSExampleDailyBonus(t *testing.T) {
 		}
 		files[name] = string(b)
 	}
+	return files
+}
+
+func TestJSExampleOrderNotify(t *testing.T) {
+	files := exampleFiles(t, "order-notify")
+	eachDriver(t, func(t *testing.T, e *env) {
+		ctx := context.Background()
+		m := e.manager(t)
+		newJSEnv(t, e, m)
+		if v := install(t, m, makeZip(t, files)); v.Status != StatusOK || len(v.Features.Events) != 3 {
+			t.Fatalf("示例插件安装失败：%+v", v)
+		}
+		err := m.Enable(ctx, "order_notify")
+		if err == nil || !strings.Contains(err.Error(), "Telegram") {
+			t.Fatalf("未填写 Telegram 配置时启用应失败：%v", err)
+		}
+		if err := m.SaveConfig(ctx, "order_notify", map[string]any{"channel": "wecom", "webhook_url": "https://example.com/hook"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Enable(ctx, "order_notify"); err == nil {
+			t.Fatal("访问未声明的域名应失败，插件不应启用")
+		}
+	})
+}
+
+// examples/js-plugins 中的示例插件必须能安装并正常运行。
+func TestJSExampleDailyBonus(t *testing.T) {
+	files := exampleFiles(t, "daily-bonus")
 	eachDriver(t, func(t *testing.T, e *env) {
 		ctx := context.Background()
 		m := e.manager(t)

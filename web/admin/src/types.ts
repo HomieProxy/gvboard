@@ -347,4 +347,7 @@ export interface SubscribeLog {
   result: number
   rule_id: number | null
   created_at: number
+  token: string | null
+  path: string | null
+  email: string
 }
