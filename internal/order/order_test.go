@@ -798,7 +798,8 @@ func testAdminOrder(t *testing.T, e *env) {
 	q := func(f ...OrderFilter) (*PageResult[AdminOrder], error) {
 		return e.AdminOrders(ctx, OrderQuery{Filter: f})
 	}
-	if r, _ := q(OrderFilter{Key: "email", Condition: "模糊", Value: "BUYER"}); r.Total != 2 || r.Data[0].PlanName != "B" {
+	if r, _ := q(OrderFilter{Key: "email", Condition: "模糊", Value: "BUYER"}); r.Total != 2 || r.Data[0].PlanName != "B" ||
+		!strings.Contains(strings.ToLower(r.Data[0].Email), "buyer") {
 		t.Errorf("按邮箱筛选不正确: %+v", r)
 	}
 	if r, _ := q(OrderFilter{Key: "status", Condition: "=", Value: "3"}); r.Total != 1 {

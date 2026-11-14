@@ -2,12 +2,18 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NCard, NButton, NInput, NSpin, NTag, NResult, NSpace } from 'naive-ui'
+import { ArrowLeftIcon, SendIcon, Loader2Icon, HeadsetIcon, UserIcon } from '@lucide/vue'
 import { formatTime } from '@gv/shared'
+import { Card, CardContent, CardFooter } from '@gv/shared/ui/card'
+import { Button } from '@gv/shared/ui/button'
+import { Textarea } from '@gv/shared/ui/textarea'
+import { Skeleton } from '@gv/shared/ui/skeleton'
+import { cn } from '@gv/shared/lib/utils'
 import { http } from '../api'
 import { confirm, errText, toast } from '../ui'
-import { subName, subs, loadSubs } from '../store'
+import { subOptions, subs, loadSubs } from '../store'
 import type { TicketDetail } from '../types'
+import StatusBadge from '../components/common/StatusBadge.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -27,8 +33,7 @@ const waiting = computed(() => {
 const subLabel = computed(() => {
   const sid = ticket.value?.subscription_id
   if (!sid) return ''
-  const s = subs.value.find((x) => x.id === sid)
-  return s ? subName(s) : `#${sid}`
+  return subOptions(subs.value).find((o) => o.value === sid)?.label || `#${sid}`
 })
 
 async function load() {
@@ -56,6 +61,10 @@ async function reply() {
   }
 }
 
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) reply()
+}
+
 function close() {
   confirm(t('ticket.closeConfirm'), () => http.post(`/user/tickets/${id}/close`), t('ticket.closedTip')).then((ok) => {
     if (ok) load()
@@ -70,59 +79,76 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <NSpin :show="loading">
-      <NResult v-if="missing" status="404" :title="t('nav.tickets')">
-        <template #footer><NButton @click="router.push('/tickets')">{{ t('common.back') }}</NButton></template>
-      </NResult>
-      <template v-else-if="ticket">
-        <div class="row" style="margin-bottom: 16px; flex-wrap: wrap">
-          <NButton quaternary size="small" @click="router.push('/tickets')">← {{ t('nav.tickets') }}</NButton>
-          <h2 class="page-title" style="margin: 0">{{ ticket.subject }}</h2>
-          <NTag size="small" :bordered="false">{{ t(`ticket.levels.${ticket.level}`) }}</NTag>
-          <NTag v-if="ticket.status === 1" size="small" :bordered="false">{{ t('ticket.closed') }}</NTag>
-          <span v-if="subLabel" class="muted">{{ t('ticket.subscription') }}：{{ subLabel }}</span>
-          <div style="flex: 1" />
-          <NButton v-if="ticket.status === 0" size="small" @click="close">{{ t('ticket.close') }}</NButton>
-        </div>
-        <NCard size="small">
-          <div ref="box" class="messages">
-            <div v-for="m in ticket.messages" :key="m.id" class="msg" :class="{ me: m.is_me }">
-              <div class="who muted">{{ m.is_me ? t('ticket.me') : t('ticket.staff') }} · {{ formatTime(m.created_at) }}</div>
-              <div class="bubble">{{ m.message }}</div>
+  <div>
+    <Skeleton v-if="loading" class="h-96 rounded-xl" />
+    <div v-else-if="missing" class="flex flex-col items-center gap-4 py-20 text-center">
+      <p class="text-lg font-medium">{{ t('ticket.notFound') }}</p>
+      <Button variant="outline" @click="router.push('/tickets')"><ArrowLeftIcon />{{ t('common.back') }}</Button>
+    </div>
+    <template v-else-if="ticket">
+      <div class="mb-5 flex flex-wrap items-center gap-2">
+        <Button variant="ghost" size="sm" @click="router.push('/tickets')"><ArrowLeftIcon class="rtl:rotate-180" />{{ t('nav.tickets') }}</Button>
+        <h1 class="min-w-0 truncate text-xl font-semibold tracking-tight">{{ ticket.subject }}</h1>
+        <StatusBadge>{{ t(`ticket.levels.${ticket.level}`) }}</StatusBadge>
+        <StatusBadge v-if="ticket.status === 1" dot>{{ t('ticket.closed') }}</StatusBadge>
+        <span v-if="subLabel" class="text-sm text-muted-foreground">{{ t('ticket.subscription') }}：{{ subLabel }}</span>
+        <Button v-if="ticket.status === 0" variant="outline" size="sm" class="ml-auto" @click="close">{{ t('ticket.close') }}</Button>
+      </div>
+
+      <Card class="gap-0 py-0">
+        <CardContent class="p-0">
+          <div ref="box" class="flex max-h-[60svh] min-h-64 flex-col gap-5 overflow-y-auto p-4 md:p-6">
+            <div
+              v-for="m in ticket.messages"
+              :key="m.id"
+              :class="cn('flex max-w-[86%] gap-3', m.is_me ? 'flex-row-reverse self-end' : 'self-start')"
+            >
+              <div
+                :class="
+                  cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-full',
+                    m.is_me ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
+                  )
+                "
+              >
+                <UserIcon v-if="m.is_me" class="size-4" />
+                <HeadsetIcon v-else class="size-4" />
+              </div>
+              <div :class="cn('flex min-w-0 flex-col gap-1', m.is_me ? 'items-end' : 'items-start')">
+                <span class="text-xs text-muted-foreground">{{ m.is_me ? t('ticket.me') : t('ticket.staff') }} · {{ formatTime(m.created_at) }}</span>
+                <div
+                  :class="
+                    cn(
+                      'rounded-2xl px-4 py-2.5 text-sm break-words whitespace-pre-wrap',
+                      m.is_me ? 'rounded-tr-sm bg-primary text-primary-foreground' : 'rounded-tl-sm bg-muted',
+                    )
+                  "
+                >
+                  {{ m.message }}
+                </div>
+              </div>
             </div>
           </div>
-        </NCard>
-        <NCard v-if="ticket.status === 0" size="small" style="margin-top: 16px">
-          <NSpace vertical>
-            <span v-if="waiting" class="muted">{{ t('ticket.waitReply') }}</span>
-            <NInput
-              v-model:value="message"
-              type="textarea"
-              :autosize="{ minRows: 3, maxRows: 10 }"
-              :maxlength="10000"
+        </CardContent>
+        <CardFooter v-if="ticket.status === 0" class="flex-col items-stretch gap-2 border-t p-4">
+          <p v-if="waiting" class="text-sm text-muted-foreground">{{ t('ticket.waitReply') }}</p>
+          <div class="flex items-end gap-2">
+            <Textarea
+              v-model="message"
+              rows="2"
+              maxlength="10000"
+              class="max-h-60 min-h-11 flex-1"
               :disabled="waiting"
               :placeholder="t('ticket.replyPlaceholder')"
+              @keydown="onKey"
             />
-            <NButton type="primary" :loading="sending" :disabled="waiting || !message.trim()" @click="reply">{{ t('ticket.reply') }}</NButton>
-          </NSpace>
-        </NCard>
-      </template>
-    </NSpin>
+            <Button size="icon" class="size-11" :disabled="sending || waiting || !message.trim()" :title="t('ticket.reply')" @click="reply">
+              <Loader2Icon v-if="sending" class="animate-spin" />
+              <SendIcon v-else class="rtl:-scale-x-100" />
+            </Button>
+          </div>
+        </CardFooter>
+      </Card>
+    </template>
   </div>
 </template>
-
-<style scoped>
-.messages { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 4px; }
-.msg { display: flex; flex-direction: column; align-items: flex-start; max-width: 86%; }
-.msg.me { align-self: flex-end; align-items: flex-end; }
-.who { font-size: 12px; margin-bottom: 4px; }
-.bubble {
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgba(127, 127, 127, .12);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-.msg.me .bubble { background: var(--gv-primary-soft, rgba(24, 160, 88, .16)); }
-</style>

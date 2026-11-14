@@ -1,9 +1,7 @@
-import type { MessageApi, DialogApi, LoadingBarApi } from 'naive-ui'
+import { reactive } from 'vue'
+import { toast as sonner } from 'vue-sonner'
 import { ApiError, copyText } from '@gv/shared'
 import { i18n } from './i18n'
-
-// 由 UiBridge 组件在 Provider 内注册，使提示框跟随当前主题与语言。
-export const ui: { message?: MessageApi; dialog?: DialogApi; loading?: LoadingBarApi } = {}
 
 const t = (k: string) => i18n.global.t(k)
 
@@ -13,7 +11,7 @@ export function errText(e: unknown): string {
 }
 
 export function toast(type: 'success' | 'error' | 'warning' | 'info', text: string) {
-  ui.message?.[type](text)
+  sonner[type](text)
 }
 
 export async function copy(text: string) {
@@ -32,17 +30,34 @@ export async function run(fn: () => Promise<unknown>, ok?: string): Promise<bool
   }
 }
 
-export function confirm(content: string, fn: () => Promise<unknown>, ok?: string): Promise<boolean> {
+/** 全局确认框状态，由 App.vue 中的 ConfirmHost 渲染。 */
+export const confirmState = reactive({
+  open: false,
+  content: '',
+  danger: false,
+  busy: false,
+  resolve: (_ok: boolean) => {},
+  action: async () => {},
+})
+
+/** 二次确认后执行 fn；返回是否执行成功。 */
+export function confirm(content: string, fn: () => Promise<unknown>, ok?: string, danger = false): Promise<boolean> {
   return new Promise((resolve) => {
-    if (!ui.dialog) return resolve(false)
-    ui.dialog.warning({
-      title: t('common.confirm'),
+    Object.assign(confirmState, {
+      open: true,
       content,
-      positiveText: t('common.ok'),
-      negativeText: t('common.cancel'),
-      onPositiveClick: async () => resolve(await run(fn, ok)),
-      onNegativeClick: () => resolve(false),
-      onClose: () => resolve(false),
+      danger,
+      busy: false,
+      resolve,
+      action: async () => {
+        confirmState.busy = true
+        const done = await run(fn, ok)
+        confirmState.busy = false
+        if (done) {
+          confirmState.open = false
+          resolve(true)
+        }
+      },
     })
   })
 }

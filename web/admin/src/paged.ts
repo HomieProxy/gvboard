@@ -1,35 +1,24 @@
 import { reactive, ref, type Ref } from 'vue'
-import type { PaginationProps } from 'naive-ui'
 import { errText, message } from './ui'
 
-/** 远程分页表格：fetcher 返回 {rows, total}，页码 / 每页条数由分页组件驱动。 */
-export function usePaged<T>(fetcher: (current: number, pageSize: number) => Promise<{ rows: T[]; total: number }>) {
+export interface Pager {
+  page: number
+  pageSize: number
+  total: number
+}
+
+/** 远程分页表格：fetcher 返回 {rows, total}；切换页码 / 每页条数调用 setPage / setPageSize。 */
+export function usePaged<T>(fetcher: (current: number, pageSize: number) => Promise<{ rows: T[]; total: number }>, pageSize = 20) {
   const rows = ref([]) as Ref<T[]>
   const loading = ref(false)
-  const pagination = reactive<PaginationProps>({
-    page: 1,
-    pageSize: 20,
-    itemCount: 0,
-    showSizePicker: true,
-    pageSizes: [10, 20, 50, 100],
-    prefix: ({ itemCount }) => `共 ${itemCount} 条`,
-    onUpdatePage: (p: number) => {
-      pagination.page = p
-      load()
-    },
-    onUpdatePageSize: (s: number) => {
-      pagination.pageSize = s
-      pagination.page = 1
-      load()
-    },
-  })
+  const pager = reactive<Pager>({ page: 1, pageSize, total: 0 })
 
   async function load() {
     loading.value = true
     try {
-      const r = await fetcher(pagination.page || 1, pagination.pageSize || 20)
+      const r = await fetcher(pager.page, pager.pageSize)
       rows.value = r.rows
-      pagination.itemCount = r.total
+      pager.total = r.total
     } catch (e) {
       message.error(errText(e))
     } finally {
@@ -38,11 +27,22 @@ export function usePaged<T>(fetcher: (current: number, pageSize: number) => Prom
   }
 
   function reload() {
-    pagination.page = 1
+    pager.page = 1
     return load()
   }
 
-  return { rows, loading, pagination, load, reload }
+  function setPage(p: number) {
+    pager.page = p
+    return load()
+  }
+
+  function setPageSize(s: number) {
+    pager.pageSize = s
+    pager.page = 1
+    return load()
+  }
+
+  return { rows, loading, pager, load, reload, setPage, setPageSize }
 }
 
 /** 一次性加载的列表 */

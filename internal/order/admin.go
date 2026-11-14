@@ -399,10 +399,11 @@ type OrderQuery struct {
 	Filter       []OrderFilter `json:"filter"`
 }
 
-// AdminOrder 管理端订单，附带套餐名称。
+// AdminOrder 管理端订单，附带套餐名称与用户邮箱。
 type AdminOrder struct {
 	model.Order
 	PlanName string `json:"plan_name,omitempty"`
+	Email    string `json:"email"`
 }
 
 var (
@@ -457,9 +458,23 @@ func (s *Service) AdminOrders(ctx context.Context, in OrderQuery) (*PageResult[A
 	if err != nil {
 		return nil, err
 	}
+	emails := map[int64]string{}
+	if len(orders) > 0 {
+		ids := make([]int64, 0, len(orders))
+		for _, o := range orders {
+			ids = append(ids, o.UserID)
+		}
+		var users []model.User
+		if err := db.Select("id", "email").Where("id IN ?", ids).Find(&users).Error; err != nil {
+			return nil, err
+		}
+		for _, u := range users {
+			emails[u.ID] = u.Email
+		}
+	}
 	out := make([]AdminOrder, 0, len(orders))
 	for _, o := range orders {
-		out = append(out, AdminOrder{Order: o, PlanName: names[o.PlanID]})
+		out = append(out, AdminOrder{Order: o, PlanName: names[o.PlanID], Email: emails[o.UserID]})
 	}
 	return &PageResult[AdminOrder]{Data: out, Total: total}, nil
 }

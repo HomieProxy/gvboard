@@ -2,10 +2,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NGrid, NGi, NButton, NSpin, NEmpty } from 'naive-ui'
+import { PlusIcon } from '@lucide/vue'
+import { Button } from '@gv/shared/ui/button'
+import { Skeleton } from '@gv/shared/ui/skeleton'
 import { errText, toast } from '../ui'
 import { loadMe, loadSubs, me, subs } from '../store'
 import SubCard from '../components/SubCard.vue'
+import PageHeader from '../components/common/PageHeader.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -24,26 +27,22 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <div class="row" style="margin-bottom: 16px">
-      <h2 class="page-title" style="margin: 0">{{ t('nav.subscriptions') }}</h2>
-      <span v-if="me" class="muted">{{ t('sub.limitTip', { n: subs.length, max: me.subscription_limit }) }}</span>
-      <span class="spacer" />
-      <NButton type="primary" :disabled="full" :title="full ? t('sub.limitReached') : ''" @click="router.push({ path: '/plans', query: { sub: 0 } })">
-        {{ t('sub.add') }}
-      </NButton>
+  <div>
+    <PageHeader :title="t('nav.subscriptions')" :description="me ? t('sub.limitTip', { n: subs.length, max: me.subscription_limit }) : ''">
+      <Button :disabled="full" :title="full ? t('sub.limitReached') : ''" @click="router.push({ path: '/plans', query: { sub: 0 } })">
+        <PlusIcon />{{ t('sub.add') }}
+      </Button>
+    </PageHeader>
+    <div v-if="loading" class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+      <Skeleton v-for="i in 2" :key="i" class="h-44 rounded-xl" />
     </div>
-    <NSpin :show="loading">
-      <NGrid cols="1 m:2" responsive="screen" :x-gap="16" :y-gap="16">
-        <NGi v-for="s in subs" :key="s.id">
-          <SubCard :sub="s" class="clickable" @click="router.push(`/subscriptions/${s.id}`)">
-            <template #actions>
-              <NButton size="small" type="primary" secondary @click.stop="router.push(`/subscriptions/${s.id}`)">{{ t('common.detail') }}</NButton>
-            </template>
-          </SubCard>
-        </NGi>
-      </NGrid>
-      <NEmpty v-if="!loading && !subs.length" :description="t('common.empty')" />
-    </NSpin>
+    <div v-else class="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+      <SubCard v-for="s in subs" :key="s.id" :sub="s" class="cursor-pointer" @click="router.push(`/subscriptions/${s.id}`)">
+        <template #actions>
+          <Button size="sm" @click.stop="router.push(`/subscriptions/${s.id}`)">{{ t('common.detail') }}</Button>
+        </template>
+      </SubCard>
+    </div>
+    <p v-if="!loading && !subs.length" class="py-16 text-center text-muted-foreground">{{ t('common.empty') }}</p>
   </div>
 </template>

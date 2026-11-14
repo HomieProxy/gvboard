@@ -1,118 +1,134 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
-import { NCard, NDataTable, NButton, NInput, NSelect, NSpace, NBadge, NModal, type DataTableColumns } from 'naive-ui'
-import { copyText, formatTime } from '@gv/shared'
+import { computed, onMounted, ref } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
+import {
+  PlusIcon, RefreshCwIcon, SearchIcon, PencilIcon, CopyIcon, Trash2Icon, TerminalIcon, EllipsisIcon, GripVerticalIcon, ArrowDownUpIcon, Loader2Icon,
+} from '@lucide/vue'
+import { copyText } from '@gv/shared'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Switch } from '@gv/shared/ui/switch'
+import { Textarea } from '@gv/shared/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@gv/shared/ui/tooltip'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@gv/shared/ui/dropdown-menu'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable, { type Column } from '../components/common/DataTable.vue'
+import ServerForm from '../components/ServerForm.vue'
 import { admin } from '../api'
-import { message, run } from '../ui'
+import { ask, confirm, message, run } from '../ui'
 import { useList } from '../paged'
-import { actions, btn, confirmBtn, sw, tag, tip } from '../helpers'
 import { groupName, loadGroups } from '../refs'
 import { serverTypes, typeLabel } from '../serverSpec'
 import type { ServerRow } from '../types'
-import ServerForm from '../components/ServerForm.vue'
 
 const { rows, loading, load } = useList(() => admin.get<ServerRow[]>('/servers'))
 const keyword = ref('')
-const typeFilter = ref<string | null>(null)
 
 const data = computed(() => {
   const k = keyword.value.trim().toLowerCase()
-  return rows.value.filter(
-    (s) => (!typeFilter.value || s.type === typeFilter.value) && (!k || s.name.toLowerCase().includes(k) || s.host.toLowerCase().includes(k) || String(s.id) === k),
+  if (!k) return rows.value
+  return rows.value.filter((s) =>
+    [s.id, s.name, s.host, s.port, s.type, typeLabel(s.type), ...(s.tags || [])].some((x) => String(x).toLowerCase().includes(k)),
   )
 })
-const sortable = computed(() => !keyword.value.trim() && !typeFilter.value)
 
-const statusInfo: Record<number, [string, 'error' | 'warning' | 'success']> = {
-  0: ['离线（5 分钟内未拉取配置）', 'error'],
-  1: ['在线，但 5 分钟内无流量上报', 'warning'],
-  2: ['正常', 'success'],
+const typeColor: Record<string, string> = {
+  shadowsocks: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
+  vmess: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
+  trojan: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
+  tuic: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  hysteria: 'bg-orange-500/15 text-orange-700 dark:text-orange-300',
+  vless: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+  anytls: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300',
+  v2node: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300',
 }
+const status: Record<number, [string, string]> = {
+  0: ['未运行', 'bg-red-500'],
+  1: ['无人使用或服务端上报异常', 'bg-amber-500'],
+  2: ['运行正常', 'bg-emerald-500'],
+}
+
+const columns: Column[] = [
+  { key: 'id', title: '节点ID', class: 'w-36' },
+  { key: 'show', title: '显隐', align: 'center', class: 'w-16' },
+  { key: 'name', title: '节点' },
+  { key: 'host', title: '地址' },
+  { key: 'online', title: '人数', align: 'center', class: 'w-20' },
+  { key: 'rate', title: '倍率', align: 'center', class: 'w-20' },
+  { key: 'group_id', title: '权限组' },
+  { key: 'op', title: '操作', align: 'right', class: 'w-24' },
+]
 
 async function setShow(s: ServerRow, v: boolean) {
   if (await run(() => admin.post(`/servers/${s.type}/${s.id}/show`, { show: v ? 1 : 0 }))) s.show = v ? 1 : 0
 }
-
-async function move(i: number, d: number) {
-  const list = [...rows.value]
-  const j = i + d
-  if (j < 0 || j >= list.length) return
-  ;[list[i], list[j]] = [list[j], list[i]]
-  rows.value = list
-  const body: Record<string, Record<string, number>> = {}
-  list.forEach((s, idx) => {
-    body[s.type] = body[s.type] || {}
-    body[s.type][String(s.id)] = idx + 1
-  })
-  if (!(await run(() => admin.post('/servers/sort', body)))) load()
+async function copyAddr(s: ServerRow) {
+  const ok = await copyText(`${s.host}:${s.port}`)
+  message[ok ? 'success' : 'error'](ok ? '复制成功' : '复制失败')
 }
-
-async function copy(s: ServerRow) {
-  if (await run(() => admin.post(`/servers/${s.type}/${s.id}/copy`), '已复制（新节点默认隐藏）')) load()
+async function duplicate(s: ServerRow) {
+  if (await run(() => admin.post(`/servers/${s.type}/${s.id}/copy`), '复制成功')) load()
 }
 async function remove(s: ServerRow) {
-  if (await run(() => admin.del(`/servers/${s.type}/${s.id}`), '已删除')) load()
+  if (await confirm(`确定要删除节点「${s.name}」吗？`, () => admin.del(`/servers/${s.type}/${s.id}`), '删除成功')) load()
 }
 
-const installCmd = ref('')
-const installShow = ref(false)
-function showInstall(s: ServerRow) {
-  installCmd.value = s.install_command || ''
-  installShow.value = true
-}
-
-const columns = computed<DataTableColumns<ServerRow>>(() => [
-  ...(sortable.value
-    ? [
-        {
-          title: '排序',
-          key: 'sort',
-          width: 70,
-          render: (_: ServerRow, i: number) => actions(btn('↑', () => move(i, -1), 'default'), btn('↓', () => move(i, 1), 'default')),
-        },
-      ]
-    : []),
-  {
-    title: '节点',
-    key: 'name',
-    render: (s) =>
-      h(NSpace, { size: 6, align: 'center', wrap: false }, () => [
-        tip(h(NBadge, { dot: true, type: statusInfo[s.available_status]?.[1] || 'error' }), statusInfo[s.available_status]?.[0] || ''),
-        tag(typeLabel(s.type), 'info'),
-        h('span', null, `#${s.id} ${s.name}`),
-        s.parent_id ? h('span', { class: 'muted' }, `（父节点 #${s.parent_id}）`) : null,
-      ]),
-  },
-  { title: '地址', key: 'host', render: (s) => h('span', { class: 'mono' }, `${s.host}:${s.port}`) },
-  { title: '在线', key: 'online', width: 70, render: (s) => s.online ?? 0 },
-  { title: '倍率', key: 'rate', width: 70, render: (s) => `${Number(s.rate)}x` },
-  { title: '权限组', key: 'group_id', render: (s) => (s.group_id || []).map((g) => groupName(Number(g))).join('、') },
-  {
-    title: '最后通讯',
-    key: 'last_check_at',
-    render: (s) => h('span', { class: 'muted' }, `拉取 ${formatTime(s.last_check_at)} / 上报 ${formatTime(s.last_push_at)}`),
-  },
-  { title: '显示', key: 'show', width: 70, render: (s) => sw(!!s.show, (v) => setShow(s, v)) },
-  {
-    title: '操作',
-    key: 'op',
-    width: 200,
-    render: (s) =>
-      actions(
-        btn('编辑', () => open(s)),
-        btn('复制', () => copy(s), 'info'),
-        s.install_command ? btn('安装命令', () => showInstall(s), 'success') : null,
-        confirmBtn('删除', '确定删除该节点？', () => remove(s)),
-      ),
-  },
-])
-
+// ---------- 编辑 ----------
 const formShow = ref(false)
 const editing = ref<ServerRow | null>(null)
-function open(s: ServerRow | null) {
+const newType = ref('vless')
+function openForm(s: ServerRow | null, type?: string) {
   editing.value = s
+  if (type) newType.value = type
   formShow.value = true
 }
+
+// ---------- 安装命令 ----------
+const install = ref({ open: false, text: '' })
+async function copyInstall() {
+  const ok = await copyText(install.value.text)
+  message[ok ? 'success' : 'error'](ok ? '复制成功' : '复制失败')
+}
+
+// ---------- 排序 ----------
+const sorting = ref(false)
+const sortList = ref<ServerRow[]>([])
+const dirty = ref(false)
+const savingSort = ref(false)
+let dragFrom = -1
+
+function startSort() {
+  keyword.value = ''
+  sortList.value = [...rows.value]
+  dirty.value = false
+  sorting.value = true
+}
+function onDrop(to: number) {
+  if (dragFrom < 0 || dragFrom === to) return
+  const list = [...sortList.value]
+  const [item] = list.splice(dragFrom, 1)
+  list.splice(to, 0, item)
+  sortList.value = list
+  dirty.value = true
+  dragFrom = -1
+}
+async function saveSort() {
+  const body: Record<string, Record<string, number>> = {}
+  sortList.value.forEach((s, i) => {
+    body[s.type] = body[s.type] || {}
+    body[s.type][String(s.id)] = i + 1
+  })
+  savingSort.value = true
+  const ok = await run(() => admin.post('/servers/sort', body), '保存成功')
+  savingSort.value = false
+  if (ok) {
+    sorting.value = false
+    dirty.value = false
+    load()
+  }
+}
+onBeforeRouteLeave(async () => (sorting.value && dirty.value ? await ask('提示', '节点排序还没有保存，是否离开') : true))
 
 onMounted(() => {
   loadGroups().catch(() => {})
@@ -121,25 +137,128 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
-    <NCard size="small">
-      <div class="toolbar">
-        <NButton type="primary" @click="open(null)">新建节点</NButton>
-        <NSelect v-model:value="typeFilter" :options="serverTypes" clearable placeholder="全部类型" style="width: 150px" />
-        <NInput v-model:value="keyword" placeholder="搜索名称 / 地址 / ID" clearable style="width: 220px" />
-        <NButton @click="load">刷新</NButton>
-        <span class="muted">清空筛选后可调整排序</span>
-      </div>
-      <NDataTable size="small" :columns="columns" :data="data" :loading="loading" :row-key="(s: ServerRow) => `${s.type}-${s.id}`" :scroll-x="1100" />
-    </NCard>
-    <ServerForm v-model:show="formShow" :server="editing" :type="typeFilter || 'vless'" :parents="rows" @saved="load" />
-    <NModal v-model:show="installShow" preset="card" title="一键安装命令" style="width: 680px; max-width: 95vw">
-      <pre class="code">{{ installCmd }}</pre>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton type="primary" @click="copyText(installCmd).then((ok) => message[ok ? 'success' : 'error'](ok ? '已复制' : '复制失败'))">复制</NButton>
-        </NSpace>
+  <div>
+    <PageHeader title="节点管理" description="节点状态根据服务端拉取配置与上报流量的时间判断。">
+      <template v-if="!sorting">
+        <Button variant="ghost" size="icon" :disabled="loading" @click="load"><RefreshCwIcon :class="loading ? 'animate-spin' : ''" /></Button>
+        <Button variant="outline" @click="startSort"><ArrowDownUpIcon />编辑排序</Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button><PlusIcon />添加节点</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem v-for="t in serverTypes" :key="t.value" @click="openForm(null, t.value)">
+              <span class="size-2 rounded-full" :class="typeColor[t.value]?.split(' ')[0]" />
+              {{ t.label }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </template>
-    </NModal>
+      <template v-else>
+        <Button variant="outline" @click="sorting = false">取消</Button>
+        <Button :disabled="savingSort" @click="saveSort"><Loader2Icon v-if="savingSort" class="animate-spin" />保存排序</Button>
+      </template>
+    </PageHeader>
+
+    <template v-if="!sorting">
+      <div class="mb-3 flex items-center gap-2">
+        <div class="relative w-full max-w-xs">
+          <SearchIcon class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input v-model="keyword" placeholder="输入任意关键字搜索" class="pl-8" />
+        </div>
+        <span class="text-sm text-muted-foreground">共 {{ data.length }} 个节点</span>
+      </div>
+
+      <DataTable :columns="columns" :rows="data" :loading="loading" :row-key="(s: ServerRow) => `${s.type}-${s.id}`">
+        <template #cell-id="{ row }">
+          <div class="flex items-center gap-1.5">
+            <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="typeColor[row.type]">{{ typeLabel(row.type) }}</span>
+            <span class="tabular-nums">{{ row.id }}</span>
+            <span v-if="row.parent_id" class="text-xs text-muted-foreground">→ {{ row.parent_id }}</span>
+          </div>
+        </template>
+        <template #cell-show="{ row }">
+          <Switch :model-value="!!row.show" @update:model-value="(v: boolean) => setShow(row, v)" />
+        </template>
+        <template #cell-name="{ row }">
+          <div class="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <span class="size-2 shrink-0 rounded-full" :class="status[row.available_status]?.[1] || 'bg-red-500'" />
+              </TooltipTrigger>
+              <TooltipContent>{{ status[row.available_status]?.[0] || '未运行' }}</TooltipContent>
+            </Tooltip>
+            <span class="font-medium">{{ row.name }}</span>
+            <span v-for="tg in row.tags || []" :key="tg" class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{{ tg }}</span>
+          </div>
+        </template>
+        <template #cell-host="{ row }">
+          <button type="button" class="font-mono text-xs hover:text-primary" title="点击复制" @click="copyAddr(row)">{{ row.host }}:{{ row.port }}</button>
+        </template>
+        <template #cell-online="{ row }">
+          <Tooltip>
+            <TooltipTrigger as-child><span class="tabular-nums">{{ row.online ?? 0 }}</span></TooltipTrigger>
+            <TooltipContent>根据服务端上报频率而定</TooltipContent>
+          </Tooltip>
+        </template>
+        <template #cell-rate="{ row }">
+          <Tooltip>
+            <TooltipTrigger as-child><span class="rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums">{{ Number(row.rate) }} x</span></TooltipTrigger>
+            <TooltipContent>使用的流量将乘以倍率进行扣除</TooltipContent>
+          </Tooltip>
+        </template>
+        <template #cell-group_id="{ row }">
+          <div class="flex max-w-xs flex-wrap gap-1">
+            <span v-for="g in row.group_id || []" :key="g" class="rounded border px-1.5 py-0.5 text-xs">{{ groupName(Number(g)) }}</span>
+          </div>
+        </template>
+        <template #cell-op="{ row }">
+          <div class="flex justify-end gap-0.5">
+            <Button variant="ghost" size="icon" class="size-8" @click="openForm(row)"><PencilIcon /></Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button variant="ghost" size="icon" class="size-8"><EllipsisIcon /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem @click="openForm(row)"><PencilIcon />编辑</DropdownMenuItem>
+                <DropdownMenuItem @click="duplicate(row)"><CopyIcon />复制</DropdownMenuItem>
+                <DropdownMenuItem v-if="row.install_command" @click="install = { open: true, text: String(row.install_command) }"><TerminalIcon />一键安装指令</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" @click="remove(row)"><Trash2Icon />删除</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </template>
+      </DataTable>
+    </template>
+
+    <div v-else class="rounded-lg border bg-card">
+      <p class="border-b px-4 py-2 text-sm text-muted-foreground">拖动排序，完成后点击「保存排序」。</p>
+      <div
+        v-for="(s, i) in sortList"
+        :key="`${s.type}-${s.id}`"
+        draggable="true"
+        class="flex cursor-grab items-center gap-3 border-b px-4 py-2 last:border-b-0 hover:bg-muted/50"
+        @dragstart="dragFrom = i"
+        @dragover.prevent
+        @drop="onDrop(i)"
+      >
+        <GripVerticalIcon class="size-4 text-muted-foreground" />
+        <span class="w-8 text-xs text-muted-foreground tabular-nums">{{ i + 1 }}</span>
+        <span class="rounded px-1.5 py-0.5 text-xs font-medium" :class="typeColor[s.type]">{{ typeLabel(s.type) }}</span>
+        <span class="text-sm">{{ s.name }}</span>
+        <span class="ml-auto font-mono text-xs text-muted-foreground">{{ s.host }}:{{ s.port }}</span>
+      </div>
+    </div>
+
+    <ServerForm v-model:show="formShow" :server="editing" :type="newType" :parents="rows" @saved="load" />
+
+    <Dialog v-model:open="install.open">
+      <DialogContent class="sm:max-w-2xl">
+        <DialogHeader><DialogTitle>一键安装指令</DialogTitle></DialogHeader>
+        <Textarea :model-value="install.text" readonly rows="5" class="bg-muted font-mono text-xs" />
+        <DialogFooter><Button @click="copyInstall"><CopyIcon />复制</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

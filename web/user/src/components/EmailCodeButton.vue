@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from 'vue'
-import { NButton } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
+import { Loader2Icon } from '@lucide/vue'
+import { Button } from '@gv/shared/ui/button'
 import { http } from '../api'
 import { run, toast } from '../ui'
 
@@ -40,7 +41,8 @@ onUnmounted(() => clearInterval(timer))
 </script>
 
 <template>
-  <NButton :disabled="left > 0" :loading="sending" @click="send">
+  <Button type="button" variant="outline" class="shrink-0" :disabled="left > 0 || sending" @click="send">
+    <Loader2Icon v-if="sending" class="animate-spin" />
     {{ left > 0 ? t('auth.resend', { n: left }) : t('auth.sendCode') }}
-  </NButton>
+  </Button>
 </template>

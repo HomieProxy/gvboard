@@ -113,6 +113,7 @@ export interface Order {
   created_at: number
   updated_at: number
   plan_name?: string
+  email?: string
 }
 
 export interface OrderDetail extends Order {
@@ -234,6 +235,12 @@ export interface Ticket {
   updated_at: number
   email: string
   subscription_name: string | null
+  plan_name: string | null
+  subscription_expired_at: number | null
+  subscription_used: number | null
+  subscription_total: number | null
+  subscription_inferred: boolean
+  inferred_subscription_id: number | null
 }
 
 export interface TicketMessage {

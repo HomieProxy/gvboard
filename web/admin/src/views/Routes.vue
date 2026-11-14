@@ -1,48 +1,90 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { NCard, NDataTable, NButton, NModal, NForm, NFormItem, NInput, NSelect, NSpace, type DataTableColumns } from 'naive-ui'
+import { computed, onMounted, ref } from 'vue'
+import { PlusIcon, RefreshCwIcon, PencilIcon, Trash2Icon, Loader2Icon } from '@lucide/vue'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Textarea } from '@gv/shared/ui/textarea'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable, { type Column } from '../components/common/DataTable.vue'
+import FormItem from '../components/common/FormItem.vue'
+import SelectBox from '../components/common/SelectBox.vue'
 import { admin } from '../api'
-import { run } from '../ui'
+import { confirm, message, run } from '../ui'
 import { useList } from '../paged'
-import { actions, btn, confirmBtn, ellipsis } from '../helpers'
 import { invalidate } from '../refs'
 import type { ServerRoute } from '../types'
 
 const { rows, loading, load } = useList(() => admin.get<ServerRoute[]>('/servers/routes'))
 
-const actionOptions = [
-  { label: '禁止访问（域名）', value: 'block' },
-  { label: '禁止访问（IP）', value: 'block_ip' },
-  { label: '禁止访问（端口）', value: 'block_port' },
-  { label: '禁止协议', value: 'protocol' },
-  { label: '指定 DNS 解析', value: 'dns' },
-  { label: '指定出站（域名）', value: 'route' },
-  { label: '指定出站（IP）', value: 'route_ip' },
-  { label: '默认出站', value: 'default_out' },
+const actionText: Record<string, string> = {
+  block: '禁止访问(域名目标)',
+  block_ip: '禁止访问(IP目标)',
+  block_port: '禁止访问(端口目标)',
+  protocol: '禁止访问(协议)',
+  dns: '指定DNS服务器进行解析',
+  route: '指定出站服务器(域名目标)',
+  route_ip: '指定出站服务器(IP目标)',
+  default_out: '自定义默认出站',
+}
+const actionOptions = Object.entries(actionText).map(([value, label]) => ({ value, label }))
+const outboundExample = JSON.stringify(
+  {
+    tag: 'ss_out',
+    sendThrough: '0.0.0.0',
+    protocol: 'shadowsocks',
+    settings: { email: 'love@xray.com', address: '8.8.8.8', port: 5555, method: 'chacha20-ietf-poly1305', password: 'abcdefghijklmnopqrstuvwxyz', level: 0 },
+  },
+  null,
+  4,
+)
+
+const matchList = (r: ServerRoute) => (Array.isArray(r.match) ? r.match : String(r.match || '').split(',')).filter(Boolean)
+
+const columns: Column[] = [
+  { key: 'id', title: 'ID', class: 'w-16' },
+  { key: 'remarks', title: '备注' },
+  { key: 'match', title: '匹配数量' },
+  { key: 'action', title: '动作' },
+  { key: 'op', title: '操作', align: 'right', class: 'w-24' },
 ]
-const actionName = (a: string) => actionOptions.find((o) => o.value === a)?.label || a
 
 const show = ref(false)
+const saving = ref(false)
 const editing = ref<ServerRoute | null>(null)
 const form = ref({ remarks: '', action: 'block', match: '', action_value: '' })
 
 function open(r: ServerRoute | null) {
   editing.value = r
   form.value = r
-    ? { remarks: r.remarks, action: r.action, match: Array.isArray(r.match) ? r.match.join('\n') : r.match || '', action_value: r.action_value || '' }
+    ? { remarks: r.remarks, action: r.action, match: matchList(r).join('\n'), action_value: r.action_value || '' }
     : { remarks: '', action: 'block', match: '', action_value: '' }
   show.value = true
 }
 
+const matchTip = computed(() => {
+  const a = form.value.action
+  if (a === 'protocol') return 'http\ntls\nquic\nbittorrent'
+  if (a === 'block_port') return '53\n443\n1000-2000'
+  if (a === 'route_ip' || a === 'block_ip') return '127.0.0.1(单一匹配)\n10.0.0.0/8(范围匹配)\ngeoip:cn(预定义列表匹配)'
+  return 'example.com(关键字匹配)\ndomain:example.com(子域名匹配)\ngeosite:netflix(预定义域名列表)'
+})
+
 async function submit() {
   const f = form.value
+  if (!f.remarks.trim()) {
+    message.warning('请输入备注')
+    return
+  }
   const body = {
     remarks: f.remarks.trim(),
     action: f.action,
-    match: f.match.split('\n').map((s) => s.trim()).filter(Boolean),
-    action_value: f.action_value.trim() || null,
+    match: f.action === 'default_out' ? [] : f.match.split('\n').map((s) => s.trim()).filter(Boolean),
+    action_value: ['dns', 'route', 'route_ip', 'default_out'].includes(f.action) ? f.action_value.trim() || null : null,
   }
-  const ok = await run(() => (editing.value ? admin.put(`/servers/routes/${editing.value.id}`, body) : admin.post('/servers/routes', body)), '已保存')
+  saving.value = true
+  const ok = await run(() => (editing.value ? admin.put(`/servers/routes/${editing.value.id}`, body) : admin.post('/servers/routes', body)), '保存成功')
+  saving.value = false
   if (ok) {
     show.value = false
     invalidate('routes')
@@ -51,52 +93,65 @@ async function submit() {
 }
 
 async function remove(r: ServerRoute) {
-  if (await run(() => admin.del(`/servers/routes/${r.id}`), '已删除')) {
+  if (await confirm(`确定要删除路由「${r.remarks}」吗？`, () => admin.del(`/servers/routes/${r.id}`), '删除成功')) {
     invalidate('routes')
     load()
   }
 }
 
-const columns: DataTableColumns<ServerRoute> = [
-  { title: 'ID', key: 'id', width: 70 },
-  { title: '备注', key: 'remarks' },
-  { title: '动作', key: 'action', render: (r) => actionName(r.action) },
-  { title: '匹配', key: 'match', render: (r) => ellipsis(Array.isArray(r.match) ? r.match.join(', ') : String(r.match ?? ''), 320) },
-  { title: '动作值', key: 'action_value', render: (r) => r.action_value || '-' },
-  {
-    title: '操作',
-    key: 'op',
-    width: 120,
-    render: (r) => actions(btn('编辑', () => open(r)), confirmBtn('删除', '确定删除该路由？', () => remove(r))),
-  },
-]
-
 onMounted(load)
 </script>
 
 <template>
-  <div class="page">
-    <NCard size="small">
-      <div class="toolbar">
-        <NButton type="primary" @click="open(null)">新建路由</NButton>
-        <NButton @click="load">刷新</NButton>
-      </div>
-      <NDataTable size="small" :columns="columns" :data="rows" :loading="loading" :row-key="(r: ServerRoute) => r.id" />
-    </NCard>
-    <NModal v-model:show="show" preset="card" :title="editing ? '编辑路由' : '新建路由'" style="width: 560px; max-width: 95vw">
-      <NForm label-placement="left" label-width="80">
-        <NFormItem label="备注" required><NInput v-model:value="form.remarks" /></NFormItem>
-        <NFormItem label="动作"><NSelect v-model:value="form.action" :options="actionOptions" /></NFormItem>
-        <NFormItem v-if="form.action !== 'default_out'" label="匹配值" required>
-          <NInput v-model:value="form.match" type="textarea" :autosize="{ minRows: 4, maxRows: 14 }" placeholder="每行一个，如 domain:example.com、geosite:cn、1.1.1.0/24" />
-        </NFormItem>
-        <NFormItem v-if="['dns', 'route', 'route_ip', 'default_out'].includes(form.action)" label="动作值">
-          <NInput v-model:value="form.action_value" type="textarea" :autosize="{ minRows: 2, maxRows: 10 }" placeholder="如 DNS 服务器地址或出站配置" />
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end"><NButton @click="show = false">取消</NButton><NButton type="primary" @click="submit">保存</NButton></NSpace>
+  <div>
+    <PageHeader title="路由管理" description="路由在节点中选择后，下发给服务端执行。">
+      <Button variant="ghost" size="icon" :disabled="loading" @click="load"><RefreshCwIcon :class="loading ? 'animate-spin' : ''" /></Button>
+      <Button @click="open(null)"><PlusIcon />添加路由</Button>
+    </PageHeader>
+
+    <DataTable :columns="columns" :rows="rows" :loading="loading">
+      <template #cell-id="{ row }"><span class="text-muted-foreground tabular-nums">{{ row.id }}</span></template>
+      <template #cell-remarks="{ row }"><span class="font-medium">{{ row.remarks }}</span></template>
+      <template #cell-match="{ row }">
+        <span v-if="row.action === 'default_out'" class="text-muted-foreground">无规则时默认</span>
+        <span v-else :title="matchList(row).join('\n')">匹配 <b class="tabular-nums">{{ matchList(row).length }}</b> 条规则</span>
       </template>
-    </NModal>
+      <template #cell-action="{ row }">
+        <span class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ actionText[row.action] || row.action }}</span>
+      </template>
+      <template #cell-op="{ row }">
+        <div class="flex justify-end gap-0.5">
+          <Button variant="ghost" size="icon" class="size-8" @click="open(row)"><PencilIcon /></Button>
+          <Button variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive" @click="remove(row)"><Trash2Icon /></Button>
+        </div>
+      </template>
+    </DataTable>
+
+    <Dialog v-model:open="show">
+      <DialogContent class="max-h-[90svh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader><DialogTitle>{{ editing ? '编辑路由' : '创建路由' }}</DialogTitle></DialogHeader>
+        <div class="grid gap-4">
+          <FormItem label="备注">
+            <Input v-model="form.remarks" placeholder="请输入备注" />
+          </FormItem>
+          <FormItem v-if="form.action !== 'default_out'" label="匹配值" help="每行一条规则">
+            <Textarea v-model="form.match" rows="5" :placeholder="matchTip" class="font-mono text-xs" />
+          </FormItem>
+          <FormItem label="动作">
+            <SelectBox :model-value="form.action" :options="actionOptions" placeholder="请选择动作" @update:model-value="(v) => (form.action = String(v))" />
+          </FormItem>
+          <FormItem v-if="form.action === 'dns'" label="DNS服务器">
+            <Input v-model="form.action_value" placeholder="请输入用于解析的DNS服务器地址" />
+          </FormItem>
+          <FormItem v-if="['route', 'route_ip', 'default_out'].includes(form.action)" label="Xray出站配置">
+            <Textarea v-model="form.action_value" rows="8" :placeholder="outboundExample" class="font-mono text-xs" />
+          </FormItem>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="show = false">取消</Button>
+          <Button :disabled="saving" @click="submit"><Loader2Icon v-if="saving" class="animate-spin" />提交</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

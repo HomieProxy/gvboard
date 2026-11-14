@@ -1,205 +1,313 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { SearchIcon, RefreshCwIcon, PlusIcon, ChevronDownIcon, XIcon, CopyIcon } from '@lucide/vue'
+import { copyText, formatMoney, formatTime } from '@gv/shared'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Switch } from '@gv/shared/ui/switch'
+import { Label } from '@gv/shared/ui/label'
+import { Separator } from '@gv/shared/ui/separator'
 import {
-  NCard, NDataTable, NButton, NInput, NModal, NForm, NFormItem, NInputNumber, NSelect, NSpace, NCheckbox,
-  NDescriptions, NDescriptionsItem, NDropdown, type DataTableColumns,
-} from 'naive-ui'
-import { formatMoney, formatTime } from '@gv/shared'
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@gv/shared/ui/dropdown-menu'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@gv/shared/ui/sheet'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable, { type Column } from '../components/common/DataTable.vue'
+import Pager from '../components/common/Pager.vue'
+import StatusBadge from '../components/common/StatusBadge.vue'
+import FilterEditor, { type FilterField } from '../components/FilterEditor.vue'
+import AssignOrder from '../components/AssignOrder.vue'
 import { admin } from '../api'
-import { confirm, run } from '../ui'
+import { confirm, message, run } from '../ui'
 import { usePaged } from '../paged'
-import { actions, btn, commissionStatus, enumTag, orderStatus, orderType, periodLabels, periodOptions, toCents, type Filter, type PageResult } from '../helpers'
+import { commissionStatus, orderStatus, orderType, periodLabels, type Filter, type PageResult } from '../helpers'
 import { loadPlans, planOptions } from '../refs'
 import type { Order, OrderDetail } from '../types'
-import FilterEditor from '../components/FilterEditor.vue'
 
 const route = useRoute()
-const filterFields = [
-  { label: '用户邮箱（包含）', value: 'email' },
-  { label: '订单号', value: 'trade_no' },
-  { label: '支付流水号', value: 'callback_no' },
-  { label: '状态(0-4)', value: 'status' },
-  { label: '佣金状态(0-3)', value: 'commission_status' },
-  { label: '用户 ID', value: 'user_id' },
-  { label: '邀请人 ID', value: 'invite_user_id' },
-  { label: '佣金(分)', value: 'commission_balance' },
-  { label: '订阅 ID', value: 'subscription_id' },
-  { label: '套餐 ID', value: 'plan_id' },
-]
+const router = useRouter()
+
+const filterFields = computed<FilterField[]>(() => [
+  { label: '订单号', value: 'trade_no', condition: '模糊' },
+  { label: '用户邮箱', value: 'email', condition: '模糊' },
+  {
+    label: '订单状态',
+    value: 'status',
+    options: [
+      { label: '未支付', value: '0' },
+      { label: '开通中', value: '1' },
+      { label: '已取消', value: '2' },
+      { label: '已完成', value: '3' },
+      { label: '已折抵', value: '4' },
+    ],
+  },
+  {
+    label: '佣金状态',
+    value: 'commission_status',
+    options: [
+      { label: '待确认', value: '0' },
+      { label: '发放中', value: '1' },
+      { label: '已发放', value: '2' },
+      { label: '无效', value: '3' },
+    ],
+  },
+  { label: '订阅计划', value: 'plan_id', options: planOptions.value.map((p) => ({ label: p.label, value: String(p.value) })) },
+  { label: '用户ID', value: 'user_id' },
+  { label: '邀请人ID', value: 'invite_user_id' },
+  { label: '订阅ID', value: 'subscription_id' },
+  { label: '回调单号', value: 'callback_no', condition: '模糊' },
+  { label: '佣金金额(分)', value: 'commission_balance' },
+])
 const filter = ref<Filter[]>([])
 const keyword = ref('')
 const commissionOnly = ref(false)
 
-const { rows, loading, pagination, load, reload } = usePaged<Order>(async (current, page_size) => {
+const { rows, loading, pager, load, reload, setPage, setPageSize } = usePaged<Order>(async (current, page_size) => {
   const f = [...filter.value]
   if (keyword.value.trim()) f.push({ key: 'trade_no', condition: '模糊', value: keyword.value.trim() })
   const r = await admin.post<PageResult<Order>>('/orders/query', { current, page_size, filter: f, is_commission: commissionOnly.value })
   return { rows: r.data || [], total: r.total }
 })
 
-// ---------- 详情 ----------
-const detail = ref<OrderDetail | null>(null)
-const detailShow = ref(false)
-async function open(o: Order) {
-  await run(async () => {
-    detail.value = await admin.get<OrderDetail>(`/orders/${o.trade_no}`)
-    detailShow.value = true
-  })
+const fieldLabel = (k: string) => filterFields.value.find((f) => f.value === k)?.label || k
+function valueLabel(f: Filter) {
+  return filterFields.value.find((x) => x.value === f.key)?.options?.find((x) => x.value === f.value)?.label ?? f.value
+}
+function removeFilter(i: number) {
+  filter.value = filter.value.filter((_, j) => j !== i)
+  reload()
 }
 
-function act(o: Order, path: string, text: string) {
-  confirm(text, () => admin.post(`/orders/${o.trade_no}/${path}`)).then((ok) => {
-    if (ok) load()
-  })
-}
-function setCommission(o: Order, status: number) {
-  run(() => admin.put(`/orders/${o.trade_no}`, { commission_status: status }), '已修改').then((ok) => {
-    if (ok) load()
-  })
-}
-const commissionOptions = [0, 1, 3].map((v) => ({ label: `设为${commissionStatus[v][0]}`, key: v }))
-
-const columns: DataTableColumns<Order> = [
-  { title: '订单号', key: 'trade_no', render: (o) => h('a', { class: 'link mono', onClick: () => open(o) }, o.trade_no) },
-  { title: '用户', key: 'user_id', width: 80, render: (o) => `#${o.user_id}` },
-  {
-    title: '套餐 / 周期',
-    key: 'plan',
-    render: (o) => `${o.plan_id === 0 ? '充值' : o.plan_name || `#${o.plan_id}`} / ${periodLabels[o.period] || o.period}`,
-  },
-  { title: '类型', key: 'type', width: 90, render: (o) => orderType[o.type] || o.type },
-  { title: '订阅', key: 'subscription_id', width: 80, render: (o) => (o.subscription_id ? `#${o.subscription_id}` : '-') },
-  { title: '金额', key: 'total_amount', render: (o) => formatMoney(o.total_amount + (o.handling_amount || 0)) },
-  { title: '状态', key: 'status', width: 90, render: (o) => enumTag(orderStatus, o.status) },
-  {
-    title: '佣金',
-    key: 'commission_balance',
-    render: (o) =>
-      o.commission_balance > 0
-        ? h(NSpace, { size: 4 }, () => [formatMoney(o.commission_balance), enumTag(commissionStatus, o.commission_status)])
-        : '-',
-  },
-  { title: '创建时间', key: 'created_at', render: (o) => formatTime(o.created_at) },
-  {
-    title: '操作',
-    key: 'op',
-    render: (o) =>
-      actions(
-        btn('详情', () => open(o)),
-        o.status === 0 ? btn('标记已支付', () => act(o, 'paid', '确定将该订单标记为已支付并开通？'), 'success') : null,
-        o.status === 0 ? btn('取消', () => act(o, 'cancel', '确定取消该订单？'), 'error') : null,
-        o.commission_balance > 0 && o.commission_status !== 2
-          ? h(
-              NDropdown,
-              { options: commissionOptions, trigger: 'click', onSelect: (k: number) => setCommission(o, k) },
-              { default: () => h(NButton, { size: 'small', text: true, type: 'warning' }, { default: () => '佣金状态' }) },
-            )
-          : null,
-      ),
-  },
+const columns: Column[] = [
+  { key: 'trade_no', title: '# 订单号' },
+  { key: 'email', title: '用户' },
+  { key: 'type', title: '类型' },
+  { key: 'plan', title: '订阅计划' },
+  { key: 'period', title: '周期' },
+  { key: 'total_amount', title: '支付金额', align: 'right' },
+  { key: 'status', title: '订单状态' },
+  { key: 'commission_balance', title: '佣金金额', align: 'right' },
+  { key: 'commission_status', title: '佣金状态' },
+  { key: 'created_at', title: '创建时间' },
 ]
 
-// ---------- 分配订单 ----------
+const paid = (o: Order) => o.total_amount + (o.handling_amount || 0)
+const planLabel = (o: Order) => (o.plan_id === 0 ? '充值' : o.plan_name || `#${o.plan_id}`)
+
+// ---------- 状态操作 ----------
+async function markPaid(o: Order) {
+  if (await confirm(`确定将订单 ${o.trade_no} 标记为已支付？\n标记为[已支付]后将会由系统进行开通后并完成。`, () => admin.post(`/orders/${o.trade_no}/paid`), '操作成功', false)) load()
+}
+async function cancel(o: Order) {
+  if (await confirm(`确定取消订单 ${o.trade_no}？`, () => admin.post(`/orders/${o.trade_no}/cancel`), '操作成功')) load()
+}
+async function setCommission(o: Order, status: number) {
+  if (await run(() => admin.put(`/orders/${o.trade_no}`, { commission_status: status }), '操作成功')) load()
+}
+const commissionMarks = [
+  { label: '待确认', value: 0 },
+  { label: '有效', value: 1 },
+  { label: '无效', value: 3 },
+]
+
+// ---------- 详情 ----------
+const detail = ref<OrderDetail | null>(null)
+const detailRow = ref<Order | null>(null)
+const sheet = ref(false)
+async function open(o: Order) {
+  detailRow.value = o
+  await run(async () => {
+    detail.value = await admin.get<OrderDetail>(`/orders/${o.trade_no}`)
+    sheet.value = true
+  })
+}
+async function copy(s: string) {
+  message[(await copyText(s)) ? 'success' : 'error']('复制成功')
+}
+
+// ---------- 添加订单 ----------
 const assign = ref(false)
-const assignForm = ref({ email: '', plan_id: null as number | null, period: 'month_price', total_amount: 0 as number | null, subscription_id: null as number | null })
-function openAssign() {
-  loadPlans()
-  assign.value = true
-}
-async function submitAssign() {
-  const f = assignForm.value
-  const ok = await run(
-    () =>
-      admin.post('/orders/assign', {
-        email: f.email.trim(),
-        plan_id: f.plan_id || 0,
-        period: f.period,
-        total_amount: toCents(f.total_amount) ?? 0,
-        subscription_id: f.subscription_id || 0,
-      }),
-    '已创建待支付订单',
-  )
-  if (ok) {
-    assign.value = false
-    reload()
-  }
-}
 
 onMounted(() => {
   const uid = route.query.user_id
   if (uid) filter.value = [{ key: 'user_id', condition: '=', value: String(uid) }]
+  loadPlans()
   load()
 })
 </script>
 
 <template>
-  <div class="page">
-    <NCard size="small">
-      <div class="toolbar">
-        <NInput v-model:value="keyword" placeholder="搜索订单号" clearable style="width: 220px" @keyup.enter="reload" @clear="reload" />
-        <FilterEditor v-model="filter" :fields="filterFields" @apply="reload" />
-        <NCheckbox v-model:checked="commissionOnly" @update:checked="reload">只看有佣金的订单</NCheckbox>
-        <NButton @click="reload">刷新</NButton>
-        <span class="spacer" />
-        <NButton type="primary" @click="openAssign">分配订单</NButton>
+  <div>
+    <PageHeader title="订单管理">
+      <Button @click="assign = true"><PlusIcon />添加订单</Button>
+    </PageHeader>
+
+    <div class="mb-3 flex flex-wrap items-center gap-2">
+      <div class="relative w-full sm:w-64">
+        <SearchIcon class="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input v-model="keyword" class="pl-8" placeholder="搜索订单号" @keyup.enter="reload" />
       </div>
-      <NDataTable remote size="small" :columns="columns" :data="rows" :loading="loading" :pagination="pagination" :row-key="(o: Order) => o.id" :scroll-x="1100" />
-    </NCard>
+      <FilterEditor v-model="filter" :fields="filterFields" @apply="reload" />
+      <div class="flex items-center gap-2 px-2">
+        <Switch id="commission-only" :model-value="commissionOnly" @update:model-value="(v: boolean) => { commissionOnly = v; reload() }" />
+        <Label for="commission-only" class="font-normal">只看佣金订单</Label>
+      </div>
+      <Button variant="ghost" size="icon" :disabled="loading" @click="load"><RefreshCwIcon :class="loading ? 'animate-spin' : ''" /></Button>
+      <div v-if="filter.length" class="flex flex-wrap items-center gap-1.5">
+        <span v-for="(f, i) in filter" :key="i" class="inline-flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-1 text-xs">
+          {{ fieldLabel(f.key) }} {{ f.condition }} {{ valueLabel(f) }}
+          <XIcon class="size-3 cursor-pointer opacity-60 hover:opacity-100" @click="removeFilter(i)" />
+        </span>
+      </div>
+    </div>
 
-    <NModal v-model:show="detailShow" preset="card" title="订单详情" style="width: 720px; max-width: 95vw">
-      <template v-if="detail">
-        <NDescriptions :column="2" size="small" label-placement="left" bordered>
-          <NDescriptionsItem label="订单号"><span class="mono">{{ detail.trade_no }}</span></NDescriptionsItem>
-          <NDescriptionsItem label="状态">{{ orderStatus[detail.status]?.[0] }}</NDescriptionsItem>
-          <NDescriptionsItem label="用户 ID">{{ detail.user_id }}</NDescriptionsItem>
-          <NDescriptionsItem label="订阅 ID">{{ detail.subscription_id ?? '-' }}</NDescriptionsItem>
-          <NDescriptionsItem label="类型">{{ orderType[detail.type] }}</NDescriptionsItem>
-          <NDescriptionsItem label="周期">{{ periodLabels[detail.period] || detail.period }}</NDescriptionsItem>
-          <NDescriptionsItem label="应付金额">{{ formatMoney(detail.total_amount) }}</NDescriptionsItem>
-          <NDescriptionsItem label="手续费">{{ formatMoney(detail.handling_amount) }}</NDescriptionsItem>
-          <NDescriptionsItem label="优惠金额">{{ formatMoney(detail.discount_amount) }}</NDescriptionsItem>
-          <NDescriptionsItem label="余额抵扣">{{ formatMoney(detail.balance_amount) }}</NDescriptionsItem>
-          <NDescriptionsItem label="折抵金额">{{ formatMoney(detail.surplus_amount) }}</NDescriptionsItem>
-          <NDescriptionsItem label="退回金额">{{ formatMoney(detail.refund_amount) }}</NDescriptionsItem>
-          <NDescriptionsItem label="优惠券 ID">{{ detail.coupon_id ?? '-' }}</NDescriptionsItem>
-          <NDescriptionsItem label="支付方式 ID">{{ detail.payment_id ?? '-' }}</NDescriptionsItem>
-          <NDescriptionsItem label="支付流水号"><span class="mono">{{ detail.callback_no || '-' }}</span></NDescriptionsItem>
-          <NDescriptionsItem label="支付时间">{{ formatTime(detail.paid_at) }}</NDescriptionsItem>
-          <NDescriptionsItem label="邀请人 ID">{{ detail.invite_user_id ?? '-' }}</NDescriptionsItem>
-          <NDescriptionsItem label="佣金">
-            {{ formatMoney(detail.commission_balance) }}（{{ commissionStatus[detail.commission_status]?.[0] }}，实际发放 {{ formatMoney(detail.actual_commission_balance) }}）
-          </NDescriptionsItem>
-          <NDescriptionsItem label="创建时间">{{ formatTime(detail.created_at) }}</NDescriptionsItem>
-          <NDescriptionsItem label="更新时间">{{ formatTime(detail.updated_at) }}</NDescriptionsItem>
-        </NDescriptions>
-        <template v-if="detail.commission_log.length">
-          <h4>佣金发放记录</h4>
-          <div v-for="l in detail.commission_log" :key="l.id" class="muted">
-            {{ formatTime(l.created_at) }}　邀请人 #{{ l.invite_user_id }}　获得 {{ formatMoney(l.get_amount) }}
-          </div>
-        </template>
-        <template v-if="detail.surplus_orders.length">
-          <h4>被折抵的订单</h4>
-          <div v-for="s in detail.surplus_orders" :key="s.id" class="muted mono">
-            {{ s.trade_no }}　{{ formatMoney(s.total_amount) }}　{{ formatTime(s.created_at) }}
-          </div>
-        </template>
+    <DataTable :columns="columns" :rows="rows" :loading="loading">
+      <template #cell-trade_no="{ row }">
+        <button class="font-mono text-xs hover:text-primary hover:underline" @click="open(row)">{{ row.trade_no }}</button>
       </template>
-    </NModal>
+      <template #cell-email="{ row }">
+        <button class="max-w-56 truncate text-left hover:text-primary hover:underline" @click="router.push({ path: '/users', query: { id: row.user_id } })">
+          {{ row.email || `#${row.user_id}` }}
+        </button>
+      </template>
+      <template #cell-type="{ row }"><StatusBadge :tone="row.type === 1 ? 'primary' : row.type === 9 ? 'success' : 'default'">{{ orderType[row.type] || row.type }}</StatusBadge></template>
+      <template #cell-plan="{ row }">
+        <div class="grid leading-tight">
+          <span>{{ planLabel(row) }}</span>
+          <span v-if="row.subscription_id" class="text-xs text-muted-foreground">订阅 #{{ row.subscription_id }}</span>
+        </div>
+      </template>
+      <template #cell-period="{ row }"><span class="whitespace-nowrap">{{ periodLabels[row.period] || row.period }}</span></template>
+      <template #cell-total_amount="{ row }"><span class="tabular-nums">{{ formatMoney(paid(row)) }}</span></template>
+      <template #cell-status="{ row }">
+        <DropdownMenu v-if="row.status === 0">
+          <DropdownMenuTrigger as-child>
+            <button class="inline-flex items-center gap-0.5">
+              <StatusBadge :tone="orderStatus[row.status]?.[1]" dot>{{ orderStatus[row.status]?.[0] }}</StatusBadge>
+              <ChevronDownIcon class="size-3.5 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem @click="markPaid(row)">标记为 已支付</DropdownMenuItem>
+            <DropdownMenuItem variant="destructive" @click="cancel(row)">标记为 取消</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <StatusBadge v-else :tone="orderStatus[row.status]?.[1]" dot>{{ orderStatus[row.status]?.[0] }}</StatusBadge>
+      </template>
+      <template #cell-commission_balance="{ row }">
+        <span class="tabular-nums" :class="row.commission_balance > 0 ? '' : 'text-muted-foreground'">{{ row.commission_balance > 0 ? formatMoney(row.commission_balance) : '-' }}</span>
+      </template>
+      <template #cell-commission_status="{ row }">
+        <template v-if="row.commission_balance > 0">
+          <DropdownMenu v-if="row.commission_status !== 2">
+            <DropdownMenuTrigger as-child>
+              <button class="inline-flex items-center gap-0.5">
+                <StatusBadge :tone="commissionStatus[row.commission_status]?.[1]">{{ commissionStatus[row.commission_status]?.[0] }}</StatusBadge>
+                <ChevronDownIcon class="size-3.5 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" class="w-64">
+              <DropdownMenuLabel class="text-xs font-normal text-muted-foreground">标记为[有效]后将会由系统处理后发放到用户并完成</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem v-for="m in commissionMarks" :key="m.value" :disabled="m.value === row.commission_status" @click="setCommission(row, m.value)">
+                标记为 {{ m.label }}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <StatusBadge v-else :tone="commissionStatus[row.commission_status]?.[1]">{{ commissionStatus[row.commission_status]?.[0] }}</StatusBadge>
+        </template>
+        <span v-else class="text-muted-foreground">-</span>
+      </template>
+      <template #cell-created_at="{ row }"><span class="whitespace-nowrap text-muted-foreground">{{ formatTime(row.created_at) }}</span></template>
+    </DataTable>
+    <Pager :pager="pager" @page="setPage" @size="setPageSize" />
 
-    <NModal v-model:show="assign" preset="card" title="分配订单" style="width: 520px; max-width: 95vw">
-      <NForm label-placement="left" label-width="96">
-        <NFormItem label="用户邮箱"><NInput v-model:value="assignForm.email" /></NFormItem>
-        <NFormItem label="套餐"><NSelect v-model:value="assignForm.plan_id" :options="planOptions" /></NFormItem>
-        <NFormItem label="周期"><NSelect v-model:value="assignForm.period" :options="periodOptions" /></NFormItem>
-        <NFormItem label="金额（元）"><NInputNumber v-model:value="assignForm.total_amount" :min="0" :precision="2" style="width: 100%" /></NFormItem>
-        <NFormItem label="订阅 ID"><NInputNumber v-model:value="assignForm.subscription_id" :min="0" clearable placeholder="留空则新开订阅" style="width: 100%" /></NFormItem>
-        <div class="muted">分配后生成待支付订单，可在列表中“标记已支付”直接开通。流量重置包必须指定订阅。</div>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end"><NButton @click="assign = false">取消</NButton><NButton type="primary" @click="submitAssign">创建</NButton></NSpace>
-      </template>
-    </NModal>
+    <AssignOrder v-model:show="assign" @done="reload" />
+
+    <Sheet v-model:open="sheet">
+      <SheetContent class="w-full gap-0 overflow-y-auto p-0 sm:max-w-lg">
+        <SheetHeader class="border-b px-6 py-4">
+          <SheetTitle>订单信息</SheetTitle>
+          <SheetDescription v-if="detail" class="flex items-center gap-2">
+            <span class="font-mono">{{ detail.trade_no }}</span>
+            <CopyIcon class="size-3.5 cursor-pointer hover:text-foreground" @click="copy(detail.trade_no)" />
+          </SheetDescription>
+        </SheetHeader>
+        <div v-if="detail" class="grid gap-5 px-6 py-5 text-sm">
+          <div class="flex items-center gap-2">
+            <StatusBadge :tone="orderStatus[detail.status]?.[1]" dot>{{ orderStatus[detail.status]?.[0] }}</StatusBadge>
+            <StatusBadge>{{ orderType[detail.type] }}</StatusBadge>
+          </div>
+          <dl class="grid grid-cols-[6rem_1fr] gap-x-4 gap-y-2.5">
+            <dt class="text-muted-foreground">邮箱</dt>
+            <dd>
+              <button class="hover:text-primary hover:underline" @click="router.push({ path: '/users', query: { id: detail.user_id } })">
+                {{ detailRow?.email || `#${detail.user_id}` }}
+              </button>
+            </dd>
+            <dt class="text-muted-foreground">订阅计划</dt>
+            <dd>{{ planLabel(detail) }} · {{ periodLabels[detail.period] || detail.period }}<span v-if="detail.subscription_id" class="text-muted-foreground">（订阅 #{{ detail.subscription_id }}）</span></dd>
+            <dt class="text-muted-foreground">回调单号</dt>
+            <dd class="break-all font-mono text-xs">{{ detail.callback_no || '-' }}</dd>
+            <dt class="text-muted-foreground">支付时间</dt>
+            <dd>{{ formatTime(detail.paid_at) }}</dd>
+            <dt class="text-muted-foreground">创建时间</dt>
+            <dd>{{ formatTime(detail.created_at) }}</dd>
+            <dt class="text-muted-foreground">更新时间</dt>
+            <dd>{{ formatTime(detail.updated_at) }}</dd>
+          </dl>
+          <Separator />
+          <dl class="grid grid-cols-[6rem_1fr] gap-x-4 gap-y-2.5">
+            <dt class="text-muted-foreground">支付金额</dt>
+            <dd class="font-medium tabular-nums">{{ formatMoney(paid(detail)) }}<span v-if="detail.handling_amount" class="text-xs text-muted-foreground">（含手续费 {{ formatMoney(detail.handling_amount) }}）</span></dd>
+            <dt class="text-muted-foreground">余额支付</dt>
+            <dd class="tabular-nums">{{ formatMoney(detail.balance_amount) }}</dd>
+            <dt class="text-muted-foreground">优惠金额</dt>
+            <dd class="tabular-nums">{{ formatMoney(detail.discount_amount) }}</dd>
+            <dt class="text-muted-foreground">退回金额</dt>
+            <dd class="tabular-nums">{{ formatMoney(detail.refund_amount) }}</dd>
+            <dt class="text-muted-foreground">折抵金额</dt>
+            <dd class="tabular-nums">{{ formatMoney(detail.surplus_amount) }}</dd>
+          </dl>
+          <template v-if="detail.invite_user_id">
+            <Separator />
+            <dl class="grid grid-cols-[6rem_1fr] gap-x-4 gap-y-2.5">
+              <dt class="text-muted-foreground">邀请人</dt>
+              <dd>
+                <button class="hover:text-primary hover:underline" @click="router.push({ path: '/users', query: { id: detail.invite_user_id } })">#{{ detail.invite_user_id }}</button>
+                <button class="ml-3 text-xs text-muted-foreground hover:text-primary" @click="router.push({ path: '/users', query: { invite_user_id: detail.invite_user_id } })">查看TA邀请的人</button>
+              </dd>
+              <dt class="text-muted-foreground">佣金金额</dt>
+              <dd class="tabular-nums">{{ formatMoney(detail.commission_balance) }}</dd>
+              <dt class="text-muted-foreground">实际发放</dt>
+              <dd class="tabular-nums">{{ formatMoney(detail.actual_commission_balance) }}</dd>
+              <dt class="text-muted-foreground">佣金状态</dt>
+              <dd><StatusBadge :tone="commissionStatus[detail.commission_status]?.[1]">{{ commissionStatus[detail.commission_status]?.[0] }}</StatusBadge></dd>
+            </dl>
+          </template>
+          <template v-if="detail.commission_log.length">
+            <Separator />
+            <div>
+              <div class="mb-2 font-medium">佣金发放记录</div>
+              <div v-for="l in detail.commission_log" :key="l.id" class="flex justify-between py-1 text-xs text-muted-foreground">
+                <span>{{ formatTime(l.created_at) }} · 邀请人 #{{ l.invite_user_id }}</span>
+                <span class="tabular-nums text-foreground">{{ formatMoney(l.get_amount) }}</span>
+              </div>
+            </div>
+          </template>
+          <template v-if="detail.surplus_orders.length">
+            <Separator />
+            <div>
+              <div class="mb-2 font-medium">被折抵的订单</div>
+              <div v-for="s in detail.surplus_orders" :key="s.id" class="flex justify-between py-1 text-xs text-muted-foreground">
+                <span class="font-mono">{{ s.trade_no }}</span>
+                <span class="tabular-nums">{{ formatMoney(s.total_amount) }} · {{ formatTime(s.created_at) }}</span>
+              </div>
+            </div>
+          </template>
+        </div>
+      </SheetContent>
+    </Sheet>
   </div>
 </template>

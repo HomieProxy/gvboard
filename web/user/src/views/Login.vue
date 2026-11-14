@@ -2,7 +2,10 @@
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NForm, NFormItem, NInput, NButton, NSpin } from 'naive-ui'
+import { Loader2Icon } from '@lucide/vue'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Label } from '@gv/shared/ui/label'
 import { http, setToken } from '../api'
 import { errText, toast } from '../ui'
 import { clearSession } from '../store'
@@ -57,34 +60,31 @@ onMounted(async () => {
 </script>
 
 <template>
-  <NSpin :show="quick" :description="t('auth.quickLogging')">
-    <h2 class="title">{{ t('auth.welcome') }}</h2>
-    <NForm @submit.prevent="submit">
-      <NFormItem :label="t('auth.email')" :show-feedback="false" style="margin-bottom: 16px">
-        <NInput v-model:value="email" :input-props="{ autocomplete: 'username', type: 'email' }" size="large" />
-      </NFormItem>
-      <NFormItem :label="t('auth.password')" :show-feedback="false" style="margin-bottom: 8px">
-        <NInput
-          v-model:value="password"
-          type="password"
-          show-password-on="click"
-          size="large"
-          :input-props="{ autocomplete: 'current-password' }"
-        />
-      </NFormItem>
-      <div class="row" style="justify-content: flex-end; margin-bottom: 16px">
-        <TextLink to="/forgot">{{ t('auth.forgot') }}</TextLink>
+  <div v-if="quick" class="flex flex-col items-center gap-3 py-10 text-muted-foreground">
+    <Loader2Icon class="size-6 animate-spin" />
+    <span class="text-sm">{{ t('auth.quickLogging') }}</span>
+  </div>
+  <div v-else>
+    <h2 class="mb-6 text-xl font-semibold">{{ t('auth.welcome') }}</h2>
+    <form class="space-y-4" @submit.prevent="submit">
+      <div class="grid gap-1.5">
+        <Label for="email">{{ t('auth.email') }}</Label>
+        <Input id="email" v-model="email" type="email" autocomplete="username" class="h-10" />
       </div>
-      <NButton type="primary" block size="large" :loading="loading" attr-type="submit">{{ t('auth.login') }}</NButton>
-    </NForm>
-    <div class="foot muted">
+      <div class="grid gap-1.5">
+        <div class="flex items-center justify-between">
+          <Label for="password">{{ t('auth.password') }}</Label>
+          <TextLink to="/forgot" class="text-sm font-normal">{{ t('auth.forgot') }}</TextLink>
+        </div>
+        <Input id="password" v-model="password" type="password" autocomplete="current-password" class="h-10" />
+      </div>
+      <Button type="submit" size="lg" class="w-full" :disabled="loading">
+        <Loader2Icon v-if="loading" class="animate-spin" />{{ t('auth.login') }}
+      </Button>
+    </form>
+    <p class="mt-6 text-center text-sm text-muted-foreground">
       {{ t('auth.noAccount') }}
       <TextLink to="/register">{{ t('auth.toRegister') }}</TextLink>
-    </div>
-  </NSpin>
+    </p>
+  </div>
 </template>
-
-<style scoped>
-.title { margin: 0 0 20px; font-size: 20px; }
-.foot { text-align: center; margin-top: 18px; }
-</style>

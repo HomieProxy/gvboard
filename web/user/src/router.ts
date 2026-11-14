@@ -1,26 +1,31 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
+import type { Component } from 'vue'
+import {
+  LayoutDashboardIcon, LayersIcon, ShoppingBagIcon, ReceiptTextIcon, WalletIcon, UsersIcon, MessageSquareIcon, BookOpenIcon,
+  MegaphoneIcon, ActivityIcon, UserIcon,
+} from '@lucide/vue'
 import { token } from './api'
-import { ui } from './ui'
 
 export interface NavItem {
   path: string
   key: string
-  icon: string
+  icon: Component
+  group: 'main' | 'subscribe' | 'finance' | 'user'
 }
 
-/** 侧边菜单（标题为 nav.{key} 的翻译） */
+/** 侧边菜单（标题为 nav.{key} 的翻译，分组标题为 nav.groups.{group}） */
 export const nav: NavItem[] = [
-  { path: '/dashboard', key: 'dashboard', icon: '◧' },
-  { path: '/subscriptions', key: 'subscriptions', icon: '◉' },
-  { path: '/plans', key: 'plans', icon: '✦' },
-  { path: '/orders', key: 'orders', icon: '☰' },
-  { path: '/wallet', key: 'wallet', icon: '¤' },
-  { path: '/invite', key: 'invite', icon: '❖' },
-  { path: '/tickets', key: 'tickets', icon: '✉' },
-  { path: '/knowledge', key: 'knowledge', icon: '❏' },
-  { path: '/notices', key: 'notices', icon: '◆' },
-  { path: '/traffic', key: 'traffic', icon: '⇅' },
-  { path: '/profile', key: 'profile', icon: '☺' },
+  { path: '/dashboard', key: 'dashboard', icon: LayoutDashboardIcon, group: 'main' },
+  { path: '/knowledge', key: 'knowledge', icon: BookOpenIcon, group: 'main' },
+  { path: '/notices', key: 'notices', icon: MegaphoneIcon, group: 'main' },
+  { path: '/subscriptions', key: 'subscriptions', icon: LayersIcon, group: 'subscribe' },
+  { path: '/plans', key: 'plans', icon: ShoppingBagIcon, group: 'subscribe' },
+  { path: '/orders', key: 'orders', icon: ReceiptTextIcon, group: 'finance' },
+  { path: '/wallet', key: 'wallet', icon: WalletIcon, group: 'finance' },
+  { path: '/invite', key: 'invite', icon: UsersIcon, group: 'finance' },
+  { path: '/profile', key: 'profile', icon: UserIcon, group: 'user' },
+  { path: '/tickets', key: 'tickets', icon: MessageSquareIcon, group: 'user' },
+  { path: '/traffic', key: 'traffic', icon: ActivityIcon, group: 'user' },
 ]
 
 const pages: RouteRecordRaw[] = [
@@ -61,7 +66,6 @@ export const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  ui.loading?.start()
   if (to.path === '/') return token.value ? '/dashboard' : '/login'
   // 快捷登录链接（带 verify 参数）即使已登录也交给登录页处理
   if (to.meta.public) {
@@ -70,5 +74,13 @@ router.beforeEach((to) => {
   }
   if (!token.value) return { path: '/login', query: { redirect: to.fullPath } }
 })
-router.afterEach(() => ui.loading?.finish())
-router.onError(() => ui.loading?.error())
+
+// 升级部署后旧页面引用的分包文件已不存在，整页刷新一次以加载新版本
+router.onError((err, to) => {
+  if (!/dynamically imported module|Importing a module script failed/i.test(String(err?.message))) return
+  if (sessionStorage.getItem('gv_chunk_reload') === to.fullPath) return
+  sessionStorage.setItem('gv_chunk_reload', to.fullPath)
+  location.hash = to.fullPath
+  location.reload()
+})
+router.afterEach(() => sessionStorage.removeItem('gv_chunk_reload'))

@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { NCard, NDataTable, NButton, NModal, NForm, NFormItem, NInput, NSelect, NAutoComplete, NSpace, NGrid, NGi, type DataTableColumns } from 'naive-ui'
+import { PlusIcon, RefreshCwIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon, Trash2Icon, Loader2Icon } from '@lucide/vue'
 import { formatTime } from '@gv/shared'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Textarea } from '@gv/shared/ui/textarea'
+import { Switch } from '@gv/shared/ui/switch'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable, { type Column } from '../components/common/DataTable.vue'
+import FormItem from '../components/common/FormItem.vue'
+import SelectBox from '../components/common/SelectBox.vue'
 import { admin } from '../api'
-import { run } from '../ui'
+import { confirm, message, run } from '../ui'
 import { useList } from '../paged'
-import { actions, btn, confirmBtn, sw } from '../helpers'
 import type { ArticleBrief } from '../types'
 
 const { rows, loading, load } = useList(() => admin.get<ArticleBrief[]>('/knowledge'))
 const categories = ref<string[]>([])
-
-const varsHelp =
-  '可用变量：{{siteName}}、{{subscribeUrl}}、{{urlEncodeSubscribeUrl}}、{{safeBase64SubscribeUrl}}、{{subscribeToken}}；' +
-  '用 <!--access start--> 与 <!--access end--> 包裹的内容只对有可用订阅的用户显示。'
 
 const languages = [
   { label: '简体中文', value: 'zh-CN' },
@@ -24,12 +28,23 @@ const languages = [
   { label: '한국어', value: 'ko-KR' },
   { label: 'فارسی', value: 'fa-IR' },
 ]
+const langName = (v: string) => languages.find((l) => l.value === v)?.label || v
+
+const columns: Column[] = [
+  { key: 'sort', title: '排序', class: 'w-20' },
+  { key: 'id', title: '文章ID', class: 'w-20' },
+  { key: 'show', title: '显示', align: 'center', class: 'w-16' },
+  { key: 'title', title: '标题' },
+  { key: 'category', title: '分类' },
+  { key: 'updated_at', title: '更新时间' },
+  { key: 'op', title: '操作', align: 'right', class: 'w-24' },
+]
 
 async function setShow(a: ArticleBrief, v: boolean) {
   if (await run(() => admin.post(`/knowledge/${a.id}/show`, { show: v }))) a.show = v ? 1 : 0
 }
 async function remove(a: ArticleBrief) {
-  if (await run(() => admin.del(`/knowledge/${a.id}`), '已删除')) load()
+  if (await confirm(`确定要删除「${a.title}」吗？`, () => admin.del(`/knowledge/${a.id}`), '删除成功')) load()
 }
 async function move(i: number, d: number) {
   const list = [...rows.value]
@@ -40,28 +55,8 @@ async function move(i: number, d: number) {
   if (!(await run(() => admin.post('/knowledge/sort', { ids: list.map((a) => a.id) })))) load()
 }
 
-const columns: DataTableColumns<ArticleBrief> = [
-  {
-    title: '排序',
-    key: 'sort',
-    width: 70,
-    render: (_, i) => actions(btn('↑', () => move(i, -1), 'default'), btn('↓', () => move(i, 1), 'default')),
-  },
-  { title: 'ID', key: 'id', width: 60 },
-  { title: '标题', key: 'title' },
-  { title: '分类', key: 'category' },
-  { title: '语言', key: 'language', width: 80 },
-  { title: '显示', key: 'show', width: 70, render: (a) => sw(!!a.show, (v) => setShow(a, v)) },
-  { title: '更新时间', key: 'updated_at', render: (a) => formatTime(a.updated_at) },
-  {
-    title: '操作',
-    key: 'op',
-    width: 110,
-    render: (a) => actions(btn('编辑', () => open(a)), confirmBtn('删除', '确定删除该文章？', () => remove(a))),
-  },
-]
-
 const show = ref(false)
+const saving = ref(false)
 const editing = ref<number | null>(null)
 const form = ref({ title: '', category: '', language: 'zh-CN', body: '' })
 
@@ -81,10 +76,14 @@ async function open(a: ArticleBrief | null) {
 }
 
 async function submit() {
-  const ok = await run(
-    () => (editing.value ? admin.put(`/knowledge/${editing.value}`, form.value) : admin.post('/knowledge', form.value)),
-    editing.value ? '已保存' : '已创建（默认隐藏）',
-  )
+  const f = form.value
+  if (!f.title.trim() || !f.category.trim() || !f.body.trim()) {
+    message.warning('请填写标题、分类与内容')
+    return
+  }
+  saving.value = true
+  const ok = await run(() => (editing.value ? admin.put(`/knowledge/${editing.value}`, f) : admin.post('/knowledge', f)), '保存成功')
+  saving.value = false
   if (ok) {
     show.value = false
     load()
@@ -95,33 +94,60 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page">
-    <NCard size="small">
-      <div class="toolbar">
-        <NButton type="primary" @click="open(null)">新建文章</NButton>
-        <NButton @click="load">刷新</NButton>
-      </div>
-      <NDataTable size="small" :columns="columns" :data="rows" :loading="loading" :row-key="(a: ArticleBrief) => a.id" />
-    </NCard>
-    <NModal v-model:show="show" preset="card" :title="editing ? '编辑文章' : '新建文章'" style="width: 860px; max-width: 96vw">
-      <NForm label-placement="top">
-        <NGrid cols="1 s:3" responsive="screen" :x-gap="12">
-          <NGi><NFormItem label="标题" required><NInput v-model:value="form.title" /></NFormItem></NGi>
-          <NGi>
-            <NFormItem label="分类" required>
-              <NAutoComplete v-model:value="form.category" :options="categories.map((c) => ({ label: c, value: c }))" :get-show="() => true" />
-            </NFormItem>
-          </NGi>
-          <NGi><NFormItem label="语言" required><NSelect v-model:value="form.language" :options="languages" /></NFormItem></NGi>
-        </NGrid>
-        <NFormItem label="正文（Markdown / HTML）" required>
-          <NInput v-model:value="form.body" type="textarea" class="mono" :autosize="{ minRows: 12, maxRows: 30 }" />
-        </NFormItem>
-        <div class="muted">{{ varsHelp }}</div>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end"><NButton @click="show = false">取消</NButton><NButton type="primary" @click="submit">保存</NButton></NSpace>
+  <div>
+    <PageHeader title="知识库管理" description="新增的文章默认不显示；用户端按语言与分类展示。">
+      <Button variant="ghost" size="icon" :disabled="loading" @click="load"><RefreshCwIcon :class="loading ? 'animate-spin' : ''" /></Button>
+      <Button @click="open(null)"><PlusIcon />新增</Button>
+    </PageHeader>
+
+    <DataTable :columns="columns" :rows="rows" :loading="loading">
+      <template #cell-sort="{ index }">
+        <div class="flex gap-0.5">
+          <Button variant="ghost" size="icon" class="size-7" :disabled="index === 0" @click="move(index, -1)"><ArrowUpIcon /></Button>
+          <Button variant="ghost" size="icon" class="size-7" :disabled="index === rows.length - 1" @click="move(index, 1)"><ArrowDownIcon /></Button>
+        </div>
       </template>
-    </NModal>
+      <template #cell-id="{ row }"><span class="text-muted-foreground tabular-nums">{{ row.id }}</span></template>
+      <template #cell-show="{ row }"><Switch :model-value="!!row.show" @update:model-value="(v: boolean) => setShow(row, v)" /></template>
+      <template #cell-title="{ row }">
+        <span class="font-medium">{{ row.title }}</span>
+        <span class="ml-2 text-xs text-muted-foreground">{{ langName(row.language) }}</span>
+      </template>
+      <template #cell-category="{ row }"><span class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ row.category }}</span></template>
+      <template #cell-updated_at="{ row }"><span class="whitespace-nowrap text-muted-foreground">{{ formatTime(row.updated_at) }}</span></template>
+      <template #cell-op="{ row }">
+        <div class="flex justify-end gap-0.5">
+          <Button variant="ghost" size="icon" class="size-8" @click="open(row)"><PencilIcon /></Button>
+          <Button variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive" @click="remove(row)"><Trash2Icon /></Button>
+        </div>
+      </template>
+    </DataTable>
+
+    <Dialog v-model:open="show">
+      <DialogContent class="max-h-[92svh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader><DialogTitle>{{ editing ? '编辑知识' : '新增知识' }}</DialogTitle></DialogHeader>
+        <div class="grid gap-4 sm:grid-cols-3">
+          <FormItem label="标题">
+            <Input v-model="form.title" placeholder="请输入知识标题" />
+          </FormItem>
+          <FormItem label="分类">
+            <Input v-model="form.category" list="kb-categories" placeholder="请输入分类，分类将会自动归集" />
+            <datalist id="kb-categories">
+              <option v-for="c in categories" :key="c" :value="c" />
+            </datalist>
+          </FormItem>
+          <FormItem label="语言">
+            <SelectBox :model-value="form.language" :options="languages" placeholder="请选择知识语言" @update:model-value="(v) => (form.language = String(v))" />
+          </FormItem>
+          <FormItem label="内容" class="sm:col-span-3" help="支持 Markdown。可用变量：{{siteName}}、{{subscribeUrl}}、{{urlEncodeSubscribeUrl}}、{{safeBase64SubscribeUrl}}、{{subscribeToken}}；用 <!--access start--> 与 <!--access end--> 包裹的内容只对有可用订阅的用户显示。">
+            <Textarea v-model="form.body" rows="16" class="font-mono text-xs" />
+          </FormItem>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="show = false">取消</Button>
+          <Button :disabled="saving" @click="submit"><Loader2Icon v-if="saving" class="animate-spin" />提交</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

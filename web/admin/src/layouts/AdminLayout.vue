@@ -1,37 +1,63 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
+import { computed, type Component } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NButton, NSpace, type MenuOption } from 'naive-ui'
+import {
+  LayoutDashboardIcon, SettingsIcon, CreditCardIcon, PaletteIcon, PuzzleIcon, ServerIcon, UsersRoundIcon, RouteIcon,
+  PackageIcon, ReceiptIcon, TicketPercentIcon, GiftIcon, UserIcon, MegaphoneIcon, MessageSquareIcon, BookOpenIcon,
+  ShieldIcon, ActivityIcon, ScrollTextIcon, LogOutIcon, MoonIcon, SunIcon,
+} from '@lucide/vue'
+import {
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
+  SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarRail, SidebarTrigger,
+} from '@gv/shared/ui/sidebar'
+import { Separator } from '@gv/shared/ui/separator'
+import { Button } from '@gv/shared/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@gv/shared/ui/tooltip'
 import { cfg, setToken } from '../api'
 import { menu } from '../router'
+import { colorMode } from '../theme'
 
 const route = useRoute()
 const router = useRouter()
-const collapsed = ref(window.innerWidth < 900)
 
-const options = computed<MenuOption[]>(() => {
-  const out: MenuOption[] = []
-  const groups = new Map<string, MenuOption[]>()
+const icons: Record<string, Component> = {
+  '/dashboard': LayoutDashboardIcon,
+  '/config': SettingsIcon,
+  '/payments': CreditCardIcon,
+  '/themes': PaletteIcon,
+  '/plugins': PuzzleIcon,
+  '/servers': ServerIcon,
+  '/groups': UsersRoundIcon,
+  '/routes': RouteIcon,
+  '/plans': PackageIcon,
+  '/orders': ReceiptIcon,
+  '/coupons': TicketPercentIcon,
+  '/giftcards': GiftIcon,
+  '/users': UserIcon,
+  '/notices': MegaphoneIcon,
+  '/tickets': MessageSquareIcon,
+  '/knowledge': BookOpenIcon,
+  '/guard': ShieldIcon,
+  '/system': ActivityIcon,
+  '/logs': ScrollTextIcon,
+}
+
+const groups = computed(() => {
+  const out: { name: string; items: typeof menu }[] = []
   for (const m of menu) {
-    const item: MenuOption = { key: m.path, label: () => h(RouterLink, { to: m.path }, { default: () => m.title }) }
-    if (!m.group) {
-      out.push(item)
-      continue
-    }
-    if (!groups.has(m.group)) {
-      const children: MenuOption[] = []
-      groups.set(m.group, children)
-      out.push({ type: 'group', key: `g-${m.group}`, label: m.group, children })
-    }
-    groups.get(m.group)!.push(item)
+    let g = out.find((x) => x.name === m.group)
+    if (!g) out.push((g = { name: m.group, items: [] }))
+    g.items.push(m)
   }
   return out
 })
 
-const title = computed(() => menu.find((m) => m.path === route.path)?.title || '')
-const darkSider = computed(() => cfg.value.theme.sidebar === 'dark')
-const darkHeader = computed(() => cfg.value.theme.header === 'dark')
+const current = computed(() => menu.find((m) => m.path === route.path))
+const darkSider = computed(() => cfg.value.theme.sidebar === 'dark' && colorMode.value !== 'dark')
 
+function toggleDark() {
+  colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark'
+}
 function logout() {
   setToken('')
   router.replace('/login')
@@ -39,44 +65,84 @@ function logout() {
 </script>
 
 <template>
-  <NLayout has-sider style="height: 100%">
-    <NLayoutSider
-      bordered
-      collapse-mode="width"
-      :collapsed-width="0"
-      :width="200"
-      :collapsed="collapsed"
-      show-trigger="bar"
-      :inverted="darkSider"
-      :native-scrollbar="false"
-      @collapse="collapsed = true"
-      @expand="collapsed = false"
-    >
-      <div class="brand">
-        <img v-if="cfg.site.logo" :src="cfg.site.logo" alt="" />
-        <span>{{ cfg.site.name || '管理后台' }}</span>
-      </div>
-      <NMenu :inverted="darkSider" :value="route.path" :options="options" :indent="18" />
-    </NLayoutSider>
-    <NLayout>
-      <NLayoutHeader bordered :inverted="darkHeader" class="header">
-        <NSpace align="center">
-          <NButton quaternary size="small" @click="collapsed = !collapsed">☰</NButton>
-          <strong>{{ title }}</strong>
-        </NSpace>
-        <NButton quaternary size="small" @click="logout">退出登录</NButton>
-      </NLayoutHeader>
-      <NLayoutContent :native-scrollbar="false" style="height: calc(100% - 49px)">
-        <RouterView v-slot="{ Component }">
-          <component :is="Component" :key="route.path" />
-        </RouterView>
-      </NLayoutContent>
-    </NLayout>
-  </NLayout>
-</template>
+  <SidebarProvider class="h-svh">
+    <Sidebar collapsible="icon" :class="darkSider ? 'dark' : ''">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" as-child>
+              <RouterLink to="/dashboard">
+                <div class="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <img v-if="cfg.site.logo" :src="cfg.site.logo" alt="" class="size-8 object-contain" />
+                  <span v-else class="text-sm font-bold">{{ (cfg.site.name || 'G').slice(0, 1) }}</span>
+                </div>
+                <div class="grid flex-1 text-left leading-tight">
+                  <span class="truncate font-semibold">{{ cfg.site.name || '管理后台' }}</span>
+                  <span class="truncate text-xs text-sidebar-foreground/60">管理后台</span>
+                </div>
+              </RouterLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup v-for="g in groups" :key="g.name" class="py-1">
+          <SidebarGroupLabel v-if="g.name">{{ g.name }}</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem v-for="m in g.items" :key="m.path">
+                <SidebarMenuButton as-child :is-active="route.path === m.path" :tooltip="m.title">
+                  <RouterLink :to="m.path">
+                    <component :is="icons[m.path]" />
+                    <span>{{ m.title }}</span>
+                  </RouterLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton tooltip="退出登录" @click="logout">
+              <LogOutIcon />
+              <span>退出登录</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
 
-<style scoped>
-.brand { display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 18px; font-weight: 600; overflow: hidden; white-space: nowrap; }
-.brand img { height: 24px; }
-.header { display: flex; align-items: center; justify-content: space-between; height: 48px; padding: 0 12px; }
-</style>
+    <SidebarInset class="min-w-0 overflow-hidden">
+      <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
+        <SidebarTrigger class="-ml-1" />
+        <Separator orientation="vertical" class="mr-1 data-[orientation=vertical]:h-4" />
+        <nav class="flex min-w-0 items-center gap-1.5 text-sm">
+          <span v-if="current?.group" class="hidden text-muted-foreground sm:inline">{{ current.group }}</span>
+          <span v-if="current?.group" class="hidden text-muted-foreground sm:inline">/</span>
+          <span class="truncate font-medium">{{ current?.title }}</span>
+        </nav>
+        <div class="ml-auto flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button variant="ghost" size="icon" class="size-8" @click="toggleDark">
+                <SunIcon v-if="colorMode === 'dark'" />
+                <MoonIcon v-else />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{{ colorMode === 'dark' ? '浅色模式' : '深色模式' }}</TooltipContent>
+          </Tooltip>
+        </div>
+      </header>
+      <main class="flex-1 overflow-y-auto">
+        <div class="w-full p-4 md:p-6">
+          <RouterView v-slot="{ Component }">
+            <component :is="Component" :key="route.path" />
+          </RouterView>
+        </div>
+      </main>
+    </SidebarInset>
+  </SidebarProvider>
+</template>

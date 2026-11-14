@@ -1,8 +1,15 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NButton, NDrawer, NDrawerContent, NDropdown, NAvatar, type MenuOption } from 'naive-ui'
+import { LogOutIcon, UserIcon, ChevronsUpDownIcon } from '@lucide/vue'
+import {
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
+  SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarRail, SidebarTrigger,
+} from '@gv/shared/ui/sidebar'
+import { Separator } from '@gv/shared/ui/separator'
+import { Avatar, AvatarFallback, AvatarImage } from '@gv/shared/ui/avatar'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@gv/shared/ui/dropdown-menu'
 import { cfg, http, setToken } from '../api'
 import { confirm } from '../ui'
 import { nav } from '../router'
@@ -13,19 +20,18 @@ import type { Session } from '../types'
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const mobile = ref(window.innerWidth < 900)
-const drawer = ref(false)
-window.addEventListener('resize', () => (mobile.value = window.innerWidth < 900))
 
-const options = computed<MenuOption[]>(() =>
-  nav.map((n) => ({
-    key: n.key,
-    icon: () => h('span', { class: 'icon' }, n.icon),
-    label: () => h(RouterLink, { to: n.path }, { default: () => t(`nav.${n.key}`) }),
-  })),
-)
+const groups = computed(() => {
+  const out: { name: string; items: typeof nav }[] = []
+  for (const n of nav) {
+    let g = out.find((x) => x.name === n.group)
+    if (!g) out.push((g = { name: n.group, items: [] }))
+    g.items.push(n)
+  }
+  return out
+})
 const active = computed(() => String(route.meta.nav || ''))
-watch(() => route.fullPath, () => (drawer.value = false))
+const current = computed(() => nav.find((n) => n.key === active.value))
 
 async function logout() {
   await confirm(t('common.logoutConfirm'), async () => {
@@ -42,15 +48,6 @@ async function logout() {
   })
 }
 
-const userOptions = computed(() => [
-  { label: t('nav.profile'), key: 'profile' },
-  { label: t('common.logout'), key: 'logout' },
-])
-function onUser(k: string) {
-  if (k === 'profile') router.push('/profile')
-  else logout()
-}
-
 onMounted(() => {
   loadMe().catch(() => {})
   loadBiz().catch(() => {})
@@ -58,50 +55,81 @@ onMounted(() => {
 </script>
 
 <template>
-  <NLayout :has-sider="!mobile" position="absolute">
-    <NLayoutSider v-if="!mobile" bordered :width="220" :native-scrollbar="false">
-      <div class="brand">
-        <img v-if="cfg.site.logo" :src="cfg.site.logo" alt="" />
-        <span>{{ cfg.site.name }}</span>
-      </div>
-      <NMenu :value="active" :options="options" />
-    </NLayoutSider>
-    <NLayout :native-scrollbar="false">
-      <NLayoutHeader bordered class="header">
-        <div class="left">
-          <NButton v-if="mobile" quaternary @click="drawer = true">☰</NButton>
-          <strong v-if="mobile">{{ cfg.site.name }}</strong>
-        </div>
-        <div class="right">
-          <TopActions />
-          <NDropdown :options="userOptions" trigger="click" @select="onUser">
-            <NButton quaternary size="small" class="user">
-              <NAvatar v-if="me?.avatar_url" round :size="22" :src="me.avatar_url" style="margin-right: 6px" />
-              <span class="email">{{ me?.email }}</span>
-            </NButton>
-          </NDropdown>
-        </div>
-      </NLayoutHeader>
-      <NLayoutContent>
-        <RouterView v-slot="{ Component }">
-          <component :is="Component" :key="route.path" />
-        </RouterView>
-      </NLayoutContent>
-    </NLayout>
-  </NLayout>
-  <NDrawer v-model:show="drawer" :width="240" placement="left">
-    <NDrawerContent :title="cfg.site.name" body-content-style="padding: 0">
-      <NMenu :value="active" :options="options" />
-    </NDrawerContent>
-  </NDrawer>
-</template>
+  <SidebarProvider class="min-h-svh">
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" as-child>
+              <RouterLink to="/dashboard">
+                <div class="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <img v-if="cfg.site.logo" :src="cfg.site.logo" alt="" class="size-8 object-contain" />
+                  <span v-else class="text-sm font-bold">{{ (cfg.site.name || 'G').slice(0, 1) }}</span>
+                </div>
+                <span class="truncate font-semibold">{{ cfg.site.name }}</span>
+              </RouterLink>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup v-for="g in groups" :key="g.name" class="py-1">
+          <SidebarGroupLabel v-if="t(`nav.groups.${g.name}`)">{{ t(`nav.groups.${g.name}`) }}</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem v-for="n in g.items" :key="n.key">
+                <SidebarMenuButton as-child :is-active="active === n.key" :tooltip="t(`nav.${n.key}`)">
+                  <RouterLink :to="n.path">
+                    <component :is="n.icon" />
+                    <span>{{ t(`nav.${n.key}`) }}</span>
+                  </RouterLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <SidebarMenuButton size="lg" class="data-[state=open]:bg-sidebar-accent">
+                  <Avatar class="size-8 rounded-lg">
+                    <AvatarImage v-if="me?.avatar_url" :src="me.avatar_url" />
+                    <AvatarFallback class="rounded-lg">{{ (me?.email || '?').slice(0, 1).toUpperCase() }}</AvatarFallback>
+                  </Avatar>
+                  <span class="truncate text-sm">{{ me?.email }}</span>
+                  <ChevronsUpDownIcon class="ml-auto size-4" />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="top" align="start" class="w-(--reka-dropdown-menu-trigger-width) min-w-56">
+                <DropdownMenuLabel class="truncate font-normal text-muted-foreground">{{ me?.email }}</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem @click="router.push('/profile')"><UserIcon />{{ t('nav.profile') }}</DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" @click="logout"><LogOutIcon />{{ t('common.logout') }}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
 
-<style scoped>
-.brand { display: flex; align-items: center; gap: 10px; height: 60px; padding: 0 20px; font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; }
-.brand img { height: 28px; }
-.header { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 12px; position: sticky; top: 0; z-index: 10; }
-.left, .right { display: flex; align-items: center; gap: 4px; }
-.email { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
-:deep(.icon) { display: inline-block; width: 18px; text-align: center; }
-@media (max-width: 640px) { .email { display: none; } }
-</style>
+    <SidebarInset class="min-w-0">
+      <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
+        <SidebarTrigger class="-ml-1" />
+        <Separator orientation="vertical" class="mr-1 data-[orientation=vertical]:h-4" />
+        <span class="truncate text-sm font-medium">{{ current ? t(`nav.${current.key}`) : '' }}</span>
+        <div class="ml-auto"><TopActions /></div>
+      </header>
+      <main class="flex-1">
+        <div class="mx-auto w-full max-w-7xl p-4 md:p-6">
+          <RouterView v-slot="{ Component }">
+            <component :is="Component" :key="route.path" />
+          </RouterView>
+        </div>
+      </main>
+    </SidebarInset>
+  </SidebarProvider>
+</template>

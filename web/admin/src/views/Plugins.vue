@@ -1,58 +1,39 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue'
-import {
-  NCard, NDataTable, NButton, NSpace, NModal, NForm, NFormItem, NInput, NInputNumber, NSwitch, NSelect, NAlert, NUpload,
-  NDescriptions, NDescriptionsItem, NList, NListItem, NTag, type DataTableColumns, type UploadFileInfo,
-} from 'naive-ui'
+import { onMounted, ref } from 'vue'
+import { UploadIcon, RefreshCwIcon, InfoIcon, SettingsIcon, Trash2Icon, Loader2Icon, TriangleAlertIcon } from '@lucide/vue'
 import { formatTime } from '@gv/shared'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Textarea } from '@gv/shared/ui/textarea'
+import { Switch } from '@gv/shared/ui/switch'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable, { type Column } from '../components/common/DataTable.vue'
+import FormItem from '../components/common/FormItem.vue'
+import SelectBox from '../components/common/SelectBox.vue'
+import NumInput from '../components/common/NumInput.vue'
 import { admin } from '../api'
-import { errText, message, run } from '../ui'
+import { confirm, errText, message, run } from '../ui'
 import { useList } from '../paged'
-import { actions, btn, confirmBtn, sw, tag } from '../helpers'
 import type { PluginField, PluginPreview, PluginView } from '../types'
 
 const { rows, loading, load } = useList(() => admin.get<PluginView[]>('/plugins'))
+
+const columns: Column[] = [
+  { key: 'enabled', title: '启用', align: 'center', class: 'w-16' },
+  { key: 'name', title: '插件' },
+  { key: 'author', title: '作者' },
+  { key: 'installed_at', title: '安装时间' },
+  { key: 'op', title: '操作', align: 'right', class: 'w-32' },
+]
 
 async function toggle(p: PluginView, v: boolean) {
   if (await run(() => admin.post(`/plugins/${p.code}/${v ? 'enable' : 'disable'}`), v ? '已启用' : '已停用')) load()
 }
 async function remove(p: PluginView) {
-  if (await run(() => admin.del(`/plugins/${p.code}`), '已删除')) load()
+  if (await confirm(`删除插件「${p.name}」后，它保存的数据也会一并删除，确定吗？`, () => admin.del(`/plugins/${p.code}`), '删除成功')) load()
 }
-
-const columns: DataTableColumns<PluginView> = [
-  {
-    title: '插件',
-    key: 'name',
-    render: (p) =>
-      h(NSpace, { vertical: true, size: 2 }, () => [
-        h(NSpace, { size: 6, align: 'center' }, () => [
-          h('strong', null, p.name),
-          h('span', { class: 'muted' }, `${p.code} v${p.version}`),
-          tag(p.type === 'go' ? '内置' : 'JS', p.type === 'go' ? 'info' : 'default'),
-          p.status === 'error' ? tag('加载失败', 'error') : p.status === 'missing' ? tag('程序中已移除', 'warning') : null,
-        ]),
-        h('span', { class: 'muted' }, p.description || ''),
-        p.error ? h('span', { style: 'color:#d03050;font-size:12px' }, p.error) : null,
-      ]),
-  },
-  { title: '作者', key: 'author', width: 120 },
-  { title: '安装时间', key: 'installed_at', width: 150, render: (p) => formatTime(p.installed_at) },
-  { title: '启用', key: 'enabled', width: 70, render: (p) => (p.status === 'ok' ? sw(p.enabled, (v) => toggle(p, v)) : '-') },
-  {
-    title: '操作',
-    key: 'op',
-    width: 150,
-    render: (p) =>
-      actions(
-        btn('详情', () => openDetail(p), 'info'),
-        p.fields.length && p.status !== 'missing' ? btn('配置', () => openConfig(p)) : null,
-        (p.type === 'js' || p.status === 'missing') && !p.enabled
-          ? confirmBtn('删除', '删除后插件的数据（KV）也会一并删除，确定？', () => remove(p))
-          : null,
-      ),
-  },
-]
+const canRemove = (p: PluginView) => (p.type === 'js' || p.status === 'missing') && !p.enabled
 
 // ---------- 详情 ----------
 const detail = ref<PluginView | null>(null)
@@ -61,19 +42,24 @@ function openDetail(p: PluginView) {
   detail.value = p
   detailShow.value = true
 }
+const join = (a: string[]) => a.join('、') || '-'
 
 // ---------- 配置 ----------
 const cfgPlugin = ref<PluginView | null>(null)
 const cfgShow = ref(false)
+const cfgSaving = ref(false)
 const cfgValues = ref<Record<string, unknown>>({})
 function openConfig(p: PluginView) {
   cfgPlugin.value = p
-  cfgValues.value = Object.fromEntries(p.fields.map((f) => [f.key, p.config?.[f.key] ?? f.default ?? (f.type === 'bool' ? false : '')]))
+  cfgValues.value = Object.fromEntries(p.fields.map((f) => [f.key, p.config?.[f.key] ?? f.default ?? (f.type === 'bool' ? false : f.type === 'number' ? null : '')]))
   cfgShow.value = true
 }
 async function saveConfig() {
   if (!cfgPlugin.value) return
-  if (await run(() => admin.put(`/plugins/${cfgPlugin.value!.code}/config`, { config: cfgValues.value }), '已保存')) {
+  cfgSaving.value = true
+  const ok = await run(() => admin.put(`/plugins/${cfgPlugin.value!.code}/config`, { config: cfgValues.value }), '保存成功')
+  cfgSaving.value = false
+  if (ok) {
     cfgShow.value = false
     load()
   }
@@ -86,22 +72,21 @@ const file = ref<File | null>(null)
 const preview = ref<PluginPreview | null>(null)
 const uploading = ref(false)
 
-function onFile(list: UploadFileInfo[]) {
-  file.value = list[0]?.file || null
+function onFile(e: Event) {
+  file.value = (e.target as HTMLInputElement).files?.[0] || null
   preview.value = null
 }
-
-async function upload(confirm: boolean) {
+async function upload(confirmed: boolean) {
   if (!file.value) {
     message.warning('请选择 zip 安装包')
     return
   }
   const fd = new FormData()
   fd.append('file', file.value)
-  if (confirm && preview.value) fd.append('sha256', preview.value.sha256)
+  if (confirmed && preview.value) fd.append('sha256', preview.value.sha256)
   uploading.value = true
   try {
-    if (!confirm) {
+    if (!confirmed) {
       preview.value = await admin.upload<PluginPreview>('/plugins/upload', fd)
     } else {
       await admin.upload('/plugins/upload', fd)
@@ -115,7 +100,6 @@ async function upload(confirm: boolean) {
     uploading.value = false
   }
 }
-
 function openUpload() {
   file.value = null
   preview.value = null
@@ -126,101 +110,142 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page">
-    <NCard size="small">
-      <div class="toolbar">
-        <NButton type="primary" @click="openUpload">上传 JS 插件</NButton>
-        <NButton @click="load">刷新</NButton>
-      </div>
-      <NDataTable size="small" :columns="columns" :data="rows" :loading="loading" :row-key="(p: PluginView) => p.code" />
-    </NCard>
+  <div>
+    <PageHeader title="插件管理" description="内置插件随程序提供；JS 插件以 zip 包上传，在受限环境中运行，只能访问声明过的域名与权限。">
+      <Button variant="ghost" size="icon" :disabled="loading" @click="load"><RefreshCwIcon :class="loading ? 'animate-spin' : ''" /></Button>
+      <Button @click="openUpload"><UploadIcon />上传 JS 插件</Button>
+    </PageHeader>
 
-    <NModal v-model:show="detailShow" preset="card" :title="detail?.name" style="width: 640px; max-width: 95vw">
-      <NDescriptions v-if="detail" :column="1" label-placement="left" bordered size="small">
-        <NDescriptionsItem label="标识">{{ detail.code }}</NDescriptionsItem>
-        <NDescriptionsItem label="版本">{{ detail.version }}</NDescriptionsItem>
-        <NDescriptionsItem label="主页"><a v-if="detail.url" :href="detail.url" target="_blank" rel="noopener">{{ detail.url }}</a></NDescriptionsItem>
-        <NDescriptionsItem label="事件">{{ detail.features.events.join('、') || '-' }}</NDescriptionsItem>
-        <NDescriptionsItem label="过滤器">{{ detail.features.filters.join('、') || '-' }}</NDescriptionsItem>
-        <NDescriptionsItem label="定时任务">{{ detail.features.jobs.join('、') || '-' }}</NDescriptionsItem>
-        <NDescriptionsItem label="支付方式">{{ detail.features.payments.join('、') || '-' }}</NDescriptionsItem>
-        <NDescriptionsItem label="订阅格式">{{ detail.features.formats.join('、') || '-' }}</NDescriptionsItem>
-        <NDescriptionsItem label="路由">
-          <div v-for="r in detail.features.routes" :key="r.method + r.path" class="mono">{{ r.method }} {{ r.path }}（{{ r.scope }}）</div>
-          <span v-if="!detail.features.routes.length">-</span>
-        </NDescriptionsItem>
-        <template v-if="detail.package">
-          <NDescriptionsItem label="可访问域名">{{ detail.package.http.join('、') || '无' }}</NDescriptionsItem>
-          <NDescriptionsItem label="权限">
-            <div v-for="p in detail.package.permissions" :key="p.key">{{ p.description }}（{{ p.key }}）</div>
-            <span v-if="!detail.package.permissions.length">无</span>
-          </NDescriptionsItem>
-          <NDescriptionsItem label="SHA256"><span class="mono">{{ detail.package.sha256 }}</span></NDescriptionsItem>
-        </template>
-      </NDescriptions>
-    </NModal>
+    <DataTable :columns="columns" :rows="rows" :loading="loading" row-key="code">
+      <template #cell-enabled="{ row }">
+        <Switch v-if="row.status === 'ok'" :model-value="row.enabled" @update:model-value="(v: boolean) => toggle(row, v)" />
+        <span v-else class="text-muted-foreground">-</span>
+      </template>
+      <template #cell-name="{ row }">
+        <div class="grid gap-0.5">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="font-medium">{{ row.name }}</span>
+            <span class="font-mono text-xs text-muted-foreground">{{ row.code }} v{{ row.version }}</span>
+            <span class="rounded px-1.5 py-0.5 text-xs" :class="row.type === 'go' ? 'bg-sky-500/15 text-sky-700 dark:text-sky-300' : 'bg-muted'">{{ row.type === 'go' ? '内置' : 'JS' }}</span>
+            <span v-if="row.status === 'error'" class="rounded bg-destructive/15 px-1.5 py-0.5 text-xs text-destructive">加载失败</span>
+            <span v-else-if="row.status === 'missing'" class="rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-300">程序中已移除</span>
+          </div>
+          <span v-if="row.description" class="text-xs text-muted-foreground">{{ row.description }}</span>
+          <span v-if="row.error" class="text-xs text-destructive">{{ row.error }}</span>
+        </div>
+      </template>
+      <template #cell-author="{ row }">{{ row.author || '-' }}</template>
+      <template #cell-installed_at="{ row }"><span class="whitespace-nowrap text-muted-foreground">{{ formatTime(row.installed_at) }}</span></template>
+      <template #cell-op="{ row }">
+        <div class="flex justify-end gap-0.5">
+          <Button variant="ghost" size="icon" class="size-8" title="详情" @click="openDetail(row)"><InfoIcon /></Button>
+          <Button v-if="row.fields.length && row.status !== 'missing'" variant="ghost" size="icon" class="size-8" title="配置" @click="openConfig(row)"><SettingsIcon /></Button>
+          <Button v-if="canRemove(row)" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive" title="删除" @click="remove(row)"><Trash2Icon /></Button>
+        </div>
+      </template>
+    </DataTable>
 
-    <NModal v-model:show="cfgShow" preset="card" :title="`插件配置：${cfgPlugin?.name}`" style="width: 600px; max-width: 95vw">
-      <NForm v-if="cfgPlugin" label-placement="top">
-        <NFormItem v-for="f in cfgPlugin.fields" :key="f.key" :label="f.label" :required="f.required">
-          <NSpace vertical style="width: 100%" :size="2">
-            <NSwitch v-if="f.type === 'bool'" v-model:value="cfgValues[f.key] as boolean" />
-            <NInputNumber v-else-if="f.type === 'number'" v-model:value="cfgValues[f.key] as number" style="width: 100%" />
-            <NSelect v-else-if="f.type === 'select'" v-model:value="cfgValues[f.key] as string" :options="selectOptions(f)" clearable />
-            <NInput
-              v-else
-              v-model:value="cfgValues[f.key] as string"
-              :type="f.type === 'text' ? 'textarea' : f.type === 'password' ? 'password' : 'text'"
-              show-password-on="click"
-              :autosize="f.type === 'text' ? { minRows: 3, maxRows: 12 } : undefined"
+    <!-- 详情 -->
+    <Dialog v-model:open="detailShow">
+      <DialogContent class="max-h-[90svh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader><DialogTitle>{{ detail?.name }}</DialogTitle></DialogHeader>
+        <dl v-if="detail" class="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-2 text-sm">
+          <dt class="text-muted-foreground">标识</dt><dd class="font-mono">{{ detail.code }}</dd>
+          <dt class="text-muted-foreground">版本</dt><dd>{{ detail.version }}</dd>
+          <dt class="text-muted-foreground">主页</dt>
+          <dd><a v-if="detail.url" :href="detail.url" target="_blank" rel="noopener" class="text-primary hover:underline">{{ detail.url }}</a><span v-else>-</span></dd>
+          <dt class="text-muted-foreground">事件</dt><dd>{{ join(detail.features.events) }}</dd>
+          <dt class="text-muted-foreground">过滤器</dt><dd>{{ join(detail.features.filters) }}</dd>
+          <dt class="text-muted-foreground">定时任务</dt><dd>{{ join(detail.features.jobs) }}</dd>
+          <dt class="text-muted-foreground">支付方式</dt><dd>{{ join(detail.features.payments) }}</dd>
+          <dt class="text-muted-foreground">订阅格式</dt><dd>{{ join(detail.features.formats) }}</dd>
+          <dt class="text-muted-foreground">路由</dt>
+          <dd>
+            <div v-for="r in detail.features.routes" :key="r.method + r.path" class="font-mono text-xs">{{ r.method }} {{ r.path }}（{{ r.scope }}）</div>
+            <span v-if="!detail.features.routes.length">-</span>
+          </dd>
+          <template v-if="detail.package">
+            <dt class="text-muted-foreground">可访问域名</dt><dd class="font-mono text-xs">{{ detail.package.http.join('、') || '无' }}</dd>
+            <dt class="text-muted-foreground">权限</dt>
+            <dd>
+              <div v-for="p in detail.package.permissions" :key="p.key">{{ p.description }} <span class="font-mono text-xs text-muted-foreground">{{ p.key }}</span></div>
+              <span v-if="!detail.package.permissions.length">无</span>
+            </dd>
+            <dt class="text-muted-foreground">SHA256</dt><dd class="font-mono text-xs break-all">{{ detail.package.sha256 }}</dd>
+          </template>
+        </dl>
+      </DialogContent>
+    </Dialog>
+
+    <!-- 配置 -->
+    <Dialog v-model:open="cfgShow">
+      <DialogContent class="max-h-[90svh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader><DialogTitle>插件配置：{{ cfgPlugin?.name }}</DialogTitle></DialogHeader>
+        <div v-if="cfgPlugin" class="grid gap-4">
+          <FormItem v-for="f in cfgPlugin.fields" :key="f.key" :label="f.label" :required="f.required" :help="f.help">
+            <Switch v-if="f.type === 'bool'" :model-value="!!cfgValues[f.key]" @update:model-value="(v: boolean) => (cfgValues[f.key] = v)" />
+            <NumInput v-else-if="f.type === 'number'" :model-value="cfgValues[f.key] as number | null" @update:model-value="(v) => (cfgValues[f.key] = v)" />
+            <SelectBox
+              v-else-if="f.type === 'select'"
+              :model-value="cfgValues[f.key] as string"
+              :options="selectOptions(f)"
+              @update:model-value="(v) => (cfgValues[f.key] = v)"
             />
-            <span v-if="f.help" class="muted">{{ f.help }}</span>
-          </NSpace>
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end"><NButton @click="cfgShow = false">取消</NButton><NButton type="primary" @click="saveConfig">保存</NButton></NSpace>
-      </template>
-    </NModal>
+            <Textarea v-else-if="f.type === 'text'" :model-value="String(cfgValues[f.key] ?? '')" rows="4" @update:model-value="(v) => (cfgValues[f.key] = v)" />
+            <Input
+              v-else
+              :type="f.type === 'password' ? 'password' : 'text'"
+              :model-value="String(cfgValues[f.key] ?? '')"
+              autocomplete="off"
+              @update:model-value="(v) => (cfgValues[f.key] = v)"
+            />
+          </FormItem>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="cfgShow = false">取消</Button>
+          <Button :disabled="cfgSaving" @click="saveConfig"><Loader2Icon v-if="cfgSaving" class="animate-spin" />保存</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
-    <NModal v-model:show="upShow" preset="card" title="上传 JS 插件" style="width: 620px; max-width: 95vw" :mask-closable="false">
-      <NSpace vertical>
-        <NUpload accept=".zip" :max="1" :default-upload="false" @update:file-list="onFile">
-          <NButton>选择 zip 安装包（不超过 2 MB）</NButton>
-        </NUpload>
+    <!-- 上传 -->
+    <Dialog v-model:open="upShow">
+      <DialogContent class="max-h-[90svh] overflow-y-auto sm:max-w-xl" @interact-outside.prevent>
+        <DialogHeader>
+          <DialogTitle>上传 JS 插件</DialogTitle>
+          <DialogDescription>选择 zip 安装包（不超过 2 MB），先检查安装包，确认访问范围后再安装。</DialogDescription>
+        </DialogHeader>
+        <Input type="file" accept=".zip" @change="onFile" />
         <template v-if="preview">
-          <NAlert type="warning" title="请确认插件申请的访问范围">
-            JS 插件运行在受限环境中，只能访问下面列出的外部域名和权限。确认后才会安装。
-          </NAlert>
-          <NDescriptions :column="1" label-placement="left" bordered size="small">
-            <NDescriptionsItem label="插件">{{ preview.name }}（{{ preview.code }}）</NDescriptionsItem>
-            <NDescriptionsItem label="版本">
-              {{ preview.version }}
-              <NTag v-if="preview.installed_version" size="small" type="info" :bordered="false">将从 {{ preview.installed_version }} 更新</NTag>
-            </NDescriptionsItem>
-            <NDescriptionsItem label="作者">{{ preview.author || '-' }}</NDescriptionsItem>
-            <NDescriptionsItem label="说明">{{ preview.description || '-' }}</NDescriptionsItem>
-            <NDescriptionsItem label="SHA256"><span class="mono">{{ preview.sha256 }}</span></NDescriptionsItem>
-          </NDescriptions>
-          <strong>可访问的外部域名</strong>
-          <NList bordered size="small">
-            <NListItem v-for="d in preview.http" :key="d"><span class="mono">{{ d }}</span></NListItem>
-            <NListItem v-if="!preview.http.length"><span class="muted">无（不能访问任何外部网络）</span></NListItem>
-          </NList>
-          <strong>申请的权限</strong>
-          <NList bordered size="small">
-            <NListItem v-for="p in preview.permissions" :key="p.key">{{ p.description }} <span class="muted mono">{{ p.key }}</span></NListItem>
-            <NListItem v-if="!preview.permissions.length"><span class="muted">无</span></NListItem>
-          </NList>
+          <div class="flex gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            <TriangleAlertIcon class="mt-0.5 size-4 shrink-0" />
+            <span>JS 插件运行在受限环境中，只能访问下面列出的外部域名和权限。确认后才会安装。</span>
+          </div>
+          <dl class="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-2 text-sm">
+            <dt class="text-muted-foreground">插件</dt><dd>{{ preview.name }}（{{ preview.code }}）</dd>
+            <dt class="text-muted-foreground">版本</dt>
+            <dd>{{ preview.version }}<span v-if="preview.installed_version" class="ml-2 text-xs text-muted-foreground">将从 {{ preview.installed_version }} 更新</span></dd>
+            <dt class="text-muted-foreground">作者</dt><dd>{{ preview.author || '-' }}</dd>
+            <dt class="text-muted-foreground">说明</dt><dd>{{ preview.description || '-' }}</dd>
+            <dt class="text-muted-foreground">SHA256</dt><dd class="font-mono text-xs break-all">{{ preview.sha256 }}</dd>
+            <dt class="text-muted-foreground">外部域名</dt>
+            <dd>
+              <div v-for="d in preview.http" :key="d" class="font-mono text-xs">{{ d }}</div>
+              <span v-if="!preview.http.length" class="text-muted-foreground">无（不能访问任何外部网络）</span>
+            </dd>
+            <dt class="text-muted-foreground">申请的权限</dt>
+            <dd>
+              <div v-for="p in preview.permissions" :key="p.key">{{ p.description }} <span class="font-mono text-xs text-muted-foreground">{{ p.key }}</span></div>
+              <span v-if="!preview.permissions.length" class="text-muted-foreground">无</span>
+            </dd>
+          </dl>
         </template>
-      </NSpace>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="upShow = false">取消</NButton>
-          <NButton v-if="!preview" type="primary" :loading="uploading" :disabled="!file" @click="upload(false)">检查安装包</NButton>
-          <NButton v-else type="warning" :loading="uploading" @click="upload(true)">确认并安装</NButton>
-        </NSpace>
-      </template>
-    </NModal>
+        <DialogFooter>
+          <Button variant="outline" @click="upShow = false">取消</Button>
+          <Button v-if="!preview" :disabled="!file || uploading" @click="upload(false)"><Loader2Icon v-if="uploading" class="animate-spin" />检查安装包</Button>
+          <Button v-else variant="destructive" :disabled="uploading" @click="upload(true)"><Loader2Icon v-if="uploading" class="animate-spin" />确认并安装</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

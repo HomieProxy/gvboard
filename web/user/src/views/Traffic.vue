@@ -1,17 +1,22 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NCard, NDataTable, NSelect, NStatistic, NSpace, type DataTableColumns } from 'naive-ui'
+import { ActivityIcon, InfoIcon } from '@lucide/vue'
 import { formatBytes, formatTime } from '@gv/shared'
+import { Card, CardContent } from '@gv/shared/ui/card'
 import { http } from '../api'
 import { errText, toast } from '../ui'
 import { loadSubs, subName, subOptions, subs } from '../store'
 import type { TrafficLog } from '../types'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable from '../components/common/DataTable.vue'
+import SelectBox from '../components/common/SelectBox.vue'
 
 const { t } = useI18n()
 const rows = ref<TrafficLog[]>([])
 const loading = ref(true)
 const sub = ref<number | null>(null)
+const subChoices = computed(() => [{ label: t('traffic.allSubs'), value: null }, ...subOptions()])
 
 const charged = (r: TrafficLog) => (r.u + r.d) * Number(r.server_rate)
 const sum = computed(() => rows.value.reduce((n, r) => n + charged(r), 0))
@@ -27,20 +32,18 @@ async function load() {
   }
 }
 
-const columns = computed<DataTableColumns<TrafficLog>>(() => [
-  { title: t('traffic.date'), key: 'record_at', render: (r) => formatTime(r.record_at, false) },
-  {
-    title: t('traffic.subscription'),
-    key: 'subscription_id',
-    render: (r) => {
-      const s = subs.value.find((x) => x.id === r.subscription_id)
-      return s ? subName(s) : r.subscription_id ? `#${r.subscription_id}` : '-'
-    },
-  },
-  { title: t('traffic.upload'), key: 'u', render: (r) => formatBytes(r.u) },
-  { title: t('traffic.download'), key: 'd', render: (r) => formatBytes(r.d) },
-  { title: t('traffic.rate'), key: 'server_rate', render: (r) => `${Number(r.server_rate)}x` },
-  { title: t('traffic.total'), key: 'total', render: (r) => h('strong', formatBytes(charged(r))) },
+function subLabel(r: TrafficLog) {
+  const s = subs.value.find((x) => x.id === r.subscription_id)
+  return s ? subName(s) : r.subscription_id ? `#${r.subscription_id}` : '-'
+}
+
+const columns = computed(() => [
+  { key: 'record_at', title: t('traffic.date') },
+  { key: 'subscription_id', title: t('traffic.subscription') },
+  { key: 'u', title: t('traffic.upload'), align: 'right' as const },
+  { key: 'd', title: t('traffic.download'), align: 'right' as const },
+  { key: 'server_rate', title: t('traffic.rate'), align: 'right' as const },
+  { key: 'total', title: t('traffic.total'), align: 'right' as const },
 ])
 
 watch(sub, load)
@@ -51,21 +54,31 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
-    <div class="row" style="justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap">
-      <h2 class="page-title" style="margin: 0">{{ t('nav.traffic') }}</h2>
-      <NSelect v-model:value="sub" :options="subOptions()" clearable :placeholder="t('traffic.allSubs')" style="width: 240px" />
+  <div>
+    <PageHeader :title="t('nav.traffic')">
+      <SelectBox class="w-60" :model-value="sub" :options="subChoices" @update:model-value="(v) => (sub = v === null ? null : Number(v))" />
+    </PageHeader>
+    <Card class="mb-4 py-4">
+      <CardContent class="flex flex-wrap items-center gap-x-8 gap-y-3 px-4">
+        <div class="flex items-center gap-3">
+          <div class="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary"><ActivityIcon class="size-5" /></div>
+          <div>
+            <div class="text-sm text-muted-foreground">{{ t('traffic.monthTotal') }}</div>
+            <div class="text-2xl font-semibold tabular-nums">{{ formatBytes(sum) }}</div>
+          </div>
+        </div>
+        <p class="flex items-start gap-1.5 text-sm text-muted-foreground"><InfoIcon class="mt-0.5 size-4 shrink-0" />{{ t('traffic.tip') }}</p>
+      </CardContent>
+    </Card>
+    <div class="overflow-x-auto">
+      <DataTable :columns="columns" :rows="rows" :loading="loading" :row-key="(r) => `${r.record_at}-${r.subscription_id}-${r.server_rate}`" class="min-w-[680px]">
+        <template #cell-record_at="{ row }">{{ formatTime(row.record_at, false) }}</template>
+        <template #cell-subscription_id="{ row }">{{ subLabel(row) }}</template>
+        <template #cell-u="{ row }"><span class="tabular-nums">{{ formatBytes(row.u) }}</span></template>
+        <template #cell-d="{ row }"><span class="tabular-nums">{{ formatBytes(row.d) }}</span></template>
+        <template #cell-server_rate="{ row }">{{ Number(row.server_rate) }}x</template>
+        <template #cell-total="{ row }"><span class="font-medium tabular-nums">{{ formatBytes(charged(row)) }}</span></template>
+      </DataTable>
     </div>
-    <NCard size="small" style="margin-bottom: 16px">
-      <NSpace :size="48">
-        <NStatistic :label="t('traffic.monthTotal')" :value="formatBytes(sum)" />
-      </NSpace>
-      <p class="muted">{{ t('traffic.tip') }}</p>
-    </NCard>
-    <NCard size="small">
-      <NDataTable :columns="columns" :data="rows" :loading="loading" :scroll-x="700">
-        <template #empty>{{ t('common.empty') }}</template>
-      </NDataTable>
-    </NCard>
   </div>
 </template>

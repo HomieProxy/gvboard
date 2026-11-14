@@ -3,9 +3,10 @@ import { loadRawConfig } from '@gv/shared'
 import App from './App.vue'
 import { cfg, http, setToken, setLogoutHandler, type UserConfig } from './api'
 import { i18n, initLocale } from './i18n'
-import { injectCustomHTML } from './theme'
+import { applyTheme, injectCustomHTML } from './theme'
 import { clearSession } from './store'
 import { router } from './router'
+import 'vue-sonner/style.css'
 import './style.css'
 
 async function boot() {
@@ -22,6 +23,7 @@ async function boot() {
     theme: { ...cfg.value.theme, ...(raw.theme || {}), config: { ...(raw.theme?.config || {}) } },
   } as UserConfig
   await initLocale()
+  applyTheme()
 
   // 分离部署时页面没有注入站点配置，从接口获取
   if (!raw.site) {

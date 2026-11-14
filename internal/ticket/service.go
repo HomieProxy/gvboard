@@ -412,11 +412,18 @@ type AdminQuery struct {
 	PageSize    int    `form:"page_size"`
 }
 
-// AdminTicket 管理端工单，附带用户邮箱与关联订阅名称。
+// AdminTicket 管理端工单，附带用户邮箱与关联订阅摘要。
+// 工单未关联订阅（如迁移前的历史工单）时取用户主订阅，SubscriptionInferred 为 true。
 type AdminTicket struct {
 	model.Ticket
-	Email            string  `json:"email"`
-	SubscriptionName *string `json:"subscription_name"`
+	Email                 string  `json:"email"`
+	SubscriptionName      *string `json:"subscription_name"`
+	PlanName              *string `json:"plan_name"`
+	SubscriptionExpiredAt *int64  `json:"subscription_expired_at"`
+	SubscriptionUsed      *int64  `json:"subscription_used"`
+	SubscriptionTotal     *int64  `json:"subscription_total"`
+	SubscriptionInferred  bool    `json:"subscription_inferred"`
+	InferredSubscription  *int64  `json:"inferred_subscription_id"`
 }
 
 // AdminDetail 管理端工单详情。
@@ -426,11 +433,13 @@ type AdminDetail struct {
 }
 
 func (s *Service) decorate(ctx context.Context, list []model.Ticket) ([]AdminTicket, error) {
-	var userIDs, subIDs []int64
+	var userIDs, subIDs, bareUsers []int64
 	for _, t := range list {
 		userIDs = append(userIDs, t.UserID)
 		if t.SubscriptionID != nil {
 			subIDs = append(subIDs, *t.SubscriptionID)
+		} else {
+			bareUsers = append(bareUsers, t.UserID)
 		}
 	}
 	db := s.DB.WithContext(ctx)
@@ -444,22 +453,65 @@ func (s *Service) decorate(ctx context.Context, list []model.Ticket) ([]AdminTic
 			emails[u.ID] = u.Email
 		}
 	}
-	names := map[int64]string{}
+	cols := []string{"id", "user_id", "name", "is_primary", "plan_id", "expired_at", "u", "d", "transfer_enable"}
+	byID := map[int64]*model.Subscription{}
+	primary := map[int64]*model.Subscription{}
+	planIDs := []int64{}
+	collect := func(subs []model.Subscription, into func(*model.Subscription)) {
+		for i := range subs {
+			into(&subs[i])
+			if subs[i].PlanID != nil {
+				planIDs = append(planIDs, *subs[i].PlanID)
+			}
+		}
+	}
 	if len(subIDs) > 0 {
 		var subs []model.Subscription
-		if err := db.Select("id", "name").Where("id IN ?", subIDs).Find(&subs).Error; err != nil {
+		if err := db.Select(cols).Where("id IN ?", subIDs).Find(&subs).Error; err != nil {
 			return nil, err
 		}
-		for _, sub := range subs {
-			names[sub.ID] = sub.Name
+		collect(subs, func(v *model.Subscription) { byID[v.ID] = v })
+	}
+	if len(bareUsers) > 0 {
+		var subs []model.Subscription
+		if err := db.Select(cols).Where("user_id IN ? AND is_primary = 1", bareUsers).Find(&subs).Error; err != nil {
+			return nil, err
+		}
+		collect(subs, func(v *model.Subscription) { primary[v.UserID] = v })
+	}
+	plans := map[int64]string{}
+	if len(planIDs) > 0 {
+		var ps []model.Plan
+		if err := db.Select("id", "name").Where("id IN ?", planIDs).Find(&ps).Error; err != nil {
+			return nil, err
+		}
+		for _, p := range ps {
+			plans[p.ID] = p.Name
 		}
 	}
 	out := make([]AdminTicket, len(list))
 	for i, t := range list {
 		out[i] = AdminTicket{Ticket: t, Email: emails[t.UserID]}
+		var sub *model.Subscription
 		if t.SubscriptionID != nil {
-			if n, ok := names[*t.SubscriptionID]; ok {
-				out[i].SubscriptionName = &n
+			sub = byID[*t.SubscriptionID]
+		} else if p := primary[t.UserID]; p != nil {
+			sub = p
+			out[i].SubscriptionInferred = true
+			id := p.ID
+			out[i].InferredSubscription = &id
+		}
+		if sub == nil {
+			continue
+		}
+		name, used, total := sub.Name, sub.U+sub.D, sub.TransferEnable
+		out[i].SubscriptionName = &name
+		out[i].SubscriptionExpiredAt = sub.ExpiredAt
+		out[i].SubscriptionUsed = &used
+		out[i].SubscriptionTotal = &total
+		if sub.PlanID != nil {
+			if n, ok := plans[*sub.PlanID]; ok {
+				out[i].PlanName = &n
 			}
 		}
 	}

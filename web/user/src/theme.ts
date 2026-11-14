@@ -1,17 +1,12 @@
-import { computed, ref } from 'vue'
-import {
-  darkTheme, zhCN, zhTW, enUS, jaJP, koKR, viVN, faIR,
-  dateZhCN, dateZhTW, dateEnUS, dateJaJP, dateKoKR, dateViVN, dateFaIR,
-  type GlobalThemeOverrides,
-} from 'naive-ui'
+import { computed, ref, watchEffect } from 'vue'
 import { cfg, store } from './api'
-import { i18n } from './i18n'
 
+/** 主题色（对应主题配置中的 theme_color） */
 const primary: Record<string, string> = {
-  default: '#2563eb',
-  green: '#10b981',
-  black: '#404040',
-  darkblue: '#1e40af',
+  default: '#0665d0',
+  green: '#319795',
+  black: '#343a40',
+  darkblue: '#3b5998',
 }
 
 const media = window.matchMedia('(prefers-color-scheme: dark)')
@@ -31,27 +26,21 @@ export const isDark = computed(() => {
   return mode === 'dark' || (mode === 'auto' && systemDark.value)
 })
 
-export const naiveTheme = computed(() => (isDark.value ? darkTheme : null))
-
-export const overrides = computed<GlobalThemeOverrides>(() => {
-  const c = primary[String(cfg.value.theme.config.theme_color || 'default')] || primary.default
-  return {
-    common: { primaryColor: c, primaryColorHover: c, primaryColorPressed: c, primaryColorSuppl: c, borderRadius: '6px' },
-  }
-})
-
-const naiveLocales: Record<string, [typeof zhCN, typeof dateZhCN]> = {
-  'zh-CN': [zhCN, dateZhCN],
-  'zh-TW': [zhTW, dateZhTW],
-  'en-US': [enUS, dateEnUS],
-  'ja-JP': [jaJP, dateJaJP],
-  'ko-KR': [koKR, dateKoKR],
-  'vi-VN': [viVN, dateViVN],
-  'fa-IR': [faIR, dateFaIR],
+/** 把外观与主题色同步到页面根节点 */
+export function applyTheme() {
+  watchEffect(() => {
+    const root = document.documentElement
+    root.classList.toggle('dark', isDark.value)
+    const name = String(cfg.value.theme.config.theme_color || 'default')
+    const c = primary[name] || (name.startsWith('#') ? name : primary.default)
+    root.style.setProperty('--primary', c)
+    root.style.setProperty('--ring', c)
+    root.style.setProperty('--sidebar-primary', c)
+    // 主题色均为深色，深色模式下前景色也必须保持白色
+    root.style.setProperty('--primary-foreground', '#fff')
+    root.style.setProperty('--sidebar-primary-foreground', '#fff')
+  })
 }
-
-export const naiveLocale = computed(() => (naiveLocales[i18n.global.locale.value] || naiveLocales['zh-CN'])[0])
-export const naiveDateLocale = computed(() => (naiveLocales[i18n.global.locale.value] || naiveLocales['zh-CN'])[1])
 
 /** 插入管理员配置的自定义 HTML（客服脚本等），其中的脚本需要重新创建才会执行。 */
 export function injectCustomHTML(html: string) {

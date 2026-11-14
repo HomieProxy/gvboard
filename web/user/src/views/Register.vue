@@ -2,7 +2,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NForm, NFormItem, NInput, NButton, NCheckbox, NSelect, NAlert, NInputGroup } from 'naive-ui'
+import { Loader2Icon, TriangleAlertIcon } from '@lucide/vue'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Checkbox } from '@gv/shared/ui/checkbox'
+import { Alert, AlertDescription } from '@gv/shared/ui/alert'
 import { cfg, http, setToken } from '../api'
 import { errText, toast } from '../ui'
 import { clearSession } from '../store'
@@ -10,6 +14,8 @@ import type { AuthResult } from '../types'
 import Captcha from '../components/Captcha.vue'
 import EmailCodeButton from '../components/EmailCodeButton.vue'
 import TextLink from '../components/TextLink.vue'
+import FormItem from '../components/common/FormItem.vue'
+import SelectBox from '../components/common/SelectBox.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -64,46 +70,48 @@ async function submit() {
 </script>
 
 <template>
-  <h2 class="title">{{ t('auth.registerTitle') }}</h2>
-  <NAlert v-if="reg.closed" type="warning">{{ t('auth.registerClosed') }}</NAlert>
-  <NForm v-else @submit.prevent="submit">
-    <NFormItem :label="t('auth.email')">
-      <NInputGroup v-if="suffixes.length">
-        <NInput v-model:value="form.prefix" />
-        <NSelect v-model:value="form.suffix" :options="suffixes" style="width: 55%" />
-      </NInputGroup>
-      <NInput v-else v-model:value="form.email" :input-props="{ type: 'email', autocomplete: 'email' }" />
-    </NFormItem>
-    <NFormItem v-if="reg.email_code" :label="t('auth.emailCode')">
-      <NInputGroup>
-        <NInput v-model:value="form.email_code" maxlength="6" :input-props="{ inputmode: 'numeric', autocomplete: 'one-time-code' }" />
-        <EmailCodeButton :email="email" scene="register" :captcha="captcha" :need-captcha="!!reg.captcha_key" @sent="captchaRef?.reset()" />
-      </NInputGroup>
-    </NFormItem>
-    <NFormItem :label="t('auth.password')">
-      <NInput v-model:value="form.password" type="password" show-password-on="click" :input-props="{ autocomplete: 'new-password' }" />
-    </NFormItem>
-    <NFormItem :label="t('auth.passwordConfirm')">
-      <NInput v-model:value="form.confirm" type="password" show-password-on="click" :input-props="{ autocomplete: 'new-password' }" />
-    </NFormItem>
-    <NFormItem :label="reg.invite_required ? t('auth.inviteCode') : t('auth.inviteCodeOptional')">
-      <NInput v-model:value="form.invite_code" :disabled="fromLink" />
-    </NFormItem>
+  <h2 class="mb-6 text-xl font-semibold">{{ t('auth.registerTitle') }}</h2>
+  <Alert v-if="reg.closed" class="border-warning/50 bg-warning/10">
+    <TriangleAlertIcon class="text-warning" />
+    <AlertDescription class="text-foreground">{{ t('auth.registerClosed') }}</AlertDescription>
+  </Alert>
+  <form v-else class="space-y-4" @submit.prevent="submit">
+    <FormItem :label="t('auth.email')">
+      <div v-if="suffixes.length" class="flex gap-2">
+        <Input v-model="form.prefix" class="h-10 flex-1" autocomplete="email" />
+        <SelectBox class="h-10! w-[48%]" :model-value="form.suffix" :options="suffixes" @update:model-value="(v) => (form.suffix = String(v))" />
+      </div>
+      <Input v-else v-model="form.email" type="email" autocomplete="email" class="h-10" />
+    </FormItem>
+    <FormItem v-if="reg.email_code" :label="t('auth.emailCode')">
+      <div class="flex gap-2">
+        <Input v-model="form.email_code" maxlength="6" inputmode="numeric" autocomplete="one-time-code" class="h-10 flex-1" />
+        <EmailCodeButton class="h-10" :email="email" scene="register" :captcha="captcha" :need-captcha="!!reg.captcha_key" @sent="captchaRef?.reset()" />
+      </div>
+    </FormItem>
+    <FormItem :label="t('auth.password')">
+      <Input v-model="form.password" type="password" autocomplete="new-password" class="h-10" />
+    </FormItem>
+    <FormItem :label="t('auth.passwordConfirm')">
+      <Input v-model="form.confirm" type="password" autocomplete="new-password" class="h-10" />
+    </FormItem>
+    <FormItem :label="reg.invite_required ? t('auth.inviteCode') : t('auth.inviteCodeOptional')">
+      <Input v-model="form.invite_code" :disabled="fromLink" class="h-10" />
+    </FormItem>
     <Captcha v-if="reg.captcha_key" ref="captchaRef" v-model="captcha" :site-key="reg.captcha_key" />
-    <div v-if="cfg.site.terms_url" style="margin-bottom: 16px">
-      <NCheckbox v-model:checked="agree">
-        {{ t('auth.agree') }} <a :href="cfg.site.terms_url" target="_blank" rel="noopener" @click.stop>{{ t('auth.terms') }}</a>
-      </NCheckbox>
-    </div>
-    <NButton type="primary" block size="large" :loading="loading" attr-type="submit">{{ t('auth.register') }}</NButton>
-  </NForm>
-  <div class="foot muted">
+    <label v-if="cfg.site.terms_url" class="flex items-center gap-2 text-sm">
+      <Checkbox v-model="agree" />
+      <span>
+        {{ t('auth.agree') }}
+        <a :href="cfg.site.terms_url" target="_blank" rel="noopener" class="text-primary hover:underline" @click.stop>{{ t('auth.terms') }}</a>
+      </span>
+    </label>
+    <Button type="submit" size="lg" class="w-full" :disabled="loading">
+      <Loader2Icon v-if="loading" class="animate-spin" />{{ t('auth.register') }}
+    </Button>
+  </form>
+  <p class="mt-6 text-center text-sm text-muted-foreground">
     {{ t('auth.hasAccount') }}
     <TextLink to="/login">{{ t('auth.toLogin') }}</TextLink>
-  </div>
+  </p>
 </template>
-
-<style scoped>
-.title { margin: 0 0 20px; font-size: 20px; }
-.foot { text-align: center; margin-top: 18px; }
-</style>

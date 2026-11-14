@@ -1,14 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { NCard, NGrid, NGi, NStatistic, NDataTable, NRadioGroup, NRadioButton, NSpin, NAlert, NSpace } from 'naive-ui'
+import { RouterLink } from 'vue-router'
+import {
+  SettingsIcon, ReceiptIcon, PackageIcon, UsersIcon, WifiIcon, WalletIcon, UserPlusIcon, CalendarIcon, HistoryIcon,
+  HandCoinsIcon, MessageSquareIcon, TriangleAlertIcon, ChevronRightIcon, CoinsIcon,
+} from '@lucide/vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart, BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { formatBytes, formatMoney, formatTime } from '@gv/shared'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@gv/shared/ui/card'
+import { Alert, AlertDescription, AlertTitle } from '@gv/shared/ui/alert'
+import { Tabs, TabsList, TabsTrigger } from '@gv/shared/ui/tabs'
+import { Skeleton } from '@gv/shared/ui/skeleton'
 import { admin } from '../api'
 import { errText, message } from '../ui'
+import { colorMode } from '../theme'
 
 use([CanvasRenderer, LineChart, BarChart, GridComponent, TooltipComponent, LegendComponent])
 
@@ -55,8 +64,10 @@ const day = ref<'today' | 'yesterday'>('today')
 const serverRank = ref<Rank[]>([])
 const userRank = ref<Rank[]>([])
 const loading = ref(true)
+const rankLoading = ref(false)
 
 async function loadRank() {
+  rankLoading.value = true
   try {
     const [s, u] = await Promise.all([
       admin.get<Rank[]>('/stat/server-rank', { day: day.value }),
@@ -66,6 +77,8 @@ async function loadRank() {
     userRank.value = u || []
   } catch (e) {
     message.error(errText(e))
+  } finally {
+    rankLoading.value = false
   }
 }
 
@@ -88,79 +101,170 @@ onMounted(async () => {
 })
 watch(day, loadRank)
 
-const chart = computed(() => ({
-  tooltip: { trigger: 'axis' },
-  legend: { data: ['收款金额', '佣金', '注册', '付款订单'] },
-  grid: { left: 50, right: 50, top: 40, bottom: 30 },
-  xAxis: { type: 'category', data: days.value.map((d) => formatTime(d.record_at, false).slice(5)) },
-  yAxis: [
-    { type: 'value', name: '金额' },
-    { type: 'value', name: '数量', minInterval: 1 },
-  ],
-  series: [
-    { name: '收款金额', type: 'line', smooth: true, data: days.value.map((d) => d.paid_total / 100) },
-    { name: '佣金', type: 'line', smooth: true, data: days.value.map((d) => d.commission_total / 100) },
-    { name: '注册', type: 'bar', yAxisIndex: 1, data: days.value.map((d) => d.register_count) },
-    { name: '付款订单', type: 'bar', yAxisIndex: 1, data: days.value.map((d) => d.paid_count) },
-  ],
-}))
+const shortcuts = [
+  { to: '/config', title: '系统设置', icon: SettingsIcon },
+  { to: '/orders', title: '订单管理', icon: ReceiptIcon },
+  { to: '/plans', title: '订阅管理', icon: PackageIcon },
+  { to: '/users', title: '用户管理', icon: UsersIcon },
+]
 
-const traffic = (r: Rank) => formatBytes(r.u + r.d)
-const serverCols = [
-  { title: '节点', key: 'server_name', render: (r: Rank) => r.server_name || `${r.server_type}#${r.server_id}` },
-  { title: '类型', key: 'server_type' },
-  { title: '流量', key: 'total', render: traffic },
-]
-const userCols = [
-  { title: '用户', key: 'email', render: (r: Rank) => `${r.email} (#${r.user_id})` },
-  { title: '折算流量', key: 'total', render: (r: Rank) => `${r.total.toFixed(2)} GB` },
-]
+const stats = computed(() => {
+  const o = ov.value
+  if (!o) return []
+  return [
+    { label: '在线人数', value: String(o.online_user), sub: `在线订阅 ${o.online_subscription}`, icon: WifiIcon },
+    { label: '今日收入', value: formatMoney(o.day_income), sub: '已支付订单金额', icon: WalletIcon },
+    { label: '实时注册', value: String(o.day_register_total), sub: '今日新增用户', icon: UserPlusIcon },
+    { label: '本月收入', value: formatMoney(o.month_income), sub: `上月 ${formatMoney(o.last_month_income)}`, icon: CalendarIcon },
+    { label: '上月收入', value: formatMoney(o.last_month_income), sub: '上个自然月', icon: HistoryIcon },
+    { label: '本月新增用户', value: String(o.month_register_total), sub: '本自然月注册', icon: UsersIcon },
+    { label: '本月佣金支出', value: formatMoney(o.commission_month_payout), sub: '已确认发放', icon: CoinsIcon },
+    { label: '上月佣金支出', value: formatMoney(o.commission_last_month_payout), sub: '上个自然月', icon: HandCoinsIcon },
+  ]
+})
+
+const palette = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6']
+const chart = computed(() => {
+  const dark = colorMode.value === 'dark'
+  const axisColor = dark ? '#a1a1aa' : '#71717a'
+  const lineColor = dark ? '#3f3f46' : '#e4e4e7'
+  return {
+    color: palette,
+    tooltip: { trigger: 'axis' },
+    legend: { top: 0, left: 'center', icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle: { color: axisColor } },
+    grid: { left: 8, right: 8, top: 48, bottom: 8, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: days.value.map((d) => formatTime(d.record_at, false).slice(5)),
+      axisLine: { lineStyle: { color: lineColor } },
+      axisLabel: { color: axisColor },
+      axisTick: { show: false },
+    },
+    yAxis: [
+      { type: 'value', name: '金额', nameTextStyle: { color: axisColor }, axisLabel: { color: axisColor }, splitLine: { lineStyle: { color: lineColor, type: 'dashed' } } },
+      { type: 'value', name: '数量', minInterval: 1, nameTextStyle: { color: axisColor }, axisLabel: { color: axisColor }, splitLine: { show: false } },
+    ],
+    series: [
+      { name: '收款金额', type: 'line', smooth: true, symbol: 'none', areaStyle: { opacity: 0.08 }, data: days.value.map((d) => d.paid_total / 100) },
+      { name: '佣金金额', type: 'line', smooth: true, symbol: 'none', data: days.value.map((d) => d.commission_total / 100) },
+      { name: '注册人数', type: 'bar', yAxisIndex: 1, barMaxWidth: 10, data: days.value.map((d) => d.register_count) },
+      { name: '付款订单', type: 'bar', yAxisIndex: 1, barMaxWidth: 10, data: days.value.map((d) => d.paid_count) },
+    ],
+  }
+})
+
+const maxOf = (rows: Rank[], f: (r: Rank) => number) => Math.max(1, ...rows.map(f))
+const serverMax = computed(() => maxOf(serverRank.value, (r) => r.u + r.d))
+const userMax = computed(() => maxOf(userRank.value, (r) => r.total))
+const dayText = computed(() => (day.value === 'today' ? '今日' : '昨日'))
 </script>
 
 <template>
-  <div class="page">
-    <NSpin :show="loading">
-      <NSpace vertical :size="16">
-        <NAlert v-if="status && (!status.schedule || !status.queue)" type="warning" title="后台服务异常">
-          {{ !status.schedule ? '定时任务未运行。' : '' }}{{ !status.queue ? '队列处理器未运行，邮件、通知等任务不会执行。' : '' }}
-          请检查 worker 进程。
-        </NAlert>
-        <NGrid v-if="ov" cols="2 s:3 m:4 l:6" responsive="screen" :x-gap="12" :y-gap="12">
-          <NGi><NCard size="small"><NStatistic label="今日收入" :value="formatMoney(ov.day_income)" /></NCard></NGi>
-          <NGi><NCard size="small"><NStatistic label="本月收入" :value="formatMoney(ov.month_income)" /></NCard></NGi>
-          <NGi><NCard size="small"><NStatistic label="上月收入" :value="formatMoney(ov.last_month_income)" /></NCard></NGi>
-          <NGi><NCard size="small"><NStatistic label="在线用户 / 订阅" :value="`${ov.online_user} / ${ov.online_subscription}`" /></NCard></NGi>
-          <NGi><NCard size="small"><NStatistic label="今日 / 本月注册" :value="`${ov.day_register_total} / ${ov.month_register_total}`" /></NCard></NGi>
-          <NGi>
-            <NCard size="small">
-              <NStatistic label="待回复工单" :value="ov.ticket_pending_total" />
-            </NCard>
-          </NGi>
-          <NGi><NCard size="small"><NStatistic label="待确认佣金订单" :value="ov.commission_pending_total" /></NCard></NGi>
-          <NGi><NCard size="small"><NStatistic label="本月发放佣金" :value="formatMoney(ov.commission_month_payout)" /></NCard></NGi>
-          <NGi><NCard size="small"><NStatistic label="上月发放佣金" :value="formatMoney(ov.commission_last_month_payout)" /></NCard></NGi>
-        </NGrid>
-        <NCard title="最近 31 天" size="small">
-          <VChart v-if="days.length" :option="chart" autoresize style="height: 320px" />
-          <div v-else class="empty">暂无统计数据（每日统计任务在次日生成）</div>
-        </NCard>
-        <NCard size="small" title="流量排行">
-          <template #header-extra>
-            <NRadioGroup v-model:value="day" size="small">
-              <NRadioButton value="today">今日</NRadioButton>
-              <NRadioButton value="yesterday">昨日</NRadioButton>
-            </NRadioGroup>
-          </template>
-          <NGrid cols="1 m:2" responsive="screen" :x-gap="16" :y-gap="16">
-            <NGi><NDataTable size="small" :columns="serverCols" :data="serverRank" :bordered="false" /></NGi>
-            <NGi><NDataTable size="small" :columns="userCols" :data="userRank" :bordered="false" /></NGi>
-          </NGrid>
-        </NCard>
-      </NSpace>
-    </NSpin>
+  <div class="grid gap-4">
+    <Alert v-if="status && (!status.schedule || !status.queue)" variant="destructive">
+      <TriangleAlertIcon />
+      <AlertTitle>后台服务异常</AlertTitle>
+      <AlertDescription>
+        {{ !status.schedule ? '定时任务未运行。' : '' }}{{ !status.queue ? '队列处理器未运行，邮件、通知等任务不会执行。' : '' }}请检查 worker 进程。
+      </AlertDescription>
+    </Alert>
+
+    <div v-if="ov && (ov.ticket_pending_total || ov.commission_pending_total)" class="grid gap-3 sm:grid-cols-2">
+      <RouterLink v-if="ov.ticket_pending_total" to="/tickets" class="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm hover:bg-warning/15">
+        <MessageSquareIcon class="size-4 text-amber-600" />
+        <span>有 <b>{{ ov.ticket_pending_total }}</b> 条工单等待处理</span>
+        <ChevronRightIcon class="ml-auto size-4 text-muted-foreground" />
+      </RouterLink>
+      <RouterLink v-if="ov.commission_pending_total" to="/orders" class="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm hover:bg-warning/15">
+        <CoinsIcon class="size-4 text-amber-600" />
+        <span>有 <b>{{ ov.commission_pending_total }}</b> 笔佣金等待确认</span>
+        <ChevronRightIcon class="ml-auto size-4 text-muted-foreground" />
+      </RouterLink>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <RouterLink
+        v-for="s in shortcuts"
+        :key="s.to"
+        :to="s.to"
+        class="group flex items-center gap-3 rounded-lg border bg-card px-4 py-3 transition-colors hover:border-primary/40 hover:bg-primary/5"
+      >
+        <span class="flex size-9 items-center justify-center rounded-md bg-primary/10 text-primary"><component :is="s.icon" class="size-4" /></span>
+        <span class="text-sm font-medium">{{ s.title }}</span>
+        <ChevronRightIcon class="ml-auto size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      </RouterLink>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <template v-if="loading">
+        <Skeleton v-for="i in 8" :key="i" class="h-[104px] rounded-xl" />
+      </template>
+      <Card v-for="s in stats" v-else :key="s.label" class="gap-0 py-4">
+        <CardContent class="px-4">
+          <div class="flex items-center justify-between text-sm text-muted-foreground">
+            {{ s.label }}
+            <component :is="s.icon" class="size-4" />
+          </div>
+          <div class="mt-2 text-2xl font-semibold tabular-nums">{{ s.value }}</div>
+          <div class="mt-1 text-xs text-muted-foreground">{{ s.sub }}</div>
+        </CardContent>
+      </Card>
+    </div>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>收入趋势</CardTitle>
+        <CardDescription>最近 31 天的收款、佣金、注册与付款订单</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <VChart v-if="days.length" :option="chart" autoresize class="h-80 w-full" />
+        <div v-else class="flex h-40 items-center justify-center text-sm text-muted-foreground">暂无统计数据（每日统计任务在次日生成）</div>
+      </CardContent>
+    </Card>
+
+    <div class="flex items-center justify-between">
+      <h2 class="text-base font-semibold">流量排行</h2>
+      <Tabs v-model="day">
+        <TabsList>
+          <TabsTrigger value="today">今日</TabsTrigger>
+          <TabsTrigger value="yesterday">昨日</TabsTrigger>
+        </TabsList>
+      </Tabs>
+    </div>
+    <div class="grid gap-4 lg:grid-cols-2" :class="rankLoading ? 'opacity-60' : ''">
+      <Card>
+        <CardHeader><CardTitle class="text-sm">{{ dayText }}节点流量排行</CardTitle></CardHeader>
+        <CardContent class="grid gap-3">
+          <div v-for="(r, i) in serverRank" :key="`${r.server_type}-${r.server_id}`" class="grid gap-1">
+            <div class="flex items-center gap-2 text-sm">
+              <span class="w-5 text-right text-xs text-muted-foreground tabular-nums">{{ i + 1 }}</span>
+              <span class="truncate">{{ r.server_name || `${r.server_type}#${r.server_id}` }}</span>
+              <span class="rounded bg-muted px-1.5 text-[11px] text-muted-foreground">{{ r.server_type }}</span>
+              <span class="ml-auto shrink-0 tabular-nums text-muted-foreground">{{ formatBytes(r.u + r.d) }}</span>
+            </div>
+            <div class="ml-7 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div class="h-full rounded-full bg-primary" :style="{ width: `${((r.u + r.d) / serverMax) * 100}%` }" />
+            </div>
+          </div>
+          <div v-if="!serverRank.length" class="py-8 text-center text-sm text-muted-foreground">暂无数据</div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle class="text-sm">{{ dayText }}用户流量排行</CardTitle></CardHeader>
+        <CardContent class="grid gap-3">
+          <div v-for="(r, i) in userRank" :key="r.user_id" class="grid gap-1">
+            <div class="flex items-center gap-2 text-sm">
+              <span class="w-5 text-right text-xs text-muted-foreground tabular-nums">{{ i + 1 }}</span>
+              <RouterLink :to="{ path: '/users', query: { id: r.user_id } }" class="truncate hover:text-primary hover:underline">{{ r.email }}</RouterLink>
+              <span class="ml-auto shrink-0 tabular-nums text-muted-foreground">{{ r.total.toFixed(2) }} GB</span>
+            </div>
+            <div class="ml-7 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div class="h-full rounded-full bg-emerald-500" :style="{ width: `${(r.total / userMax) * 100}%` }" />
+            </div>
+          </div>
+          <div v-if="!userRank.length" class="py-8 text-center text-sm text-muted-foreground">暂无数据</div>
+        </CardContent>
+      </Card>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.empty { padding: 40px; text-align: center; color: #999; }
-</style>

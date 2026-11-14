@@ -1,14 +1,22 @@
 <script setup lang="ts">
-import { h, onMounted, ref, watch } from 'vue'
-import {
-  NCard, NDataTable, NButton, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSpace, NAlert, NSpin,
-  type DataTableColumns,
-} from 'naive-ui'
+import { onMounted, ref, watch } from 'vue'
+import { PlusIcon, RefreshCwIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon, Trash2Icon, Loader2Icon, CopyIcon } from '@lucide/vue'
 import { copyText, formatMoney } from '@gv/shared'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Textarea } from '@gv/shared/ui/textarea'
+import { Switch } from '@gv/shared/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@gv/shared/ui/tooltip'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable, { type Column } from '../components/common/DataTable.vue'
+import FormItem from '../components/common/FormItem.vue'
+import SelectBox from '../components/common/SelectBox.vue'
+import NumInput from '../components/common/NumInput.vue'
 import { admin } from '../api'
-import { errText, message, run } from '../ui'
+import { confirm, errText, message, run } from '../ui'
 import { useList } from '../paged'
-import { actions, btn, confirmBtn, sw, toCents, toYuan } from '../helpers'
+import { toCents, toYuan } from '../helpers'
 import type { Payment } from '../types'
 
 type FormField = { type: 'input'; label: string; description: string; value?: unknown } | { type: 'alert'; content: string }
@@ -20,7 +28,7 @@ async function toggle(p: Payment) {
   if (await run(() => admin.post(`/payments/${p.id}/toggle`))) p.enable = p.enable ? 0 : 1
 }
 async function remove(p: Payment) {
-  if (await run(() => admin.del(`/payments/${p.id}`), '已删除')) load()
+  if (await confirm(`确定要删除支付方式「${p.name}」吗？`, () => admin.del(`/payments/${p.id}`), '删除成功')) load()
 }
 async function move(i: number, d: number) {
   const list = [...rows.value]
@@ -30,46 +38,31 @@ async function move(i: number, d: number) {
   rows.value = list
   if (!(await run(() => admin.post('/payments/sort', { ids: list.map((p) => p.id) })))) load()
 }
+async function copyNotify(p: Payment) {
+  const ok = await copyText(p.notify_url)
+  message[ok ? 'success' : 'error'](ok ? '复制成功' : '复制失败')
+}
 
 function fee(p: Payment) {
   const out: string[] = []
   if (p.handling_fee_percent) out.push(`${p.handling_fee_percent}%`)
   if (p.handling_fee_fixed) out.push(formatMoney(p.handling_fee_fixed))
-  return out.join(' + ') || '-'
+  return out.join(' + ')
 }
 
-const columns: DataTableColumns<Payment> = [
-  {
-    title: '排序',
-    key: 'sort',
-    width: 70,
-    render: (_, i) => actions(btn('↑', () => move(i, -1), 'default'), btn('↓', () => move(i, 1), 'default')),
-  },
-  { title: 'ID', key: 'id', width: 60 },
-  {
-    title: '名称',
-    key: 'name',
-    render: (p) => h(NSpace, { size: 6, align: 'center' }, () => [p.icon ? h('img', { src: p.icon, style: 'height:18px' }) : null, p.name]),
-  },
-  { title: '网关', key: 'payment' },
-  { title: '手续费', key: 'fee', render: fee },
-  {
-    title: '回调地址',
-    key: 'notify_url',
-    render: (p) =>
-      h('a', { class: 'link mono', title: '点击复制', onClick: async () => message[(await copyText(p.notify_url)) ? 'success' : 'error']('已复制') }, p.notify_url),
-  },
-  { title: '启用', key: 'enable', width: 70, render: (p) => sw(!!p.enable, () => toggle(p)) },
-  {
-    title: '操作',
-    key: 'op',
-    width: 110,
-    render: (p) => actions(btn('编辑', () => open(p)), confirmBtn('删除', '确定删除该支付方式？', () => remove(p))),
-  },
+const columns: Column[] = [
+  { key: 'sort', title: '排序', class: 'w-20' },
+  { key: 'id', title: 'ID', class: 'w-14' },
+  { key: 'enable', title: '启用', align: 'center', class: 'w-16' },
+  { key: 'name', title: '显示名称' },
+  { key: 'payment', title: '支付接口' },
+  { key: 'notify_url', title: '通知地址' },
+  { key: 'op', title: '操作', align: 'right', class: 'w-24' },
 ]
 
 // ---------- 表单 ----------
 const show = ref(false)
+const saving = ref(false)
 const editing = ref<Payment | null>(null)
 const form = ref({
   name: '',
@@ -104,13 +97,13 @@ async function loadForm() {
     formLoading.value = false
   }
 }
-watch(() => form.value.payment, loadForm)
+watch(() => form.value.payment, () => show.value && loadForm())
 
 function open(p: Payment | null) {
   editing.value = p
   form.value = {
     name: p?.name || '',
-    payment: p?.payment || '',
+    payment: p?.payment || gateways.value[0]?.value || '',
     icon: p?.icon || '',
     notify_domain: p?.notify_domain || '',
     handling_fee_fixed: toYuan(p?.handling_fee_fixed),
@@ -122,6 +115,10 @@ function open(p: Payment | null) {
 
 async function submit() {
   const f = form.value
+  if (!f.name.trim() || !f.payment) {
+    message.warning('请填写显示名称并选择接口文件')
+    return
+  }
   const body = {
     name: f.name,
     payment: f.payment,
@@ -131,7 +128,9 @@ async function submit() {
     handling_fee_percent: f.handling_fee_percent,
     config: config.value,
   }
-  const ok = await run(() => (editing.value ? admin.put(`/payments/${editing.value.id}`, body) : admin.post('/payments', body)), editing.value ? '已保存' : '已创建（默认停用）')
+  saving.value = true
+  const ok = await run(() => (editing.value ? admin.put(`/payments/${editing.value.id}`, body) : admin.post('/payments', body)), '保存成功')
+  saving.value = false
   if (ok) {
     show.value = false
     load()
@@ -149,39 +148,87 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <NCard size="small">
-      <div class="toolbar">
-        <NButton type="primary" @click="open(null)">添加支付方式</NButton>
-        <NButton @click="load">刷新</NButton>
-        <span class="muted">添加前需在系统配置中设置站点地址；把回调地址填到支付平台后台。</span>
-      </div>
-      <NDataTable size="small" :columns="columns" :data="rows" :loading="loading" :row-key="(p: Payment) => p.id" :scroll-x="1000" />
-    </NCard>
+  <div>
+    <PageHeader title="支付配置" description="新添加的支付方式默认停用。请把通知地址填到支付平台后台，并在防火墙放行。">
+      <Button variant="ghost" size="icon" :disabled="loading" @click="load"><RefreshCwIcon :class="loading ? 'animate-spin' : ''" /></Button>
+      <Button @click="open(null)"><PlusIcon />添加支付方式</Button>
+    </PageHeader>
 
-    <NModal v-model:show="show" preset="card" :title="editing ? `编辑支付方式 #${editing.id}` : '添加支付方式'" style="width: 620px; max-width: 95vw">
-      <NForm label-placement="left" label-width="120">
-        <NFormItem label="显示名称" required><NInput v-model:value="form.name" /></NFormItem>
-        <NFormItem label="图标 URL"><NInput v-model:value="form.icon" placeholder="可留空" /></NFormItem>
-        <NFormItem label="自定义回调域名"><NInput v-model:value="form.notify_domain" placeholder="如 https://pay.example.com，留空使用站点地址" /></NFormItem>
-        <NFormItem label="百分比手续费 %"><NInputNumber v-model:value="form.handling_fee_percent" :min="0.1" :max="100" clearable style="width: 100%" /></NFormItem>
-        <NFormItem label="固定手续费（元）"><NInputNumber v-model:value="form.handling_fee_fixed" :min="0" :precision="2" clearable style="width: 100%" /></NFormItem>
-        <NFormItem label="支付网关" required><NSelect v-model:value="form.payment" :options="gateways" filterable /></NFormItem>
-        <NSpin :show="formLoading">
-          <template v-for="[k, f] in fields" :key="k">
-            <NAlert v-if="f.type === 'alert'" type="info" style="margin-bottom: 12px"><div v-html="f.content" /></NAlert>
-            <NFormItem v-else :label="f.label">
-              <NSpace vertical style="width: 100%" :size="2">
-                <NInput v-model:value="config[k]" type="textarea" :autosize="{ minRows: 1, maxRows: 8 }" />
-                <span v-if="f.description" class="muted">{{ f.description }}</span>
-              </NSpace>
-            </NFormItem>
-          </template>
-        </NSpin>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end"><NButton @click="show = false">取消</NButton><NButton type="primary" @click="submit">保存</NButton></NSpace>
+    <DataTable :columns="columns" :rows="rows" :loading="loading">
+      <template #cell-sort="{ index }">
+        <div class="flex gap-0.5">
+          <Button variant="ghost" size="icon" class="size-7" :disabled="index === 0" @click="move(index, -1)"><ArrowUpIcon /></Button>
+          <Button variant="ghost" size="icon" class="size-7" :disabled="index === rows.length - 1" @click="move(index, 1)"><ArrowDownIcon /></Button>
+        </div>
       </template>
-    </NModal>
+      <template #cell-id="{ row }"><span class="text-muted-foreground tabular-nums">{{ row.id }}</span></template>
+      <template #cell-enable="{ row }"><Switch :model-value="!!row.enable" @update:model-value="toggle(row)" /></template>
+      <template #cell-name="{ row }">
+        <div class="flex items-center gap-2">
+          <img v-if="row.icon" :src="row.icon" alt="" class="size-5 object-contain" />
+          <span class="font-medium">{{ row.name }}</span>
+          <span v-if="fee(row)" class="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">手续费 {{ fee(row) }}</span>
+        </div>
+      </template>
+      <template #cell-payment="{ row }"><span class="font-mono text-xs">{{ row.payment }}</span></template>
+      <template #cell-notify_url="{ row }">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <button type="button" class="inline-flex max-w-md items-center gap-1 truncate font-mono text-xs hover:text-primary" @click="copyNotify(row)">
+              <span class="truncate">{{ row.notify_url }}</span><CopyIcon class="size-3 shrink-0" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>支付网关将会把数据通知到本地址，请通过防火墙放行本地址。</TooltipContent>
+        </Tooltip>
+      </template>
+      <template #cell-op="{ row }">
+        <div class="flex justify-end gap-0.5">
+          <Button variant="ghost" size="icon" class="size-8" @click="open(row)"><PencilIcon /></Button>
+          <Button variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive" @click="remove(row)"><Trash2Icon /></Button>
+        </div>
+      </template>
+    </DataTable>
+
+    <Dialog v-model:open="show">
+      <DialogContent class="max-h-[90svh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader><DialogTitle>{{ editing ? '编辑支付方式' : '添加支付方式' }}</DialogTitle></DialogHeader>
+        <div class="grid gap-4">
+          <FormItem label="显示名称" help="用于前端显示使用">
+            <Input v-model="form.name" />
+          </FormItem>
+          <FormItem label="图标URL(选填)" help="用于前端显示使用(https://x.com/icon.svg)">
+            <Input v-model="form.icon" />
+          </FormItem>
+          <FormItem label="自定义通知域名(选填)" help="网关的通知将会发送到该域名(https://x.com)">
+            <Input v-model="form.notify_domain" />
+          </FormItem>
+          <div class="grid grid-cols-2 gap-4">
+            <FormItem label="百分比手续费(选填)" help="在订单金额基础上附加手续费">
+              <NumInput v-model="form.handling_fee_percent" :min="0.1" :max="100" :step="0.1" suffix="%" />
+            </FormItem>
+            <FormItem label="固定手续费(选填)" help="在订单金额基础上附加手续费">
+              <NumInput v-model="form.handling_fee_fixed" :min="0" :step="0.01" suffix="元" />
+            </FormItem>
+          </div>
+          <FormItem label="接口文件">
+            <SelectBox :model-value="form.payment" :options="gateways" @update:model-value="(v) => (form.payment = String(v))" />
+          </FormItem>
+          <div v-if="formLoading" class="flex justify-center py-4"><Loader2Icon class="size-5 animate-spin text-muted-foreground" /></div>
+          <template v-else>
+            <template v-for="[k, f] in fields" :key="k">
+              <!-- 提示内容来自后端内置网关定义 -->
+              <div v-if="f.type === 'alert'" class="rounded-md border bg-muted/50 px-3 py-2 text-sm" v-html="f.content" />
+              <FormItem v-else :label="f.label" :help="f.description">
+                <Textarea v-model="config[k]" rows="1" class="min-h-9 font-mono text-xs" />
+              </FormItem>
+            </template>
+          </template>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="show = false">取消</Button>
+          <Button :disabled="saving" @click="submit"><Loader2Icon v-if="saving" class="animate-spin" />{{ editing ? '保存' : '添加' }}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

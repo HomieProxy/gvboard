@@ -1,18 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { NConfigProvider, NMessageProvider, NDialogProvider } from 'naive-ui'
-import { cfg } from './api'
-import { locale, dateLocale, themeOverrides } from './ui'
-
-const overrides = computed(() => themeOverrides(cfg.value.theme.color))
+import { Toaster } from '@gv/shared/ui/sonner'
+import ConfirmHost from './components/common/ConfirmHost.vue'
 </script>
 
 <template>
-  <NConfigProvider :locale="locale" :date-locale="dateLocale" :theme-overrides="overrides">
-    <NMessageProvider>
-      <NDialogProvider>
-        <RouterView />
-      </NDialogProvider>
-    </NMessageProvider>
-  </NConfigProvider>
+  <RouterView />
+  <Toaster position="top-center" rich-colors close-button />
+  <ConfirmHost />
 </template>

@@ -52,9 +52,5 @@ defineExpose({ reset })
 </script>
 
 <template>
-  <div ref="box" class="captcha" />
+  <div ref="box" class="min-h-[78px]" />
 </template>
-
-<style scoped>
-.captcha { min-height: 78px; margin-bottom: 12px; }
-</style>

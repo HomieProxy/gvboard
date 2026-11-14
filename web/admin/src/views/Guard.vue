@@ -1,22 +1,38 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref } from 'vue'
-import {
-  NCard, NTabs, NTabPane, NDataTable, NButton, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSwitch, NSpace,
-  NAlert, NDatePicker, type DataTableColumns,
-} from 'naive-ui'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { PlusIcon, RefreshCwIcon, PencilIcon, Trash2Icon, Loader2Icon, SearchIcon, EraserIcon, InfoIcon } from '@lucide/vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { formatTime } from '@gv/shared'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Textarea } from '@gv/shared/ui/textarea'
+import { Switch } from '@gv/shared/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@gv/shared/ui/tabs'
+import { Card, CardContent } from '@gv/shared/ui/card'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable, { type Column } from '../components/common/DataTable.vue'
+import Pager from '../components/common/Pager.vue'
+import FormItem from '../components/common/FormItem.vue'
+import SelectBox from '../components/common/SelectBox.vue'
+import MultiSelect from '../components/common/MultiSelect.vue'
+import NumInput from '../components/common/NumInput.vue'
+import DateTimeInput from '../components/common/DateTimeInput.vue'
+import StatusBadge from '../components/common/StatusBadge.vue'
 import { admin } from '../api'
-import { message, run } from '../ui'
+import { confirm, message, run } from '../ui'
 import { useList, usePaged } from '../paged'
-import { actions, btn, confirmBtn, ellipsis, sw, tag, toSec, type PageResult } from '../helpers'
+import { colorMode } from '../theme'
+import type { Tone, PageResult } from '../helpers'
 import type { SubscribeLog, SubscribeRule } from '../types'
 
 use([CanvasRenderer, BarChart, GridComponent, TooltipComponent])
+const router = useRouter()
 
 const targets = [
   { label: 'User-Agent', value: 'ua' },
@@ -39,20 +55,32 @@ const ruleActions = [
   { label: '返回空内容', value: 'empty' },
   { label: '返回 404', value: 'deny' },
 ]
-const resultText: Record<number, [string, 'default' | 'warning' | 'error' | 'success' | 'info']> = {
+const resultText: Record<number, [string, Tone]> = {
   0: ['正常下发', 'success'],
   1: ['订阅不可用', 'default'],
   2: ['规则拦截（空内容）', 'warning'],
-  3: ['规则拦截（404）', 'error'],
+  3: ['规则拦截（404）', 'danger'],
   4: ['超过频率限制', 'warning'],
-  5: ['防分享拦截', 'error'],
+  5: ['防分享拦截', 'danger'],
   6: ['防分享记录', 'info'],
 }
 const label = (list: { label: string; value: string }[], v: string) => list.find((o) => o.value === v)?.label || v
+const clients = ref<string[]>([])
+const clientOptions = computed(() => clients.value.map((c) => ({ label: c, value: c })))
 
 // ---------- 规则 ----------
 const rules = useList(() => admin.get<SubscribeRule[]>('/subscribe-guard/rules'))
-const clients = ref<string[]>([])
+const ruleCols: Column[] = [
+  { key: 'priority', title: '优先级', class: 'w-20' },
+  { key: 'enabled', title: '启用', align: 'center', class: 'w-16' },
+  { key: 'name', title: '名称' },
+  { key: 'cond', title: '条件' },
+  { key: 'action', title: '动作' },
+  { key: 'hit_count', title: '命中' },
+  { key: 'op', title: '操作', align: 'right', class: 'w-24' },
+]
+const condText = (r: SubscribeRule) =>
+  `${label(targets, r.target)}${r.target === 'header' ? `(${r.header})` : ''} ${r.negate ? '不' : ''}${label(matchTypes, r.match_type)} ${(r.pattern || '').replace(/\n/g, ', ')}`
 
 interface RuleForm {
   name: string
@@ -62,10 +90,11 @@ interface RuleForm {
   pattern: string
   negate: boolean
   action: string
-  priority: number
+  priority: number | null
   enabled: boolean
 }
 const ruleShow = ref(false)
+const ruleSaving = ref(false)
 const ruleEditing = ref<SubscribeRule | null>(null)
 const ruleForm = ref<RuleForm>(blankRule())
 function blankRule(): RuleForm {
@@ -73,32 +102,28 @@ function blankRule(): RuleForm {
 }
 function ruleBody() {
   const f = ruleForm.value
-  return { ...f, header: f.target === 'header' ? f.header : '', pattern: f.match_type === 'empty' ? '' : f.pattern }
+  return { ...f, priority: f.priority ?? 0, header: f.target === 'header' ? f.header : '', pattern: f.match_type === 'empty' ? '' : f.pattern }
 }
 function openRule(r: SubscribeRule | null) {
   ruleEditing.value = r
   ruleForm.value = r
-    ? {
-        name: r.name,
-        target: r.target,
-        header: r.header,
-        match_type: r.match_type,
-        pattern: r.pattern || '',
-        negate: !!r.negate,
-        action: r.action,
-        priority: r.priority,
-        enabled: !!r.enabled,
-      }
+    ? { name: r.name, target: r.target, header: r.header, match_type: r.match_type, pattern: r.pattern || '', negate: !!r.negate, action: r.action, priority: r.priority, enabled: !!r.enabled }
     : blankRule()
   testResult.value = null
   ruleShow.value = true
 }
 async function saveRule() {
+  if (!ruleForm.value.name.trim()) {
+    message.warning('请输入规则名称')
+    return
+  }
   const body = ruleBody()
+  ruleSaving.value = true
   const ok = await run(
     () => (ruleEditing.value ? admin.put(`/subscribe-guard/rules/${ruleEditing.value.id}`, body) : admin.post('/subscribe-guard/rules', body)),
-    '已保存',
+    '保存成功',
   )
+  ruleSaving.value = false
   if (ok) {
     ruleShow.value = false
     rules.load()
@@ -109,49 +134,35 @@ async function toggleRule(r: SubscribeRule, v: boolean) {
   if (await run(() => admin.put(`/subscribe-guard/rules/${r.id}`, body))) r.enabled = v ? 1 : 0
 }
 async function removeRule(r: SubscribeRule) {
-  if (await run(() => admin.del(`/subscribe-guard/rules/${r.id}`), '已删除')) rules.load()
+  if (await confirm(`确定要删除规则「${r.name}」吗？`, () => admin.del(`/subscribe-guard/rules/${r.id}`), '删除成功')) rules.load()
 }
 
 const sample = ref({ ip: '', user_agent: '', flag: '', client: '', headers: '' })
 const testResult = ref<boolean | null>(null)
 async function testRule() {
-  let headers: Record<string, string> = {}
+  const headers: Record<string, string> = {}
   for (const line of sample.value.headers.split('\n')) {
     const i = line.indexOf(':')
     if (i > 0) headers[line.slice(0, i).trim()] = line.slice(i + 1).trim()
   }
-  if (!Object.keys(headers).length) headers = {}
   await run(async () => {
     const r = await admin.post<{ matched: boolean }>('/subscribe-guard/rules/test', { rule: ruleBody(), ...sample.value, headers })
     testResult.value = r.matched
   })
 }
 
-const ruleCols: DataTableColumns<SubscribeRule> = [
-  { title: '优先级', key: 'priority', width: 80 },
-  { title: '名称', key: 'name' },
-  {
-    title: '条件',
-    key: 'target',
-    render: (r) =>
-      ellipsis(
-        `${label(targets, r.target)}${r.target === 'header' ? `(${r.header})` : ''} ${r.negate ? '不' : ''}${label(matchTypes, r.match_type)} ${(r.pattern || '').replace(/\n/g, ', ')}`,
-        320,
-      ),
-  },
-  { title: '动作', key: 'action', render: (r) => label(ruleActions, r.action) },
-  { title: '命中', key: 'hit_count', render: (r) => `${r.hit_count}${r.last_hit_at ? `（${formatTime(r.last_hit_at)}）` : ''}` },
-  { title: '启用', key: 'enabled', width: 70, render: (r) => sw(!!r.enabled, (v) => toggleRule(r, v)) },
-  {
-    title: '操作',
-    key: 'op',
-    width: 110,
-    render: (r) => actions(btn('编辑', () => openRule(r)), confirmBtn('删除', '确定删除该规则？', () => removeRule(r))),
-  },
-]
-
-// ---------- 日志 ----------
-const logQ = ref({ subscription_id: null as number | null, user_id: null as number | null, ip: '', client: '', user_agent: '', result: null as number | null, rule_id: null as number | null, range: null as [number, number] | null })
+// ---------- 请求日志 ----------
+const logQ = ref({
+  subscription_id: null as number | null,
+  user_id: null as number | null,
+  ip: '',
+  client: null as string | null,
+  user_agent: '',
+  result: null as number | null,
+  rule_id: null as number | null,
+  since: null as number | null,
+  until: null as number | null,
+})
 const logs = usePaged<SubscribeLog>(async (current, page_size) => {
   const q = logQ.value
   const r = await admin.get<PageResult<SubscribeLog>>('/subscribe-guard/logs', {
@@ -164,23 +175,27 @@ const logs = usePaged<SubscribeLog>(async (current, page_size) => {
     user_agent: q.user_agent.trim() || undefined,
     result: q.result ?? undefined,
     rule_id: q.rule_id ?? undefined,
-    since: q.range ? (toSec(q.range[0]) ?? undefined) : undefined,
-    until: q.range ? (toSec(q.range[1]) ?? undefined) : undefined,
+    since: q.since ?? undefined,
+    until: q.until ?? undefined,
   })
   return { rows: r.data || [], total: r.total }
 })
-const logCols: DataTableColumns<SubscribeLog> = [
-  { title: '时间', key: 'created_at', width: 140, render: (l) => formatTime(l.created_at) },
-  { title: '订阅 / 用户', key: 'subscription_id', render: (l) => `#${l.subscription_id} / #${l.user_id}` },
-  { title: 'IP', key: 'ip', render: (l) => h('span', { class: 'mono' }, l.ip) },
-  { title: '客户端', key: 'client' },
-  { title: 'User-Agent', key: 'user_agent', render: (l) => ellipsis(l.user_agent, 220) },
-  { title: '结果', key: 'result', render: (l) => tag(resultText[l.result]?.[0] || String(l.result), resultText[l.result]?.[1]) },
-  { title: '规则', key: 'rule_id', width: 70, render: (l) => l.rule_id ?? '-' },
-  { type: 'expand', expandable: (l) => !!l.headers, renderExpand: (l) => h('pre', { class: 'code' }, l.headers || '') },
+const logCols: Column[] = [
+  { key: 'created_at', title: '时间' },
+  { key: 'subscription_id', title: '订阅 / 用户' },
+  { key: 'ip', title: 'IP' },
+  { key: 'client', title: '客户端' },
+  { key: 'user_agent', title: 'User-Agent' },
+  { key: 'result', title: '结果' },
+  { key: 'rule_id', title: '规则', align: 'center' },
+  { key: 'headers', title: '请求头', align: 'right' },
 ]
-const resultOptions = Object.entries(resultText).map(([v, t]) => ({ label: t[0], value: Number(v) }))
-const clientOptions = computed(() => clients.value.map((c) => ({ label: c, value: c })))
+const resultOptions = [{ label: '全部结果', value: null as number | null }, ...Object.entries(resultText).map(([v, t]) => ({ label: t[0], value: Number(v) as number | null }))]
+const headerView = ref({ open: false, text: '' })
+function resetLogQ() {
+  logQ.value = { subscription_id: null, user_id: null, ip: '', client: null, user_agent: '', result: null, rule_id: null, since: null, until: null }
+  logs.reload()
+}
 async function cleanLogs() {
   await run(async () => {
     const r = await admin.post<{ deleted: number }>('/subscribe-guard/logs/clean')
@@ -189,7 +204,7 @@ async function cleanLogs() {
   })
 }
 
-// ---------- 统计 ----------
+// ---------- 订阅统计 ----------
 interface SubStat {
   subscription_id: number
   user_id: number
@@ -198,39 +213,48 @@ interface SubStat {
   blocked: number
   last_at: number
 }
-const statQ = ref({ hours: 24, order: 'ips', limit: 50 })
-const stats = useList(() => admin.get<SubStat[]>('/subscribe-guard/stats', statQ.value))
-const statCols: DataTableColumns<SubStat> = [
-  { title: '订阅', key: 'subscription_id', render: (s) => `#${s.subscription_id}` },
-  { title: '用户', key: 'user_id', render: (s) => `#${s.user_id}` },
-  { title: '不同 IP 数', key: 'ips' },
-  { title: '请求数', key: 'requests' },
-  { title: '被拦截', key: 'blocked' },
-  { title: '最后请求', key: 'last_at', render: (s) => formatTime(s.last_at) },
-  {
-    title: '操作',
-    key: 'op',
-    render: (s) =>
-      btn('查看日志', () => {
-        logQ.value.subscription_id = s.subscription_id
-        tab.value = 'logs'
-        logs.reload()
-      }),
-  },
+const statQ = ref({ hours: 24 as number | null, order: 'ips', limit: 50 as number | null })
+const stats = useList(() => admin.get<SubStat[]>('/subscribe-guard/stats', { hours: statQ.value.hours ?? 24, order: statQ.value.order, limit: statQ.value.limit ?? 50 }))
+const statCols: Column[] = [
+  { key: 'subscription_id', title: '订阅' },
+  { key: 'user_id', title: '用户' },
+  { key: 'ips', title: '不同 IP 数', align: 'right' },
+  { key: 'requests', title: '请求数', align: 'right' },
+  { key: 'blocked', title: '被拦截', align: 'right' },
+  { key: 'last_at', title: '最后请求' },
+  { key: 'op', title: '操作', align: 'right' },
 ]
+function viewLogs(s: SubStat) {
+  logQ.value.subscription_id = s.subscription_id
+  tab.value = 'logs'
+  logs.reload()
+}
 
-const invalidDays = ref(30)
-const invalid = useList(() => admin.get<{ date: string; count: number }[]>('/subscribe-guard/invalid', { days: invalidDays.value }))
-const invalidChart = computed(() => ({
-  tooltip: { trigger: 'axis' },
-  grid: { left: 50, right: 20, top: 20, bottom: 30 },
-  xAxis: { type: 'category', data: invalid.rows.value.map((d) => `${d.date.slice(4, 6)}-${d.date.slice(6)}`) },
-  yAxis: { type: 'value', minInterval: 1 },
-  series: [{ type: 'bar', name: '无效 token 请求', data: invalid.rows.value.map((d) => d.count) }],
-}))
+// ---------- 无效请求 ----------
+const invalidDays = ref<number | null>(30)
+const invalid = useList(() => admin.get<{ date: string; count: number }[]>('/subscribe-guard/invalid', { days: invalidDays.value ?? 30 }))
+const invalidChart = computed(() => {
+  const dark = colorMode.value === 'dark'
+  const axisColor = dark ? '#a1a1aa' : '#71717a'
+  const lineColor = dark ? '#3f3f46' : '#e4e4e7'
+  return {
+    color: ['#ef4444'],
+    tooltip: { trigger: 'axis' },
+    grid: { left: 8, right: 8, top: 16, bottom: 8, containLabel: true },
+    xAxis: {
+      type: 'category',
+      data: invalid.rows.value.map((d) => `${d.date.slice(4, 6)}-${d.date.slice(6)}`),
+      axisLine: { lineStyle: { color: lineColor } },
+      axisLabel: { color: axisColor },
+      axisTick: { show: false },
+    },
+    yAxis: { type: 'value', minInterval: 1, axisLabel: { color: axisColor }, splitLine: { lineStyle: { color: lineColor, type: 'dashed' } } },
+    series: [{ type: 'bar', name: '无效 token 请求', barMaxWidth: 16, data: invalid.rows.value.map((d) => d.count) }],
+  }
+})
 
 const tab = ref('rules')
-function onTab(v: string) {
+function onTab(v: string | number) {
   if (v === 'logs' && !logs.rows.value.length) logs.load()
   if (v === 'stats' && !stats.rows.value.length) stats.load()
   if (v === 'invalid' && !invalid.rows.value.length) invalid.load()
@@ -243,121 +267,198 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <NCard size="small">
-      <NTabs v-model:value="tab" type="line" @update:value="onTab">
-        <NTabPane name="rules" tab="规则">
-          <NAlert type="info" style="margin-bottom: 12px">
-            启用的规则按优先级从小到大匹配：命中“仅记录”继续匹配，命中其它动作即结束。频率限制、防分享等全局参数在“系统配置 → 多订阅与风控”中设置。
-          </NAlert>
-          <div class="toolbar">
-            <NButton type="primary" @click="openRule(null)">新建规则</NButton>
-            <NButton @click="rules.load">刷新</NButton>
-          </div>
-          <NDataTable size="small" :columns="ruleCols" :data="rules.rows.value" :loading="rules.loading.value" :row-key="(r: SubscribeRule) => r.id" />
-        </NTabPane>
-        <NTabPane name="logs" tab="请求日志">
-          <div class="toolbar">
-            <NInputNumber v-model:value="logQ.subscription_id" placeholder="订阅 ID" clearable :show-button="false" style="width: 110px" />
-            <NInputNumber v-model:value="logQ.user_id" placeholder="用户 ID" clearable :show-button="false" style="width: 110px" />
-            <NInput v-model:value="logQ.ip" placeholder="IP" clearable style="width: 150px" />
-            <NSelect v-model:value="logQ.client" :options="clientOptions" placeholder="客户端" clearable filterable style="width: 150px" />
-            <NInput v-model:value="logQ.user_agent" placeholder="UA 包含" clearable style="width: 160px" />
-            <NSelect v-model:value="logQ.result" :options="resultOptions" placeholder="结果" clearable style="width: 160px" />
-            <NInputNumber v-model:value="logQ.rule_id" placeholder="规则 ID" clearable :show-button="false" style="width: 100px" />
-            <NDatePicker v-model:value="logQ.range" type="datetimerange" clearable />
-            <NButton type="primary" @click="logs.reload">查询</NButton>
-            <span class="spacer" />
-            <NButton @click="cleanLogs">清理过期日志</NButton>
-          </div>
-          <NDataTable
-            remote
-            size="small"
-            :columns="logCols"
-            :data="logs.rows.value"
-            :loading="logs.loading.value"
-            :pagination="logs.pagination"
-            :row-key="(l: SubscribeLog) => l.id"
-            :scroll-x="1000"
-          />
-        </NTabPane>
-        <NTabPane name="stats" tab="订阅统计">
-          <div class="toolbar">
-            <span>最近</span>
-            <NInputNumber v-model:value="statQ.hours" :min="1" :max="4320" style="width: 110px" />
-            <span>小时，按</span>
-            <NSelect v-model:value="statQ.order" :options="[{ label: '不同 IP 数', value: 'ips' }, { label: '请求数', value: 'requests' }]" style="width: 130px" />
-            <span>排序，前</span>
-            <NInputNumber v-model:value="statQ.limit" :min="1" :max="200" style="width: 100px" />
-            <NButton type="primary" @click="stats.load">查询</NButton>
-          </div>
-          <NDataTable size="small" :columns="statCols" :data="stats.rows.value" :loading="stats.loading.value" />
-        </NTabPane>
-        <NTabPane name="invalid" tab="无效请求">
-          <div class="toolbar">
-            <span>最近</span>
-            <NInputNumber v-model:value="invalidDays" :min="1" :max="180" style="width: 100px" />
-            <span>天使用无效 token 的订阅请求次数</span>
-            <NButton type="primary" @click="invalid.load">查询</NButton>
-          </div>
-          <VChart :option="invalidChart" autoresize style="height: 320px" />
-        </NTabPane>
-      </NTabs>
-    </NCard>
+  <div>
+    <PageHeader title="订阅风控" description="按规则拦截或记录订阅请求，并统计订阅的使用情况。" />
 
-    <NModal v-model:show="ruleShow" preset="card" :title="ruleEditing ? '编辑规则' : '新建规则'" style="width: 680px; max-width: 95vw">
-      <NForm label-placement="left" label-width="96">
-        <NFormItem label="名称" required><NInput v-model:value="ruleForm.name" maxlength="64" /></NFormItem>
-        <NFormItem label="匹配对象">
-          <NSpace>
-            <NSelect v-model:value="ruleForm.target" :options="targets" style="width: 200px" />
-            <NInput v-if="ruleForm.target === 'header'" v-model:value="ruleForm.header" placeholder="请求头名，如 X-Client" style="width: 200px" />
-          </NSpace>
-        </NFormItem>
-        <NFormItem label="匹配方式">
-          <NSpace align="center">
-            <NSelect v-model:value="ruleForm.match_type" :options="matchTypes" style="width: 160px" />
-            <span>取反 <NSwitch v-model:value="ruleForm.negate" size="small" /></span>
-          </NSpace>
-        </NFormItem>
-        <NFormItem v-if="ruleForm.match_type !== 'empty'" label="匹配值">
-          <NSelect
-            v-if="ruleForm.target === 'client' && ruleForm.match_type === 'equals'"
-            :value="ruleForm.pattern.split('\n').filter(Boolean)"
-            multiple
-            :options="clientOptions"
-            @update:value="(v: string[]) => (ruleForm.pattern = v.join('\n'))"
-          />
-          <NInput
-            v-else
-            v-model:value="ruleForm.pattern"
-            type="textarea"
-            :autosize="{ minRows: 3, maxRows: 12 }"
-            :placeholder="ruleForm.match_type === 'regex' ? '一个正则表达式（不区分大小写）' : '每行一个值，任一匹配即命中'"
-          />
-        </NFormItem>
-        <NFormItem label="动作"><NSelect v-model:value="ruleForm.action" :options="ruleActions" /></NFormItem>
-        <NFormItem label="优先级"><NInputNumber v-model:value="ruleForm.priority" :min="-1000000" :max="1000000" /></NFormItem>
-        <NFormItem label="启用"><NSwitch v-model:value="ruleForm.enabled" /></NFormItem>
-        <NFormItem label="测试">
-          <NSpace vertical style="width: 100%">
-            <NSpace>
-              <NInput v-model:value="sample.ip" placeholder="IP" style="width: 150px" />
-              <NInput v-model:value="sample.flag" placeholder="flag" style="width: 120px" />
-              <NSelect v-model:value="sample.client" :options="clientOptions" clearable placeholder="客户端（留空自动识别）" style="width: 200px" />
-            </NSpace>
-            <NInput v-model:value="sample.user_agent" placeholder="User-Agent" />
-            <NInput v-model:value="sample.headers" type="textarea" :autosize="{ minRows: 1, maxRows: 4 }" placeholder="请求头，每行 名称: 值" />
-            <NSpace align="center">
-              <NButton size="small" @click="testRule">测试规则</NButton>
-              <span v-if="testResult !== null" :style="{ color: testResult ? '#18a058' : '#999' }">{{ testResult ? '命中' : '未命中' }}</span>
-            </NSpace>
-          </NSpace>
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end"><NButton @click="ruleShow = false">取消</NButton><NButton type="primary" @click="saveRule">保存</NButton></NSpace>
-      </template>
-    </NModal>
+    <Tabs v-model="tab" @update:model-value="onTab">
+      <TabsList class="mb-4">
+        <TabsTrigger value="rules">规则</TabsTrigger>
+        <TabsTrigger value="logs">请求日志</TabsTrigger>
+        <TabsTrigger value="stats">订阅统计</TabsTrigger>
+        <TabsTrigger value="invalid">无效请求</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="rules">
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+          <div class="flex flex-1 items-start gap-2 text-sm text-muted-foreground">
+            <InfoIcon class="mt-0.5 size-4 shrink-0" />
+            <span>
+              启用的规则按优先级从小到大匹配：命中“仅记录”继续匹配，命中其它动作即结束。频率限制、防分享等全局参数在
+              <button type="button" class="text-primary hover:underline" @click="router.push('/config')">系统配置 → 多订阅与风控</button>
+              中设置。
+            </span>
+          </div>
+          <Button variant="ghost" size="icon" :disabled="rules.loading.value" @click="rules.load"><RefreshCwIcon :class="rules.loading.value ? 'animate-spin' : ''" /></Button>
+          <Button @click="openRule(null)"><PlusIcon />添加规则</Button>
+        </div>
+        <DataTable :columns="ruleCols" :rows="rules.rows.value" :loading="rules.loading.value">
+          <template #cell-priority="{ row }"><span class="tabular-nums">{{ row.priority }}</span></template>
+          <template #cell-enabled="{ row }"><Switch :model-value="!!row.enabled" @update:model-value="(v: boolean) => toggleRule(row, v)" /></template>
+          <template #cell-name="{ row }"><span class="font-medium">{{ row.name }}</span></template>
+          <template #cell-cond="{ row }"><span class="line-clamp-2 max-w-md text-xs" :title="condText(row)">{{ condText(row) }}</span></template>
+          <template #cell-action="{ row }"><span class="rounded bg-muted px-1.5 py-0.5 text-xs">{{ label(ruleActions, row.action) }}</span></template>
+          <template #cell-hit_count="{ row }">
+            <span class="tabular-nums">{{ row.hit_count }}</span>
+            <span v-if="row.last_hit_at" class="ml-1 text-xs text-muted-foreground">{{ formatTime(row.last_hit_at) }}</span>
+          </template>
+          <template #cell-op="{ row }">
+            <div class="flex justify-end gap-0.5">
+              <Button variant="ghost" size="icon" class="size-8" @click="openRule(row)"><PencilIcon /></Button>
+              <Button variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive" @click="removeRule(row)"><Trash2Icon /></Button>
+            </div>
+          </template>
+        </DataTable>
+      </TabsContent>
+
+      <TabsContent value="logs">
+        <Card class="mb-3 py-3">
+          <CardContent class="grid grid-cols-2 gap-2 px-3 md:grid-cols-4 xl:grid-cols-6">
+            <NumInput v-model="logQ.subscription_id" placeholder="订阅 ID" />
+            <NumInput v-model="logQ.user_id" placeholder="用户 ID" />
+            <Input v-model="logQ.ip" placeholder="IP" />
+            <SelectBox :model-value="logQ.client" :options="[{ label: '全部客户端', value: null }, ...clientOptions]" placeholder="客户端" @update:model-value="(v) => (logQ.client = v as string | null)" />
+            <Input v-model="logQ.user_agent" placeholder="UA 包含" />
+            <SelectBox :model-value="logQ.result" :options="resultOptions" placeholder="结果" @update:model-value="(v) => (logQ.result = v as number | null)" />
+            <NumInput v-model="logQ.rule_id" placeholder="规则 ID" />
+            <DateTimeInput v-model="logQ.since" />
+            <DateTimeInput v-model="logQ.until" />
+            <div class="col-span-2 flex gap-2 md:col-span-3 xl:col-span-3 xl:justify-end">
+              <Button @click="logs.reload"><SearchIcon />查询</Button>
+              <Button variant="outline" @click="resetLogQ">重置</Button>
+              <Button variant="outline" @click="cleanLogs"><EraserIcon />清理过期日志</Button>
+            </div>
+          </CardContent>
+        </Card>
+        <DataTable :columns="logCols" :rows="logs.rows.value" :loading="logs.loading.value">
+          <template #cell-created_at="{ row }"><span class="whitespace-nowrap text-xs">{{ formatTime(row.created_at) }}</span></template>
+          <template #cell-subscription_id="{ row }"><span class="tabular-nums">#{{ row.subscription_id }} / #{{ row.user_id }}</span></template>
+          <template #cell-ip="{ row }"><span class="font-mono text-xs">{{ row.ip }}</span></template>
+          <template #cell-client="{ row }">{{ row.client || '-' }}</template>
+          <template #cell-user_agent="{ row }"><span class="block max-w-xs truncate text-xs" :title="row.user_agent">{{ row.user_agent }}</span></template>
+          <template #cell-result="{ row }">
+            <StatusBadge :tone="resultText[row.result]?.[1] || 'default'">{{ resultText[row.result]?.[0] || row.result }}</StatusBadge>
+          </template>
+          <template #cell-rule_id="{ row }">{{ row.rule_id ?? '-' }}</template>
+          <template #cell-headers="{ row }">
+            <Button v-if="row.headers" variant="ghost" size="sm" @click="headerView = { open: true, text: row.headers }">查看</Button>
+            <span v-else class="text-muted-foreground">-</span>
+          </template>
+        </DataTable>
+        <Pager :pager="logs.pager" @page="logs.setPage" @size="logs.setPageSize" />
+      </TabsContent>
+
+      <TabsContent value="stats">
+        <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          <span>最近</span>
+          <NumInput v-model="statQ.hours" class="w-24" :min="1" :max="4320" />
+          <span>小时，按</span>
+          <SelectBox class="w-32" :model-value="statQ.order" :options="[{ label: '不同 IP 数', value: 'ips' }, { label: '请求数', value: 'requests' }]" @update:model-value="(v) => (statQ.order = String(v))" />
+          <span>排序，前</span>
+          <NumInput v-model="statQ.limit" class="w-24" :min="1" :max="200" />
+          <span>个</span>
+          <Button @click="stats.load"><SearchIcon />查询</Button>
+        </div>
+        <DataTable :columns="statCols" :rows="stats.rows.value" :loading="stats.loading.value" row-key="subscription_id">
+          <template #cell-subscription_id="{ row }"><span class="tabular-nums">#{{ row.subscription_id }}</span></template>
+          <template #cell-user_id="{ row }">
+            <button type="button" class="tabular-nums hover:text-primary" @click="router.push({ path: '/users', query: { id: row.user_id } })">#{{ row.user_id }}</button>
+          </template>
+          <template #cell-ips="{ row }"><span class="font-medium tabular-nums">{{ row.ips }}</span></template>
+          <template #cell-requests="{ row }"><span class="tabular-nums">{{ row.requests }}</span></template>
+          <template #cell-blocked="{ row }"><span class="tabular-nums" :class="row.blocked ? 'text-destructive' : ''">{{ row.blocked }}</span></template>
+          <template #cell-last_at="{ row }"><span class="whitespace-nowrap text-xs text-muted-foreground">{{ formatTime(row.last_at) }}</span></template>
+          <template #cell-op="{ row }"><Button variant="ghost" size="sm" @click="viewLogs(row)">查看日志</Button></template>
+        </DataTable>
+      </TabsContent>
+
+      <TabsContent value="invalid">
+        <Card>
+          <CardContent>
+            <div class="mb-3 flex flex-wrap items-center gap-2 text-sm">
+              <span>最近</span>
+              <NumInput v-model="invalidDays" class="w-24" :min="1" :max="180" />
+              <span>天使用无效 token 的订阅请求次数</span>
+              <Button size="sm" @click="invalid.load"><SearchIcon />查询</Button>
+            </div>
+            <div v-if="invalid.loading.value" class="flex h-80 items-center justify-center"><Loader2Icon class="size-5 animate-spin text-muted-foreground" /></div>
+            <VChart v-else :option="invalidChart" autoresize class="h-80 w-full" />
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
+
+    <!-- 规则表单 -->
+    <Dialog v-model:open="ruleShow">
+      <DialogContent class="max-h-[92svh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader><DialogTitle>{{ ruleEditing ? '编辑规则' : '添加规则' }}</DialogTitle></DialogHeader>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <FormItem label="名称" class="sm:col-span-2"><Input v-model="ruleForm.name" maxlength="64" /></FormItem>
+          <FormItem label="匹配对象">
+            <SelectBox :model-value="ruleForm.target" :options="targets" @update:model-value="(v) => (ruleForm.target = String(v))" />
+          </FormItem>
+          <FormItem v-if="ruleForm.target === 'header'" label="请求头名">
+            <Input v-model="ruleForm.header" placeholder="如 X-Client" />
+          </FormItem>
+          <FormItem label="匹配方式" :class="ruleForm.target === 'header' ? 'sm:col-span-2' : ''">
+            <div class="flex items-center gap-3">
+              <SelectBox class="flex-1" :model-value="ruleForm.match_type" :options="matchTypes" @update:model-value="(v) => (ruleForm.match_type = String(v))" />
+              <label class="flex shrink-0 items-center gap-2 text-sm"><Switch v-model="ruleForm.negate" />取反</label>
+            </div>
+          </FormItem>
+          <FormItem v-if="ruleForm.match_type !== 'empty'" label="匹配值" class="sm:col-span-2">
+            <MultiSelect
+              v-if="ruleForm.target === 'client' && ruleForm.match_type === 'equals'"
+              :model-value="ruleForm.pattern.split('\n').filter(Boolean)"
+              :options="clientOptions"
+              @update:model-value="(v) => (ruleForm.pattern = v.join('\n'))"
+            />
+            <Textarea
+              v-else
+              v-model="ruleForm.pattern"
+              rows="4"
+              class="font-mono text-xs"
+              :placeholder="ruleForm.match_type === 'regex' ? '一个正则表达式（不区分大小写）' : '每行一个值，任一匹配即命中'"
+            />
+          </FormItem>
+          <FormItem label="动作">
+            <SelectBox :model-value="ruleForm.action" :options="ruleActions" @update:model-value="(v) => (ruleForm.action = String(v))" />
+          </FormItem>
+          <FormItem label="优先级" help="数字越小越先匹配">
+            <NumInput v-model="ruleForm.priority" :min="-1000000" :max="1000000" />
+          </FormItem>
+          <label class="flex items-center gap-2 text-sm sm:col-span-2"><Switch v-model="ruleForm.enabled" />启用</label>
+
+          <div class="grid gap-2 rounded-lg border bg-muted/30 p-3 sm:col-span-2">
+            <div class="text-sm font-medium">测试规则</div>
+            <div class="grid gap-2 sm:grid-cols-3">
+              <Input v-model="sample.ip" placeholder="IP" />
+              <Input v-model="sample.flag" placeholder="flag" />
+              <SelectBox
+                :model-value="sample.client || null"
+                :options="[{ label: '自动识别客户端', value: null }, ...clientOptions]"
+                @update:model-value="(v) => (sample.client = (v as string) || '')"
+              />
+            </div>
+            <Input v-model="sample.user_agent" placeholder="User-Agent" />
+            <Textarea v-model="sample.headers" rows="2" class="font-mono text-xs" placeholder="请求头，每行 名称: 值" />
+            <div class="flex items-center gap-3">
+              <Button size="sm" variant="outline" @click="testRule">测试</Button>
+              <StatusBadge v-if="testResult !== null" :tone="testResult ? 'success' : 'default'">{{ testResult ? '命中' : '未命中' }}</StatusBadge>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="ruleShow = false">取消</Button>
+          <Button :disabled="ruleSaving" @click="saveRule"><Loader2Icon v-if="ruleSaving" class="animate-spin" />保存</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="headerView.open">
+      <DialogContent class="sm:max-w-2xl">
+        <DialogHeader><DialogTitle>请求头</DialogTitle></DialogHeader>
+        <pre class="max-h-[60svh] overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap">{{ headerView.text }}</pre>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

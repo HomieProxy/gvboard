@@ -1,35 +1,54 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NGrid, NGi, NCard, NButton, NTag, NSpin, NEmpty, NSpace, NAlert } from 'naive-ui'
+import { InfoIcon } from '@lucide/vue'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardAction } from '@gv/shared/ui/card'
+import { Button } from '@gv/shared/ui/button'
+import { Alert, AlertDescription } from '@gv/shared/ui/alert'
+import { Skeleton } from '@gv/shared/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger } from '@gv/shared/ui/tabs'
 import { http } from '../api'
 import { errText, toast } from '../ui'
 import { loadBiz, loadSubs, money, subName, subs } from '../store'
 import { PERIODS, type Plan } from '../types'
-import Markdown from '../components/Markdown.vue'
+import PlanContent from '../components/PlanContent.vue'
+import PageHeader from '../components/common/PageHeader.vue'
+import StatusBadge from '../components/common/StatusBadge.vue'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const plans = ref<Plan[]>([])
 const loading = ref(true)
+const tab = ref('all')
 const target = Number(route.query.sub || 0)
+const targetSub = computed(() => (target > 0 ? subs.value.find((s) => s.id === target) : undefined))
 
-function minPrice(p: Plan): { period: string; price: number } | null {
-  let best: { period: string; price: number } | null = null
+const periodic = ['month_price', 'quarter_price', 'half_year_price', 'year_price', 'two_year_price', 'three_year_price'] as const
+const shown = computed(() =>
+  plans.value.filter((p) => {
+    if (tab.value === 'period') return periodic.some((k) => p[k])
+    if (tab.value === 'traffic') return !!p.onetime_price
+    return true
+  }),
+)
+
+/** 卡片上展示的价格：按周期顺序取第一个可售价格 */
+function unitPrice(p: Plan): { period: string; price: number } | null {
   for (const k of PERIODS) {
     if (k === 'reset_price') continue
     const v = p[k]
-    if (v === null || v === undefined) continue
-    if (!best || v < best.price) best = { period: k, price: v }
+    if (v !== null && v !== undefined) return { period: k, price: v }
   }
-  return best
+  return null
 }
 
 const soldOut = (p: Plan) => p.capacity_limit !== null && p.capacity_limit <= 0
+const soonSoldOut = (p: Plan) => p.capacity_limit !== null && p.capacity_limit >= 1 && p.capacity_limit <= 5
 
 function choose(p: Plan) {
+  if (soldOut(p)) return
   router.push({ path: `/plans/${p.id}`, query: route.query.sub !== undefined ? { sub: route.query.sub } : {} })
 }
 
@@ -46,42 +65,53 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <h2 class="page-title">{{ t('plan.title') }}</h2>
-    <NAlert v-if="target > 0 && subs.find((s) => s.id === target)" type="info" style="margin-bottom: 16px">
-      {{ t('plan.target') }}：{{ subName(subs.find((s) => s.id === target)!) }}
-    </NAlert>
-    <NSpin :show="loading">
-      <NGrid cols="1 s:2 l:3" responsive="screen" :x-gap="16" :y-gap="16">
-        <NGi v-for="p in plans" :key="p.id">
-          <NCard :title="p.name" class="plan" size="small">
-            <template #header-extra>
-              <NTag v-if="soldOut(p)" type="error" size="small" :bordered="false">{{ t('plan.soldOut') }}</NTag>
-              <NTag v-else-if="p.capacity_limit !== null" type="warning" size="small" :bordered="false">{{ t('plan.left', { n: p.capacity_limit }) }}</NTag>
-            </template>
-            <div v-if="minPrice(p)" class="price">
-              <strong>{{ money(minPrice(p)!.price) }}</strong>
-              <span class="muted"> / {{ t(`period.${minPrice(p)!.period}`) }} {{ t('plan.from') }}</span>
-            </div>
-            <NSpace :size="6" style="margin: 8px 0">
-              <NTag size="small" :bordered="false">{{ t('plan.traffic', { n: p.transfer_enable }) }}</NTag>
-              <NTag v-if="p.device_limit" size="small" :bordered="false">{{ t('plan.devices', { n: p.device_limit }) }}</NTag>
-              <NTag v-if="p.speed_limit" size="small" :bordered="false">{{ t('plan.speed', { n: p.speed_limit }) }}</NTag>
-            </NSpace>
-            <Markdown :source="p.content" class="content" />
-            <template #action>
-              <NButton type="primary" block :disabled="soldOut(p)" @click="choose(p)">{{ t('plan.buy') }}</NButton>
-            </template>
-          </NCard>
-        </NGi>
-      </NGrid>
-      <NEmpty v-if="!loading && !plans.length" :description="t('plan.empty')" />
-    </NSpin>
+  <div>
+    <PageHeader :title="t('plan.title')">
+      <Tabs v-model="tab">
+        <TabsList>
+          <TabsTrigger value="all">{{ t('plan.tabAll') }}</TabsTrigger>
+          <TabsTrigger value="period">{{ t('plan.tabPeriod') }}</TabsTrigger>
+          <TabsTrigger value="traffic">{{ t('plan.tabTraffic') }}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+    </PageHeader>
+    <Alert v-if="targetSub" class="mb-4">
+      <InfoIcon />
+      <AlertDescription>{{ t('plan.target') }}：{{ subName(targetSub) }}</AlertDescription>
+    </Alert>
+    <div v-if="loading" class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <Skeleton v-for="i in 3" :key="i" class="h-80 rounded-xl" />
+    </div>
+    <div v-else class="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+      <Card
+        v-for="p in shown"
+        :key="p.id"
+        :class="['flex flex-col gap-0 overflow-hidden py-0 transition-shadow', soldOut(p) ? 'opacity-70' : 'cursor-pointer hover:shadow-lg']"
+        @click="choose(p)"
+      >
+        <CardHeader class="border-b py-4">
+          <CardTitle class="text-base">{{ p.name }}</CardTitle>
+          <CardAction>
+            <StatusBadge v-if="soldOut(p)" tone="danger">{{ t('plan.soldOut') }}</StatusBadge>
+            <StatusBadge v-else-if="soonSoldOut(p)" tone="warning">{{ t('plan.soonSoldOut') }}</StatusBadge>
+          </CardAction>
+        </CardHeader>
+        <div class="bg-muted/50 px-6 py-5">
+          <template v-if="unitPrice(p)">
+            <div class="text-3xl font-semibold tracking-tight tabular-nums">{{ money(unitPrice(p)!.price) }}</div>
+            <div class="mt-1 text-sm text-muted-foreground">{{ t(`period.${unitPrice(p)!.period}`) }}</div>
+          </template>
+        </div>
+        <CardContent class="flex-1 py-5">
+          <PlanContent v-if="p.content" :content="p.content" />
+        </CardContent>
+        <CardFooter class="pb-5">
+          <Button class="w-full" :variant="soldOut(p) ? 'secondary' : 'default'" :disabled="soldOut(p)" @click.stop="choose(p)">
+            {{ soldOut(p) ? t('plan.soldOut') : t('plan.buy') }}
+          </Button>
+        </CardFooter>
+      </Card>
+    </div>
+    <p v-if="!loading && !shown.length" class="py-16 text-center text-muted-foreground">{{ t('plan.empty') }}</p>
   </div>
 </template>
-
-<style scoped>
-.plan { height: 100%; display: flex; flex-direction: column; }
-.price strong { font-size: 26px; }
-.content { font-size: 14px; }
-</style>

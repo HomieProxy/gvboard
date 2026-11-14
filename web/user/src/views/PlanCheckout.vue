@@ -2,15 +2,21 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import {
-  NGrid, NGi, NCard, NButton, NRadioGroup, NRadioButton, NSelect, NInput, NInputGroup, NSpin, NResult, NAlert, NDivider, NSpace, NTag,
-} from 'naive-ui'
+import { ArrowLeftIcon, TriangleAlertIcon, TicketPercentIcon, CheckIcon, Loader2Icon } from '@lucide/vue'
 import { nowUnix } from '@gv/shared'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@gv/shared/ui/card'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Separator } from '@gv/shared/ui/separator'
+import { Skeleton } from '@gv/shared/ui/skeleton'
+import { Alert, AlertDescription } from '@gv/shared/ui/alert'
+import { cn } from '@gv/shared/lib/utils'
 import { http } from '../api'
 import { errText, toast } from '../ui'
 import { biz, loadBiz, loadMe, loadSubs, me, money, subOptions, subs } from '../store'
 import { PERIODS, type Coupon, type Period, type Plan } from '../types'
-import Markdown from '../components/Markdown.vue'
+import PlanContent from '../components/PlanContent.vue'
+import SelectBox from '../components/common/SelectBox.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -23,6 +29,7 @@ const period = ref<Period | null>(null)
 const target = ref<number>(0)
 const couponCode = ref('')
 const coupon = ref<Coupon | null>(null)
+const checking = ref(false)
 const submitting = ref(false)
 
 const targetSub = computed(() => subs.value.find((s) => s.id === target.value) || null)
@@ -67,12 +74,15 @@ watch([period, target], () => (coupon.value = null))
 
 async function applyCoupon() {
   if (!couponCode.value.trim() || !period.value) return
+  checking.value = true
   try {
     coupon.value = await http.post<Coupon>('/user/coupons/check', { code: couponCode.value.trim(), plan_id: id, period: period.value })
     toast('success', t('plan.couponOk', { name: coupon.value.name }))
   } catch (e) {
     coupon.value = null
     toast('error', errText(e))
+  } finally {
+    checking.value = false
   }
 }
 
@@ -117,67 +127,119 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="page">
-    <NSpin :show="loading">
-      <NResult v-if="missing" status="404" :title="t('plan.notFound')">
-        <template #footer><NButton @click="router.push('/plans')">{{ t('common.back') }}</NButton></template>
-      </NResult>
-      <template v-else-if="plan">
-        <div class="row" style="margin-bottom: 16px">
-          <NButton quaternary size="small" @click="router.back()">← {{ t('common.back') }}</NButton>
-          <h2 class="page-title" style="margin: 0">{{ plan.name }}</h2>
+  <div>
+    <div v-if="loading" class="grid gap-6 lg:grid-cols-3">
+      <Skeleton class="h-96 rounded-xl lg:col-span-2" />
+      <Skeleton class="h-72 rounded-xl" />
+    </div>
+    <div v-else-if="missing" class="flex flex-col items-center gap-4 py-20 text-center">
+      <p class="text-lg font-medium">{{ t('plan.notFound') }}</p>
+      <Button variant="outline" @click="router.push('/plans')"><ArrowLeftIcon />{{ t('common.back') }}</Button>
+    </div>
+    <template v-else-if="plan">
+      <div class="mb-5 flex items-center gap-2">
+        <Button variant="ghost" size="sm" @click="router.back()"><ArrowLeftIcon class="rtl:rotate-180" />{{ t('common.back') }}</Button>
+        <h1 class="text-xl font-semibold tracking-tight">{{ t('plan.configure') }}</h1>
+      </div>
+      <div class="grid items-start gap-6 lg:grid-cols-3">
+        <div class="space-y-6 lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>{{ plan.name }}</CardTitle>
+            </CardHeader>
+            <CardContent v-if="plan.content">
+              <PlanContent :content="plan.content" />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle class="text-base">{{ t('plan.target') }}</CardTitle>
+              <CardDescription>{{ t('plan.targetHint') }}</CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-3">
+              <SelectBox :model-value="target" :options="targets" @update:model-value="(v) => (target = Number(v))" />
+              <Alert v-if="changing && biz && !biz.plan_change" variant="destructive">
+                <TriangleAlertIcon />
+                <AlertDescription>{{ t('plan.changeDisabled') }}</AlertDescription>
+              </Alert>
+              <Alert v-else-if="changing" class="border-warning/50 bg-warning/10">
+                <TriangleAlertIcon class="text-warning" />
+                <AlertDescription class="text-foreground">{{ t('plan.changeWarn') }}</AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle class="text-base">{{ t('plan.period') }}</CardTitle>
+              <CardDescription v-if="plan.reset_price !== null && !sameAndActive">{{ t('plan.resetNeedSub') }}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div v-if="periods.length" class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <button
+                  v-for="p in periods"
+                  :key="p.value"
+                  type="button"
+                  :class="
+                    cn(
+                      'relative rounded-lg border p-3 text-left transition-colors hover:border-primary/60',
+                      period === p.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : '',
+                    )
+                  "
+                  @click="period = p.value"
+                >
+                  <div class="text-sm text-muted-foreground">{{ p.label }}</div>
+                  <div class="mt-1 text-lg font-semibold tabular-nums">{{ money(p.price) }}</div>
+                  <CheckIcon v-if="period === p.value" class="absolute top-2.5 right-2.5 size-4 text-primary" />
+                </button>
+              </div>
+              <p v-else class="text-sm text-muted-foreground">{{ t('plan.noPeriod') }}</p>
+            </CardContent>
+          </Card>
         </div>
-        <NGrid cols="1 l:3" responsive="screen" :x-gap="16" :y-gap="16">
-          <NGi span="1 l:2">
-            <NSpace vertical :size="16">
-              <NCard size="small" :title="t('plan.target')">
-                <NSelect v-model:value="target" :options="targets" />
-                <p class="muted">{{ t('plan.targetHint') }}</p>
-                <NAlert v-if="changing && biz && !biz.plan_change" type="warning">{{ t('plan.changeDisabled') }}</NAlert>
-              </NCard>
-              <NCard size="small" :title="t('plan.period')">
-                <NRadioGroup v-if="periods.length" v-model:value="period">
-                  <NSpace>
-                    <NRadioButton v-for="p in periods" :key="p.value" :value="p.value">{{ p.label }} · {{ money(p.price) }}</NRadioButton>
-                  </NSpace>
-                </NRadioGroup>
-                <span v-else class="muted">{{ t('plan.noPeriod') }}</span>
-                <p v-if="plan.reset_price !== null && !sameAndActive" class="muted">{{ t('plan.resetNeedSub') }}</p>
-              </NCard>
-              <NCard size="small">
-                <NSpace :size="6" style="margin-bottom: 8px">
-                  <NTag size="small" :bordered="false">{{ t('plan.traffic', { n: plan.transfer_enable }) }}</NTag>
-                  <NTag v-if="plan.device_limit" size="small" :bordered="false">{{ t('plan.devices', { n: plan.device_limit }) }}</NTag>
-                  <NTag v-if="plan.speed_limit" size="small" :bordered="false">{{ t('plan.speed', { n: plan.speed_limit }) }}</NTag>
-                </NSpace>
-                <Markdown :source="plan.content" />
-              </NCard>
-            </NSpace>
-          </NGi>
-          <NGi>
-            <NCard size="small" class="summary">
-              <NInputGroup>
-                <NInput v-model:value="couponCode" :placeholder="t('plan.couponPlaceholder')" @keyup.enter="applyCoupon" />
-                <NButton :disabled="!couponCode.trim() || !period" @click="applyCoupon">{{ t('plan.apply') }}</NButton>
-              </NInputGroup>
-              <NDivider />
-              <div class="line"><span>{{ t('plan.price') }}</span><span>{{ money(price) }}</span></div>
-              <div v-if="couponOff" class="line"><span>{{ t('plan.couponDiscount') }}</span><span>-{{ money(couponOff) }}</span></div>
-              <div v-if="userOff" class="line"><span>{{ t('profile.discount', { n: me?.discount }) }}</span><span>-{{ money(userOff) }}</span></div>
-              <NDivider />
-              <div class="line total"><span>{{ t('plan.payable') }}</span><strong>{{ money(payable) }}</strong></div>
-              <p class="muted">{{ t('plan.payableHint') }}</p>
-              <NButton type="primary" block size="large" :disabled="!period" :loading="submitting" @click="submit">{{ t('plan.submit') }}</NButton>
-            </NCard>
-          </NGi>
-        </NGrid>
-      </template>
-    </NSpin>
+
+        <Card class="lg:sticky lg:top-20">
+          <CardHeader>
+            <CardTitle class="text-base">{{ t('plan.summary') }}</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div class="flex gap-2">
+              <div class="relative flex-1">
+                <TicketPercentIcon class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input v-model="couponCode" class="pl-8" :placeholder="t('plan.couponPlaceholder')" @keyup.enter="applyCoupon" />
+              </div>
+              <Button variant="outline" :disabled="!couponCode.trim() || !period || checking" @click="applyCoupon">
+                <Loader2Icon v-if="checking" class="animate-spin" />{{ t('plan.apply') }}
+              </Button>
+            </div>
+            <Separator />
+            <div class="space-y-2 text-sm">
+              <div class="flex justify-between gap-2">
+                <span class="text-muted-foreground">{{ plan.name }} × {{ periods.find((p) => p.value === period)?.label }}</span>
+                <span class="tabular-nums">{{ money(price) }}</span>
+              </div>
+              <div v-if="couponOff" class="flex justify-between gap-2">
+                <span class="text-muted-foreground">{{ t('plan.couponDiscount') }}</span>
+                <span class="text-success tabular-nums">-{{ money(couponOff) }}</span>
+              </div>
+              <div v-if="userOff" class="flex justify-between gap-2">
+                <span class="text-muted-foreground">{{ t('profile.discount', { n: me?.discount }) }}</span>
+                <span class="text-success tabular-nums">-{{ money(userOff) }}</span>
+              </div>
+            </div>
+            <Separator />
+            <div class="flex items-baseline justify-between gap-2">
+              <span class="text-sm">{{ t('plan.payable') }}</span>
+              <span class="text-2xl font-semibold tabular-nums">{{ money(payable) }}</span>
+            </div>
+            <p class="text-xs text-muted-foreground">{{ t('plan.payableHint') }}</p>
+            <Button class="w-full" size="lg" :disabled="!period || submitting" @click="submit">
+              <Loader2Icon v-if="submitting" class="animate-spin" />{{ t('plan.submit') }}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </template>
   </div>
 </template>
-
-<style scoped>
-.line { display: flex; justify-content: space-between; margin: 6px 0; }
-.total strong { font-size: 22px; }
-.summary { position: sticky; top: 72px; }
-</style>

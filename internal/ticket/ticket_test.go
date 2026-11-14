@@ -393,6 +393,21 @@ func testAdmin(t *testing.T, e *env) {
 		len(d.Messages) != 2 || d.Messages[0].IsMe || !d.Messages[1].IsMe {
 		t.Fatalf("管理端详情: %+v %v", d, err)
 	}
+	if d.SubscriptionInferred || d.PlanName != nil || d.SubscriptionUsed == nil || d.SubscriptionTotal == nil {
+		t.Fatalf("无套餐的关联订阅: %+v", d.AdminTicket)
+	}
+	plan := &model.Plan{Name: "测试套餐", GroupID: 1, TransferEnable: 100}
+	if err := e.DB.Create(plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	e.DB.Model(sub1).UpdateColumn("plan_id", plan.ID)
+	if d, _ = e.AdminGet(ctx, t1.ID); d.PlanName == nil || *d.PlanName != plan.Name {
+		t.Fatalf("关联订阅的套餐名: %+v", d.AdminTicket)
+	}
+	// 未关联订阅的工单取用户主订阅
+	if d, _ = e.AdminGet(ctx, t2.ID); !d.SubscriptionInferred || d.InferredSubscription == nil || d.SubscriptionName == nil {
+		t.Fatalf("未关联订阅应取主订阅: %+v", d.AdminTicket)
+	}
 	if _, err := e.AdminGet(ctx, 999); err != errNotFound {
 		t.Fatalf("不存在的工单: %v", err)
 	}

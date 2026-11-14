@@ -1,11 +1,7 @@
 <script setup lang="ts">
-import { NButton } from 'naive-ui'
-
 defineProps<{ to: string }>()
 </script>
 
 <template>
-  <RouterLink v-slot="{ navigate }" :to="to" custom>
-    <NButton text type="primary" @click="navigate"><slot /></NButton>
-  </RouterLink>
+  <RouterLink :to="to" class="font-medium text-primary underline-offset-4 hover:underline"><slot /></RouterLink>
 </template>

@@ -16,9 +16,5 @@ watchEffect(async () => {
 </script>
 
 <template>
-  <img v-if="src" :src="src" :width="size" :height="size" alt="QR" class="qr" />
+  <img v-if="src" :src="src" :width="size" :height="size" alt="QR" class="block rounded-md bg-white p-1" />
 </template>
-
-<style scoped>
-.qr { display: block; background: #fff; border-radius: 6px; }
-</style>

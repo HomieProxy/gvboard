@@ -1,16 +1,38 @@
 <script setup lang="ts">
-import { h, onMounted, ref } from 'vue'
-import {
-  NCard, NDataTable, NButton, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSpace, NCheckbox, NGrid, NGi,
-  type DataTableColumns,
-} from 'naive-ui'
+import { onMounted, ref } from 'vue'
+import { PlusIcon, RefreshCwIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon, Trash2Icon, Loader2Icon } from '@lucide/vue'
 import { formatMoney } from '@gv/shared'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Checkbox } from '@gv/shared/ui/checkbox'
+import { Label } from '@gv/shared/ui/label'
+import { Switch } from '@gv/shared/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@gv/shared/ui/tooltip'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable, { type Column } from '../components/common/DataTable.vue'
+import FormItem from '../components/common/FormItem.vue'
+import SelectBox from '../components/common/SelectBox.vue'
+import NumInput from '../components/common/NumInput.vue'
+import PlanContentEditor from '../components/PlanContentEditor.vue'
 import { admin } from '../api'
-import { run } from '../ui'
+import { confirm, message, run } from '../ui'
 import { useList } from '../paged'
-import { actions, btn, confirmBtn, periodLabels, planPeriods, resetMethods, sw, toCents, toYuan } from '../helpers'
+import { planPeriods, resetMethods, toCents, toYuan } from '../helpers'
 import { groupName, groupOptions, invalidate, loadGroups } from '../refs'
 import type { Plan } from '../types'
+
+/** 套餐表单中的周期名称（与原版一致） */
+const priceLabels: Record<string, string> = {
+  month_price: '月付',
+  quarter_price: '季付',
+  half_year_price: '半年',
+  year_price: '年付',
+  two_year_price: '两年付',
+  three_year_price: '三年付',
+  onetime_price: '一次性',
+  reset_price: '重置包',
+}
 
 const { rows, loading, load } = useList(() => admin.get<Plan[]>('/plans'))
 
@@ -32,40 +54,26 @@ async function move(i: number, d: number) {
 }
 
 async function remove(p: Plan) {
-  if (await run(() => admin.del(`/plans/${p.id}`), '已删除')) {
+  if (await confirm(`确定要删除订阅「${p.name}」吗？`, () => admin.del(`/plans/${p.id}`), '删除成功')) {
     invalidate('plans')
     load()
   }
 }
 
-function prices(p: Plan) {
-  const out = planPeriods
-    .filter((k) => p[k as keyof Plan] !== null && p[k as keyof Plan] !== undefined)
-    .map((k) => `${periodLabels[k]} ${formatMoney(p[k as keyof Plan] as number)}`)
-  return out.length ? h('div', { class: 'muted', style: 'max-width:260px' }, out.join('　')) : '-'
-}
+const prices = (p: Plan) =>
+  planPeriods.filter((k) => p[k as keyof Plan] !== null && p[k as keyof Plan] !== undefined).map((k) => ({ label: priceLabels[k], value: formatMoney(p[k as keyof Plan] as number) }))
 
-const columns: DataTableColumns<Plan> = [
-  {
-    title: '排序',
-    key: 'sort',
-    width: 80,
-    render: (_, i) => actions(btn('↑', () => move(i, -1), 'default'), btn('↓', () => move(i, 1), 'default')),
-  },
-  { title: 'ID', key: 'id', width: 60 },
-  { title: '名称', key: 'name' },
-  { title: '销售', key: 'show', width: 70, render: (p) => sw(!!p.show, (v) => patch(p, { show: v ? 1 : 0 })) },
-  { title: '续费', key: 'renew', width: 70, render: (p) => sw(!!p.renew, (v) => patch(p, { renew: v ? 1 : 0 })) },
-  { title: '权限组', key: 'group_id', render: (p) => groupName(p.group_id) },
-  { title: '流量', key: 'transfer_enable', render: (p) => `${p.transfer_enable} GB` },
-  { title: '价格', key: 'prices', render: prices },
-  { title: '有效订阅 / 容量', key: 'count', render: (p) => `${p.count ?? 0} / ${p.capacity_limit ?? '∞'}` },
-  {
-    title: '操作',
-    key: 'op',
-    width: 110,
-    render: (p) => actions(btn('编辑', () => openForm(p)), confirmBtn('删除', '确定删除该套餐？', () => remove(p))),
-  },
+const columns: Column[] = [
+  { key: 'sort', title: '排序', class: 'w-20' },
+  { key: 'id', title: 'ID', class: 'w-14' },
+  { key: 'show', title: '销售状态', align: 'center' },
+  { key: 'renew', title: '续费', align: 'center' },
+  { key: 'name', title: '名称' },
+  { key: 'count', title: '统计', align: 'center' },
+  { key: 'transfer_enable', title: '流量', align: 'right' },
+  { key: 'device_limit', title: '设备数限制', align: 'center' },
+  { key: 'prices', title: '售价' },
+  { key: 'op', title: '操作', align: 'right', class: 'w-24' },
 ]
 
 // ---------- 表单 ----------
@@ -82,6 +90,7 @@ interface PlanForm {
   force_update: boolean
 }
 const show = ref(false)
+const saving = ref(false)
 const editing = ref<Plan | null>(null)
 const form = ref<PlanForm>(blank())
 
@@ -120,8 +129,29 @@ function openForm(p: Plan | null) {
   loadGroups().catch(() => {})
 }
 
+// ---------- 快速添加权限组 ----------
+const newGroup = ref('')
+const addingGroup = ref(false)
+async function addGroup() {
+  const name = newGroup.value.trim()
+  if (!name) return
+  addingGroup.value = true
+  const ok = await run(() => admin.post('/servers/groups', { name }), '添加成功')
+  addingGroup.value = false
+  if (ok) {
+    newGroup.value = ''
+    invalidate('groups')
+    const list = await loadGroups(true)
+    form.value.group_id = list.find((g) => g.name === name)?.id ?? form.value.group_id
+  }
+}
+
 async function submit() {
   const f = form.value
+  if (!f.name.trim() || !f.group_id || f.transfer_enable === null) {
+    message.warning('请填写套餐名称、套餐流量并选择权限组')
+    return
+  }
   const body: Record<string, unknown> = {
     name: f.name,
     group_id: f.group_id,
@@ -134,7 +164,9 @@ async function submit() {
   }
   for (const k of planPeriods) body[k] = toCents(f.prices[k])
   if (editing.value) body.force_update = f.force_update
-  const ok = await run(() => (editing.value ? admin.put(`/plans/${editing.value.id}`, body) : admin.post('/plans', body)), '已保存')
+  saving.value = true
+  const ok = await run(() => (editing.value ? admin.put(`/plans/${editing.value.id}`, body) : admin.post('/plans', body)), '保存成功')
+  saving.value = false
   if (ok) {
     show.value = false
     invalidate('plans')
@@ -149,46 +181,104 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
-    <NCard size="small">
-      <div class="toolbar">
-        <NButton type="primary" @click="openForm(null)">新建套餐</NButton>
-        <NButton @click="load">刷新</NButton>
-        <span class="muted">新建的套餐默认不销售，需手动打开“销售”开关。</span>
-      </div>
-      <NDataTable size="small" :columns="columns" :data="rows" :loading="loading" :row-key="(p: Plan) => p.id" :scroll-x="1000" />
-    </NCard>
+  <div>
+    <PageHeader title="订阅管理" description="新建的订阅默认不销售，需手动打开「销售状态」。">
+      <Button variant="ghost" size="icon" :disabled="loading" @click="load"><RefreshCwIcon :class="loading ? 'animate-spin' : ''" /></Button>
+      <Button @click="openForm(null)"><PlusIcon />添加订阅</Button>
+    </PageHeader>
 
-    <NModal v-model:show="show" preset="card" :title="editing ? `编辑套餐 #${editing.id}` : '新建套餐'" style="width: 760px; max-width: 95vw">
-      <NForm label-placement="top">
-        <NGrid cols="1 s:2" responsive="screen" :x-gap="12">
-          <NGi><NFormItem label="名称" required><NInput v-model:value="form.name" /></NFormItem></NGi>
-          <NGi><NFormItem label="权限组" required><NSelect v-model:value="form.group_id" :options="groupOptions" /></NFormItem></NGi>
-          <NGi><NFormItem label="流量（GB）" required><NInputNumber v-model:value="form.transfer_enable" :min="0" style="width: 100%" /></NFormItem></NGi>
-          <NGi><NFormItem label="流量重置方式"><NSelect v-model:value="form.reset_traffic_method" :options="resetMethods" /></NFormItem></NGi>
-          <NGi><NFormItem label="设备数限制"><NInputNumber v-model:value="form.device_limit" :min="0" clearable placeholder="不限制" style="width: 100%" /></NFormItem></NGi>
-          <NGi><NFormItem label="限速（Mbps）"><NInputNumber v-model:value="form.speed_limit" :min="0" clearable placeholder="不限速" style="width: 100%" /></NFormItem></NGi>
-          <NGi><NFormItem label="最大有效订阅数（容量）"><NInputNumber v-model:value="form.capacity_limit" :min="0" clearable placeholder="不限制" style="width: 100%" /></NFormItem></NGi>
-        </NGrid>
-        <NFormItem label="价格（元，留空表示不提供该周期）">
-          <NGrid cols="2 s:4" responsive="screen" :x-gap="8" :y-gap="8" style="width: 100%">
-            <NGi v-for="k in planPeriods" :key="k">
-              <NInputNumber v-model:value="form.prices[k]" :min="0" :precision="2" clearable :placeholder="periodLabels[k]">
-                <template #prefix><span class="muted">{{ periodLabels[k] }}</span></template>
-              </NInputNumber>
-            </NGi>
-          </NGrid>
-        </NFormItem>
-        <NFormItem label="描述（HTML / Markdown）">
-          <NInput v-model:value="form.content" type="textarea" :autosize="{ minRows: 4, maxRows: 14 }" />
-        </NFormItem>
-        <NCheckbox v-if="editing" v-model:checked="form.force_update">
-          同步到正在使用该套餐的全部订阅（权限组、流量、设备数、限速）
-        </NCheckbox>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end"><NButton @click="show = false">取消</NButton><NButton type="primary" @click="submit">保存</NButton></NSpace>
+    <DataTable :columns="columns" :rows="rows" :loading="loading">
+      <template #cell-sort="{ index }">
+        <div class="flex gap-0.5">
+          <Button variant="ghost" size="icon" class="size-7" :disabled="index === 0" @click="move(index, -1)"><ArrowUpIcon /></Button>
+          <Button variant="ghost" size="icon" class="size-7" :disabled="index === rows.length - 1" @click="move(index, 1)"><ArrowDownIcon /></Button>
+        </div>
       </template>
-    </NModal>
+      <template #cell-id="{ row }"><span class="text-muted-foreground tabular-nums">{{ row.id }}</span></template>
+      <template #cell-show="{ row }"><Switch :model-value="!!row.show" @update:model-value="(v: boolean) => patch(row, { show: v ? 1 : 0 })" /></template>
+      <template #cell-renew="{ row }">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <span><Switch :model-value="!!row.renew" @update:model-value="(v: boolean) => patch(row, { renew: v ? 1 : 0 })" /></span>
+          </TooltipTrigger>
+          <TooltipContent>在订阅停止销售时，已购用户是否可以续费</TooltipContent>
+        </Tooltip>
+      </template>
+      <template #cell-name="{ row }">
+        <div class="grid leading-tight">
+          <span class="font-medium">{{ row.name }}</span>
+          <span class="text-xs text-muted-foreground">{{ groupName(row.group_id) }}</span>
+        </div>
+      </template>
+      <template #cell-count="{ row }">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <span class="tabular-nums">{{ row.count ?? 0 }}<span v-if="row.capacity_limit" class="text-muted-foreground"> / {{ row.capacity_limit }}</span></span>
+          </TooltipTrigger>
+          <TooltipContent>有效订阅数{{ row.capacity_limit ? ' / 最大容纳用户量' : '' }}</TooltipContent>
+        </Tooltip>
+      </template>
+      <template #cell-transfer_enable="{ row }"><span class="whitespace-nowrap tabular-nums">{{ row.transfer_enable }} GB</span></template>
+      <template #cell-device_limit="{ row }">{{ row.device_limit ?? '-' }}</template>
+      <template #cell-prices="{ row }">
+        <div class="flex max-w-md flex-wrap gap-1">
+          <span v-for="p in prices(row)" :key="p.label" class="rounded bg-muted px-1.5 py-0.5 text-xs whitespace-nowrap">
+            <span class="text-muted-foreground">{{ p.label }}</span> {{ p.value }}
+          </span>
+          <span v-if="!prices(row).length" class="text-muted-foreground">-</span>
+        </div>
+      </template>
+      <template #cell-op="{ row }">
+        <div class="flex justify-end gap-0.5">
+          <Button variant="ghost" size="icon" class="size-8" @click="openForm(row)"><PencilIcon /></Button>
+          <Button variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive" @click="remove(row)"><Trash2Icon /></Button>
+        </div>
+      </template>
+    </DataTable>
+
+    <Dialog v-model:open="show">
+      <DialogContent class="max-h-[92svh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{{ editing ? '编辑订阅' : '添加订阅' }}</DialogTitle>
+        </DialogHeader>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <FormItem label="套餐名称" required class="sm:col-span-2"><Input v-model="form.name" placeholder="请输入套餐名称" /></FormItem>
+          <FormItem label="套餐描述" class="sm:col-span-2"><PlanContentEditor v-model="form.content" /></FormItem>
+          <FormItem label="售价设置" help="将金额留空则不会进行出售" class="sm:col-span-2">
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div v-for="k in planPeriods" :key="k" class="relative">
+                <span class="pointer-events-none absolute inset-y-0 left-3 z-10 flex items-center text-xs text-muted-foreground">{{ priceLabels[k] }}</span>
+                <NumInput v-model="form.prices[k]" :min="0" :step="0.01" class="[&_input]:pl-14" />
+              </div>
+            </div>
+          </FormItem>
+          <FormItem label="套餐流量" required><NumInput v-model="form.transfer_enable" :min="0" suffix="GB" placeholder="请输入套餐流量" /></FormItem>
+          <FormItem label="设备数限制"><NumInput v-model="form.device_limit" :min="0" placeholder="留空则不限制" /></FormItem>
+          <FormItem label="权限组" required class="sm:col-span-2">
+            <div class="flex gap-2">
+              <SelectBox class="flex-1" :model-value="form.group_id" :options="groupOptions" placeholder="请选择权限组" @update:model-value="(v) => (form.group_id = v as number)" />
+              <Input v-model="newGroup" class="w-40" placeholder="新权限组名称" @keyup.enter="addGroup" />
+              <Button variant="outline" :disabled="!newGroup.trim() || addingGroup" @click="addGroup"><PlusIcon />添加权限组</Button>
+            </div>
+          </FormItem>
+          <FormItem label="流量重置方式">
+            <SelectBox :model-value="form.reset_traffic_method" :options="resetMethods" @update:model-value="(v) => (form.reset_traffic_method = Number(v))" />
+          </FormItem>
+          <FormItem label="最大容纳用户量"><NumInput v-model="form.capacity_limit" :min="0" placeholder="留空则不限制" /></FormItem>
+          <FormItem label="限速"><NumInput v-model="form.speed_limit" :min="0" suffix="Mbps" placeholder="留空则不限制" /></FormItem>
+        </div>
+        <DialogFooter class="items-center sm:justify-between">
+          <div v-if="editing" class="flex items-center gap-2">
+            <Checkbox id="plan-force" :model-value="form.force_update" @update:model-value="(v) => (form.force_update = v === true)" />
+            <Label for="plan-force" class="text-sm font-normal">强制更新到用户<span class="ml-1 text-xs text-muted-foreground">（变更的流量、限速、权限组将应用到该套餐下的用户）</span></Label>
+          </div>
+          <span v-else />
+          <div class="flex gap-2">
+            <Button variant="outline" @click="show = false">取消</Button>
+            <Button :disabled="saving" @click="submit"><Loader2Icon v-if="saving" class="animate-spin" />提交</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

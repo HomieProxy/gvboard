@@ -2,12 +2,15 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { NForm, NFormItem, NInput, NButton, NInputGroup } from 'naive-ui'
+import { Loader2Icon } from '@lucide/vue'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
 import { cfg, http } from '../api'
 import { run, toast } from '../ui'
 import Captcha from '../components/Captcha.vue'
 import EmailCodeButton from '../components/EmailCodeButton.vue'
 import TextLink from '../components/TextLink.vue'
+import FormItem from '../components/common/FormItem.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -31,30 +34,34 @@ async function submit() {
 </script>
 
 <template>
-  <h2 class="title">{{ t('auth.resetPassword') }}</h2>
-  <NForm @submit.prevent="submit">
-    <NFormItem :label="t('auth.email')">
-      <NInput v-model:value="form.email" :input-props="{ type: 'email', autocomplete: 'email' }" />
-    </NFormItem>
+  <h2 class="mb-6 text-xl font-semibold">{{ t('auth.resetPassword') }}</h2>
+  <form class="space-y-4" @submit.prevent="submit">
+    <FormItem :label="t('auth.email')">
+      <Input v-model="form.email" type="email" autocomplete="email" class="h-10" />
+    </FormItem>
     <Captcha v-if="cfg.register.captcha_key" ref="captchaRef" v-model="captcha" :site-key="cfg.register.captcha_key" />
-    <NFormItem :label="t('auth.emailCode')">
-      <NInputGroup>
-        <NInput v-model:value="form.email_code" maxlength="6" :input-props="{ inputmode: 'numeric', autocomplete: 'one-time-code' }" />
-        <EmailCodeButton :email="form.email" scene="reset" :captcha="captcha" :need-captcha="!!cfg.register.captcha_key" @sent="captchaRef?.reset()" />
-      </NInputGroup>
-    </NFormItem>
-    <NFormItem :label="t('auth.newPassword')">
-      <NInput v-model:value="form.password" type="password" show-password-on="click" :input-props="{ autocomplete: 'new-password' }" />
-    </NFormItem>
-    <NFormItem :label="t('auth.passwordConfirm')">
-      <NInput v-model:value="form.confirm" type="password" show-password-on="click" :input-props="{ autocomplete: 'new-password' }" />
-    </NFormItem>
-    <NButton type="primary" block size="large" :loading="loading" attr-type="submit">{{ t('auth.resetPassword') }}</NButton>
-  </NForm>
-  <div class="foot"><TextLink to="/login">{{ t('auth.toLogin') }}</TextLink></div>
+    <FormItem :label="t('auth.emailCode')">
+      <div class="flex gap-2">
+        <Input v-model="form.email_code" maxlength="6" inputmode="numeric" autocomplete="one-time-code" class="h-10 flex-1" />
+        <EmailCodeButton
+          class="h-10"
+          :email="form.email"
+          scene="reset"
+          :captcha="captcha"
+          :need-captcha="!!cfg.register.captcha_key"
+          @sent="captchaRef?.reset()"
+        />
+      </div>
+    </FormItem>
+    <FormItem :label="t('auth.newPassword')">
+      <Input v-model="form.password" type="password" autocomplete="new-password" class="h-10" />
+    </FormItem>
+    <FormItem :label="t('auth.passwordConfirm')">
+      <Input v-model="form.confirm" type="password" autocomplete="new-password" class="h-10" />
+    </FormItem>
+    <Button type="submit" size="lg" class="w-full" :disabled="loading">
+      <Loader2Icon v-if="loading" class="animate-spin" />{{ t('auth.resetPassword') }}
+    </Button>
+  </form>
+  <p class="mt-6 text-center text-sm"><TextLink to="/login">{{ t('auth.toLogin') }}</TextLink></p>
 </template>
-
-<style scoped>
-.title { margin: 0 0 20px; font-size: 20px; }
-.foot { text-align: center; margin-top: 18px; }
-</style>

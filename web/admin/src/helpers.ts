@@ -1,49 +1,9 @@
-import { h, type VNodeChild } from 'vue'
-import { NButton, NSpace, NTag, NSwitch, NPopconfirm, NTooltip, NEllipsis } from 'naive-ui'
 import { centsToYuan, yuanToCents } from '@gv/shared'
 
-type BtnType = 'default' | 'primary' | 'info' | 'success' | 'warning' | 'error'
+/** 状态徽标的语义色 */
+export type Tone = 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info'
 
-/** 表格中的文字按钮 */
-export function btn(label: string, onClick: () => void, type: BtnType = 'primary'): VNodeChild {
-  return h(NButton, { size: 'small', text: true, type, onClick }, { default: () => label })
-}
-
-/** 需要二次确认的文字按钮 */
-export function confirmBtn(label: string, tip: string, onConfirm: () => void, type: BtnType = 'error'): VNodeChild {
-  return h(
-    NPopconfirm,
-    { onPositiveClick: onConfirm, positiveText: '确定', negativeText: '取消' },
-    { trigger: () => h(NButton, { size: 'small', text: true, type }, { default: () => label }), default: () => tip },
-  )
-}
-
-export function actions(...nodes: VNodeChild[]): VNodeChild {
-  return h(NSpace, { size: 'small', wrap: false }, { default: () => nodes.filter(Boolean) })
-}
-
-export function tag(text: string, type: BtnType = 'default'): VNodeChild {
-  return h(NTag, { size: 'small', type, bordered: false }, { default: () => text })
-}
-
-export function enumTag(map: Record<number, [string, BtnType]>, v: number): VNodeChild {
-  const e = map[v]
-  return e ? tag(e[0], e[1]) : tag(String(v))
-}
-
-export function sw(value: boolean, onChange: (v: boolean) => void): VNodeChild {
-  return h(NSwitch, { size: 'small', value, onUpdateValue: onChange })
-}
-
-export function ellipsis(text: string, width = 200): VNodeChild {
-  return h(NEllipsis, { style: { maxWidth: `${width}px` } }, { default: () => text })
-}
-
-export function tip(node: VNodeChild, text: string): VNodeChild {
-  return h(NTooltip, null, { trigger: () => node, default: () => text })
-}
-
-// ---------- 枚举 ----------
+// ---------- 枚举（文字与原版管理端一致） ----------
 
 export const periodLabels: Record<string, string> = {
   month_price: '月付',
@@ -59,29 +19,39 @@ export const periodLabels: Record<string, string> = {
 export const planPeriods = Object.keys(periodLabels).filter((k) => k !== 'deposit')
 export const periodOptions = planPeriods.map((k) => ({ label: periodLabels[k], value: k }))
 
-export const orderStatus: Record<number, [string, BtnType]> = {
+export const orderStatus: Record<number, [string, Tone]> = {
   0: ['待支付', 'warning'],
   1: ['开通中', 'info'],
   2: ['已取消', 'default'],
   3: ['已完成', 'success'],
   4: ['已折抵', 'default'],
 }
-export const orderType: Record<number, string> = { 1: '新购', 2: '续费', 3: '升级', 4: '流量重置包', 9: '充值' }
-export const commissionStatus: Record<number, [string, BtnType]> = {
+export const orderType: Record<number, string> = { 1: '新购', 2: '续费', 3: '变更', 4: '流量包', 9: '充值' }
+export const commissionStatus: Record<number, [string, Tone]> = {
   0: ['待确认', 'warning'],
   1: ['发放中', 'info'],
   2: ['有效', 'success'],
   3: ['无效', 'default'],
 }
-export const resetMethods = [
-  { label: '跟随系统设置', value: -1 },
-  { label: '每月 1 日', value: 0 },
-  { label: '按到期日每月', value: 1 },
+
+/** 流量重置方式（系统配置；套餐中额外有“跟随系统设置”） */
+export const resetMethodOptions = [
+  { label: '每月1号', value: 0 },
+  { label: '按月重置', value: 1 },
   { label: '不重置', value: 2 },
-  { label: '每年 1 月 1 日', value: 3 },
-  { label: '按到期日每年', value: 4 },
+  { label: '每年1月1日', value: 3 },
+  { label: '按年重置', value: 4 },
 ]
-export const giftcardTypes: Record<number, string> = { 1: '余额', 2: '时长', 3: '流量', 4: '重置流量', 5: '套餐' }
+export const resetMethods = [{ label: '跟随系统设置', value: -1 }, ...resetMethodOptions]
+
+export const giftcardTypes: Record<number, string> = { 1: '金额', 2: '时长', 3: '流量', 4: '重置', 5: '套餐' }
+export const giftcardTypeOptions = [
+  { label: '增加账户余额', value: 1 },
+  { label: '增加订阅时长', value: 2 },
+  { label: '增加套餐流量', value: 3 },
+  { label: '重置套餐流量', value: 4 },
+  { label: '兑换订阅套餐', value: 5 },
+]
 
 // ---------- 单位换算（表单用元 / 毫秒，接口用分 / 秒） ----------
 

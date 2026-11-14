@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
 
 // 本地开发：页面没有经过服务器渲染，由这里提供 config.js（GV_API、GV_BACKEND 环境变量）。
@@ -19,9 +20,12 @@ function devConfig(): Plugin {
 // 构建产物即内置默认主题（public/theme.json 会一并复制）。
 export default defineConfig({
   base: './',
-  plugins: [vue(), devConfig()],
+  plugins: [vue(), tailwindcss(), devConfig()],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@gv/shared': fileURLToPath(new URL('../shared/src', import.meta.url)),
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
   },
   server: {
     proxy: { '/api': process.env.GV_BACKEND || 'http://127.0.0.1:8080' },
@@ -34,7 +38,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('naive-ui') || id.includes('vueuc') || id.includes('css-render')) return 'ui'
+          if (id.includes('reka-ui') || id.includes('@floating-ui')) return 'ui'
           if (id.includes('node_modules')) return 'vendor'
         },
       },

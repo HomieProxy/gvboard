@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NCard, NSpin, NEmpty, NPagination, NModal, NSpace, NTag } from 'naive-ui'
 import { formatTime } from '@gv/shared'
+import { Card, CardContent } from '@gv/shared/ui/card'
+import { Skeleton } from '@gv/shared/ui/skeleton'
 import { http } from '../api'
 import { errText, toast } from '../ui'
 import type { Notice } from '../types'
-import Markdown from '../components/Markdown.vue'
+import PageHeader from '../components/common/PageHeader.vue'
+import StatusBadge from '../components/common/StatusBadge.vue'
+import NoticeDialog from '../components/NoticeDialog.vue'
+import SimplePager from '../components/common/SimplePager.vue'
 
 const { t } = useI18n()
 const list = ref<Notice[]>([])
@@ -29,7 +33,6 @@ async function load() {
     loading.value = false
   }
 }
-
 function open(n: Notice) {
   current.value = n
   show.value = true
@@ -39,38 +42,25 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page">
-    <h2 class="page-title">{{ t('nav.notices') }}</h2>
-    <NSpin :show="loading">
-      <NSpace vertical :size="12">
-        <NCard v-for="n in list" :key="n.id" size="small" hoverable class="notice" @click="open(n)">
-          <div class="item">
-            <img v-if="n.img_url" :src="n.img_url" alt="" class="cover" />
-            <div style="flex: 1; min-width: 0">
-              <div class="title">{{ n.title }}</div>
-              <NSpace :size="6" style="margin-top: 6px">
-                <span class="muted">{{ formatTime(n.created_at) }}</span>
-                <NTag v-for="tag in n.tags || []" :key="tag" size="tiny" :bordered="false">{{ tag }}</NTag>
-              </NSpace>
+  <div>
+    <PageHeader :title="t('nav.notices')" />
+    <div v-if="loading && !list.length" class="space-y-3"><Skeleton v-for="i in 3" :key="i" class="h-20 rounded-xl" /></div>
+    <div v-else class="space-y-3">
+      <Card v-for="n in list" :key="n.id" class="cursor-pointer py-3 transition-colors hover:bg-accent/40" @click="open(n)">
+        <CardContent class="flex items-center gap-4 px-4">
+          <img v-if="n.img_url" :src="n.img_url" alt="" class="h-16 w-28 shrink-0 rounded-md object-cover" />
+          <div class="min-w-0 flex-1">
+            <div class="truncate font-medium">{{ n.title }}</div>
+            <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <span>{{ formatTime(n.created_at) }}</span>
+              <StatusBadge v-for="tag in n.tags || []" :key="tag">{{ tag }}</StatusBadge>
             </div>
           </div>
-        </NCard>
-      </NSpace>
-      <NEmpty v-if="!loading && !list.length" :description="t('notice.empty')" />
-    </NSpin>
-    <div v-if="total > pageSize" style="display: flex; justify-content: center; margin-top: 16px">
-      <NPagination v-model:page="page" :item-count="total" :page-size="pageSize" @update:page="load" />
+        </CardContent>
+      </Card>
     </div>
-    <NModal v-model:show="show" preset="card" :title="current?.title || ''" style="width: 760px; max-width: 96vw">
-      <img v-if="current?.img_url" :src="current.img_url" alt="" style="max-width: 100%; border-radius: 6px; margin-bottom: 12px" />
-      <Markdown v-if="current" :source="current.content" />
-    </NModal>
+    <p v-if="!loading && !list.length" class="py-16 text-center text-muted-foreground">{{ t('notice.empty') }}</p>
+    <SimplePager v-model:page="page" :total="total" :page-size="pageSize" @change="load" />
+    <NoticeDialog v-model:open="show" :notice="current" />
   </div>
 </template>
-
-<style scoped>
-.notice { cursor: pointer; }
-.item { display: flex; gap: 14px; align-items: center; }
-.cover { width: 96px; height: 60px; object-fit: cover; border-radius: 6px; }
-.title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-</style>

@@ -3,6 +3,8 @@ import { loadRawConfig } from '@gv/shared'
 import App from './App.vue'
 import { cfg, setToken, setLogoutHandler, type AdminConfig } from './api'
 import { router } from './router'
+import { applyThemeColor } from './theme'
+import 'vue-sonner/style.css'
 import './style.css'
 
 async function boot() {
@@ -20,6 +22,7 @@ async function boot() {
     theme: { ...cfg.value.theme, ...(raw.theme || {}) },
   } as AdminConfig
   if (cfg.value.site.name) document.title = cfg.value.site.name
+  applyThemeColor(cfg.value.theme.color)
 
   setLogoutHandler(() => {
     setToken('')

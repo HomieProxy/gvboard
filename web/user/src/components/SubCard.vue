@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { NCard, NProgress, NTag, NSpace, NButton } from 'naive-ui'
+import { CopyIcon } from '@lucide/vue'
 import { daysLeft, formatBytes, formatTime } from '@gv/shared'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardAction } from '@gv/shared/ui/card'
+import { Progress } from '@gv/shared/ui/progress'
+import { Button } from '@gv/shared/ui/button'
+import { cn } from '@gv/shared/lib/utils'
+import StatusBadge from './common/StatusBadge.vue'
 import { subAvailable, subName } from '../store'
 import { copy as copy2 } from '../ui'
 import type { Subscription } from '../types'
@@ -15,6 +20,7 @@ const pct = computed(() => (props.sub.transfer_enable ? Math.min(100, Math.round
 const ok = computed(() => subAvailable(props.sub))
 const expireText = computed(() => {
   const s = props.sub
+  if (!s.plan) return '-'
   if (s.expired_at === null) return t('sub.forever')
   const d = daysLeft(s.expired_at)
   if (!d) return t('sub.expired')
@@ -25,41 +31,38 @@ const resetText = computed(() => {
   if (d === null || d === undefined) return ''
   return d === 0 ? t('sub.resetToday') : t('sub.resetIn', { n: d })
 })
+const barCls = computed(() =>
+  pct.value >= 90 ? '[&>[data-slot=progress-indicator]]:bg-destructive' : pct.value >= 70 ? '[&>[data-slot=progress-indicator]]:bg-warning' : '',
+)
 
 const copy = () => copy2(props.sub.subscribe_url)
 </script>
 
 <template>
-  <NCard size="small" hoverable class="sub-card">
-    <template #header>
-      <NSpace align="center" :size="6">
-        <span>{{ subName(sub) }}</span>
-        <NTag v-if="sub.is_primary" size="small" type="info" :bordered="false">{{ t('sub.primary') }}</NTag>
-        <NTag v-if="sub.banned" size="small" type="error" :bordered="false">{{ t('sub.banned') }}</NTag>
-        <NTag v-else size="small" :type="ok ? 'success' : 'warning'" :bordered="false">{{ ok ? t('sub.available') : t('sub.unavailable') }}</NTag>
-      </NSpace>
-    </template>
-    <template #header-extra>
-      <span class="muted">{{ sub.plan?.name || t('sub.noPlan') }}</span>
-    </template>
-    <div class="line">
-      <span>{{ t('sub.used', { used: formatBytes(used), total: formatBytes(sub.transfer_enable) }) }}</span>
-      <span class="muted">{{ resetText }}</span>
-    </div>
-    <NProgress type="line" :percentage="pct" :show-indicator="false" :status="pct >= 90 ? 'error' : pct >= 70 ? 'warning' : 'success'" />
-    <div class="line muted" style="margin-top: 8px">
-      <span>{{ t('sub.expire') }}：{{ expireText }}</span>
-      <span>{{ t('sub.devices') }}：{{ sub.alive_ip }} / {{ sub.device_limit ?? '∞' }}</span>
-    </div>
-    <template #action>
-      <NSpace justify="end" :size="8">
-        <NButton size="small" @click.stop="copy">{{ t('sub.copyLink') }}</NButton>
-        <slot name="actions" />
-      </NSpace>
-    </template>
-  </NCard>
+  <Card class="gap-4 py-4 transition-shadow hover:shadow-md">
+    <CardHeader class="px-4">
+      <CardTitle class="flex min-w-0 flex-wrap items-center gap-2 text-base">
+        <span class="truncate">{{ subName(sub) }}</span>
+        <StatusBadge v-if="sub.is_primary" tone="primary">{{ t('sub.primary') }}</StatusBadge>
+        <StatusBadge v-if="sub.banned" tone="danger" dot>{{ t('sub.banned') }}</StatusBadge>
+        <StatusBadge v-else :tone="ok ? 'success' : 'warning'" dot>{{ ok ? t('sub.available') : t('sub.unavailable') }}</StatusBadge>
+      </CardTitle>
+      <CardAction class="max-w-[45%] truncate text-sm text-muted-foreground">{{ sub.plan?.name || t('sub.noPlan') }}</CardAction>
+    </CardHeader>
+    <CardContent class="space-y-2 px-4 text-sm">
+      <div class="flex flex-wrap justify-between gap-2">
+        <span>{{ t('sub.used', { used: formatBytes(used), total: formatBytes(sub.transfer_enable) }) }}</span>
+        <span class="text-muted-foreground">{{ resetText }}</span>
+      </div>
+      <Progress :model-value="pct" :class="cn('h-2', barCls)" />
+      <div class="flex flex-wrap justify-between gap-2 text-muted-foreground">
+        <span>{{ t('sub.expire') }}：{{ expireText }}</span>
+        <span>{{ t('sub.devices') }}：{{ sub.alive_ip }} / {{ sub.device_limit ?? '∞' }}</span>
+      </div>
+    </CardContent>
+    <CardFooter class="justify-end gap-2 px-4">
+      <Button size="sm" variant="outline" @click.stop="copy"><CopyIcon />{{ t('sub.copyLink') }}</Button>
+      <slot name="actions" />
+    </CardFooter>
+  </Card>
 </template>
-
-<style scoped>
-.line { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-</style>

@@ -1,15 +1,23 @@
 <script setup lang="ts">
-import { computed, h, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import {
-  NCard, NButton, NDataTable, NModal, NForm, NFormItem, NInput, NSelect, NTag, NAlert, type DataTableColumns,
-} from 'naive-ui'
+import { PlusIcon, TriangleAlertIcon, Loader2Icon } from '@lucide/vue'
 import { formatTime } from '@gv/shared'
+import { Button } from '@gv/shared/ui/button'
+import { Input } from '@gv/shared/ui/input'
+import { Textarea } from '@gv/shared/ui/textarea'
+import { Alert, AlertDescription } from '@gv/shared/ui/alert'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
 import { http } from '../api'
 import { errText, toast } from '../ui'
 import { biz, loadBiz, loadSubs, subOptions } from '../store'
 import type { Ticket } from '../types'
+import PageHeader from '../components/common/PageHeader.vue'
+import DataTable from '../components/common/DataTable.vue'
+import FormItem from '../components/common/FormItem.vue'
+import SelectBox from '../components/common/SelectBox.vue'
+import StatusBadge from '../components/common/StatusBadge.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -21,6 +29,7 @@ const form = reactive({ subject: '', level: 1, message: '', subscription_id: nul
 
 const closedAll = computed(() => biz.value?.ticket_status === 2)
 const levelOptions = computed(() => [0, 1, 2].map((v) => ({ label: t(`ticket.levels.${v}`), value: v })))
+const subChoices = computed(() => [{ label: t('common.none'), value: null }, ...subOptions()])
 
 async function load() {
   loading.value = true
@@ -53,25 +62,13 @@ async function submit() {
   }
 }
 
-function statusTag(tk: Ticket) {
-  if (tk.status === 1) return h(NTag, { size: 'small', bordered: false }, () => t('ticket.closed'))
-  return tk.reply_status === 1
-    ? h(NTag, { size: 'small', bordered: false, type: 'success' }, () => t('ticket.replied'))
-    : h(NTag, { size: 'small', bordered: false, type: 'warning' }, () => t('ticket.pending'))
-}
-
-const columns = computed<DataTableColumns<Ticket>>(() => [
-  { title: '#', key: 'id', width: 70 },
-  { title: t('ticket.subject'), key: 'subject', ellipsis: { tooltip: true } },
-  { title: t('ticket.level'), key: 'level', width: 90, render: (tk) => t(`ticket.levels.${tk.level}`) },
-  { title: t('common.status'), key: 'status', width: 100, render: statusTag },
-  { title: t('ticket.updatedAt'), key: 'updated_at', width: 170, render: (tk) => formatTime(tk.updated_at) },
-  {
-    title: t('common.actions'),
-    key: 'op',
-    width: 90,
-    render: (tk) => h(NButton, { size: 'small', text: true, type: 'primary', onClick: () => router.push(`/tickets/${tk.id}`) }, () => t('common.detail')),
-  },
+const columns = computed(() => [
+  { key: 'id', title: '#', class: 'w-16' },
+  { key: 'subject', title: t('ticket.subject') },
+  { key: 'level', title: t('ticket.level'), class: 'w-24' },
+  { key: 'status', title: t('common.status'), class: 'w-28' },
+  { key: 'created_at', title: t('order.createdAt'), class: 'w-44' },
+  { key: 'updated_at', title: t('ticket.updatedAt'), class: 'w-44' },
 ])
 
 onMounted(() => {
@@ -82,35 +79,68 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
-    <div class="row" style="justify-content: space-between; margin-bottom: 16px">
-      <h2 class="page-title" style="margin: 0">{{ t('nav.tickets') }}</h2>
-      <NButton type="primary" :disabled="closedAll" @click="show = true">{{ t('ticket.new') }}</NButton>
+  <div>
+    <PageHeader :title="t('nav.tickets')">
+      <Button :disabled="closedAll" @click="show = true"><PlusIcon />{{ t('ticket.new') }}</Button>
+    </PageHeader>
+    <Alert v-if="closedAll" class="mb-4 border-warning/50 bg-warning/10">
+      <TriangleAlertIcon class="text-warning" />
+      <AlertDescription class="text-foreground">{{ t('ticket.disabled') }}</AlertDescription>
+    </Alert>
+    <div class="overflow-x-auto">
+      <DataTable
+        :columns="columns"
+        :rows="rows"
+        :loading="loading"
+        :empty="t('ticket.empty')"
+        clickable
+        class="min-w-[720px]"
+        @row-click="(r) => router.push(`/tickets/${r.id}`)"
+      >
+        <template #cell-subject="{ row }"><span class="font-medium">{{ row.subject }}</span></template>
+        <template #cell-level="{ row }">{{ t(`ticket.levels.${row.level}`) }}</template>
+        <template #cell-status="{ row }">
+          <StatusBadge v-if="row.status === 1" dot>{{ t('ticket.closed') }}</StatusBadge>
+          <StatusBadge v-else-if="row.reply_status === 1" tone="success" dot>{{ t('ticket.replied') }}</StatusBadge>
+          <StatusBadge v-else tone="warning" dot>{{ t('ticket.pending') }}</StatusBadge>
+        </template>
+        <template #cell-created_at="{ row }"><span class="text-muted-foreground">{{ formatTime(row.created_at) }}</span></template>
+        <template #cell-updated_at="{ row }"><span class="text-muted-foreground">{{ formatTime(row.updated_at) }}</span></template>
+      </DataTable>
     </div>
-    <NAlert v-if="closedAll" type="warning" style="margin-bottom: 16px">{{ t('ticket.disabled') }}</NAlert>
-    <NCard size="small">
-      <NDataTable :columns="columns" :data="rows" :loading="loading" :row-key="(r: Ticket) => r.id" :scroll-x="700">
-        <template #empty>{{ t('ticket.empty') }}</template>
-      </NDataTable>
-    </NCard>
-    <NModal v-model:show="show" preset="card" :title="t('ticket.new')" style="width: 560px; max-width: 94vw">
-      <NForm @submit.prevent="submit">
-        <NFormItem :label="t('ticket.subject')">
-          <NInput v-model:value="form.subject" :maxlength="255" />
-        </NFormItem>
-        <NFormItem :label="t('ticket.level')">
-          <NSelect v-model:value="form.level" :options="levelOptions" />
-        </NFormItem>
-        <NFormItem :label="t('ticket.relatedSub')">
-          <NSelect v-model:value="form.subscription_id" :options="subOptions()" clearable />
-        </NFormItem>
-        <NFormItem :label="t('ticket.message')">
-          <NInput v-model:value="form.message" type="textarea" :autosize="{ minRows: 5, maxRows: 12 }" :maxlength="10000" />
-        </NFormItem>
-        <NButton type="primary" block attr-type="submit" :loading="saving" :disabled="!form.subject.trim() || !form.message.trim()">
-          {{ t('common.submit') }}
-        </NButton>
-      </NForm>
-    </NModal>
+
+    <Dialog v-model:open="show">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{{ t('ticket.new') }}</DialogTitle>
+        </DialogHeader>
+        <form class="space-y-4" @submit.prevent="submit">
+          <FormItem :label="t('ticket.subject')" required>
+            <Input v-model="form.subject" maxlength="255" />
+          </FormItem>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <FormItem :label="t('ticket.level')">
+              <SelectBox :model-value="form.level" :options="levelOptions" @update:model-value="(v) => (form.level = Number(v))" />
+            </FormItem>
+            <FormItem :label="t('ticket.relatedSub')">
+              <SelectBox
+                :model-value="form.subscription_id"
+                :options="subChoices"
+                @update:model-value="(v) => (form.subscription_id = v === null ? null : Number(v))"
+              />
+            </FormItem>
+          </div>
+          <FormItem :label="t('ticket.message')" required>
+            <Textarea v-model="form.message" rows="6" maxlength="10000" class="max-h-80" />
+          </FormItem>
+          <DialogFooter>
+            <Button type="button" variant="outline" @click="show = false">{{ t('common.cancel') }}</Button>
+            <Button type="submit" :disabled="saving || !form.subject.trim() || !form.message.trim()">
+              <Loader2Icon v-if="saving" class="animate-spin" />{{ t('common.submit') }}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
