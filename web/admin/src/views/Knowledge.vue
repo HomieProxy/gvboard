@@ -7,6 +7,7 @@ import { Input } from '@gv/shared/ui/input'
 import { Textarea } from '@gv/shared/ui/textarea'
 import { Switch } from '@gv/shared/ui/switch'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
+import Markdown from '@gv/shared/content/Markdown.vue'
 import PageHeader from '../components/common/PageHeader.vue'
 import DataTable, { type Column } from '../components/common/DataTable.vue'
 import FormItem from '../components/common/FormItem.vue'
@@ -115,7 +116,7 @@ onMounted(load)
     </DataTable>
 
     <Dialog v-model:open="show">
-      <DialogContent class="max-h-[92svh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent class="max-h-[94svh] overflow-y-auto sm:max-w-3xl lg:max-w-6xl">
         <DialogHeader><DialogTitle>{{ editing ? '编辑知识' : '新增知识' }}</DialogTitle></DialogHeader>
         <div class="grid gap-4 sm:grid-cols-3">
           <FormItem label="标题">
@@ -131,7 +132,16 @@ onMounted(load)
             <SelectBox :model-value="form.language" :options="languages" placeholder="请选择知识语言" @update:model-value="(v) => (form.language = String(v))" />
           </FormItem>
           <FormItem label="内容" class="sm:col-span-3" help="支持 Markdown。可用变量：{{siteName}}、{{subscribeUrl}}、{{urlEncodeSubscribeUrl}}、{{safeBase64SubscribeUrl}}、{{subscribeToken}}；用 <!--access start--> 与 <!--access end--> 包裹的内容只对有可用订阅的用户显示。">
-            <Textarea v-model="form.body" rows="16" class="font-mono text-xs" />
+            <div class="grid gap-3 lg:grid-cols-2">
+              <Textarea v-model="form.body" class="h-[58svh] min-h-64 resize-none font-mono text-xs" placeholder="请输入知识内容" />
+              <div class="flex h-[58svh] min-h-64 flex-col overflow-hidden rounded-md border">
+                <div class="border-b bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground">预览（与用户端显示一致）</div>
+                <div class="flex-1 overflow-auto p-4">
+                  <Markdown v-if="form.body.trim()" :source="form.body" />
+                  <p v-else class="py-10 text-center text-sm text-muted-foreground">输入内容后在这里预览</p>
+                </div>
+              </div>
+            </div>
           </FormItem>
         </div>
         <DialogFooter>

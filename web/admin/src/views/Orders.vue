@@ -238,6 +238,7 @@ onMounted(() => {
           <div class="flex items-center gap-2">
             <StatusBadge :tone="orderStatus[detail.status]?.[1]" dot>{{ orderStatus[detail.status]?.[0] }}</StatusBadge>
             <StatusBadge>{{ orderType[detail.type] }}</StatusBadge>
+            <StatusBadge v-if="detail.immediate" tone="warning">立即生效</StatusBadge>
           </div>
           <dl class="grid grid-cols-[6rem_1fr] gap-x-4 gap-y-2.5">
             <dt class="text-muted-foreground">邮箱</dt>

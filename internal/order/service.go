@@ -94,6 +94,8 @@ type CreateInput struct {
 	CouponCode     string `json:"coupon_code"`
 	DepositAmount  int64  `json:"deposit_amount"`
 	SubscriptionID int64  `json:"subscription_id"`
+	// Immediate 同套餐续费时立即生效，其他订单类型忽略（决策 D68）。
+	Immediate bool `json:"immediate"`
 }
 
 // Create 下单（对应原项目 user/order/save），返回订单号。校验顺序与原项目一致。
@@ -252,6 +254,9 @@ func (s *Service) createPlanOrder(ctx context.Context, tx *gorm.DB, u *model.Use
 		return err
 	}
 	d.fill(o)
+	if in.Immediate && o.Type == model.OrderTypeRenew && in.Period != PeriodOnetime {
+		o.Immediate = 1
+	}
 	return nil
 }
 

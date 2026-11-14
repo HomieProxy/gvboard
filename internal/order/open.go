@@ -97,7 +97,7 @@ func (s *Service) open(ctx context.Context, orderID int64) error {
 		case PeriodReset:
 			resetTraffic(sub)
 		default:
-			buyByPeriod(sub, &o, &plan, now)
+			buyByPeriod(sub, &o, &plan, now, s.Settings.Int("reset_traffic_method"))
 		}
 		event := map[int]string{
 			model.OrderTypeNew: "new_order_event_id", model.OrderTypeRenew: "renew_order_event_id", model.OrderTypeUpgrade: "change_order_event_id",
@@ -145,8 +145,14 @@ func (s *Service) targetSubscription(tx *gorm.DB, o *model.Order) (*model.Subscr
 
 func resetTraffic(sub *model.Subscription) { sub.U, sub.D = 0, 0 }
 
-// buyByPeriod 周期套餐开通（原项目 buyByPeriod）。
-func buyByPeriod(sub *model.Subscription, o *model.Order, p *model.Plan, now time.Time) {
+// buyByPeriod 周期套餐开通（原项目 buyByPeriod）。global 为系统设置的流量重置方式。
+func buyByPeriod(sub *model.Subscription, o *model.Order, p *model.Plan, now time.Time, global int64) {
+	// 续费立即生效（决策 D68）：清零已用流量，新周期从现在开始，扣除本周期剩余时间
+	var deduct int64
+	if o.Immediate == 1 && o.Type == model.OrderTypeRenew && sub.ExpiredAt != nil && *sub.ExpiredAt > now.Unix() {
+		deduct = subscription.CycleEnd(sub, p, global, now).Unix() - now.Unix()
+		resetTraffic(sub)
+	}
 	if o.Type == model.OrderTypeUpgrade {
 		ts := now.Unix()
 		sub.ExpiredAt = &ts
@@ -167,6 +173,10 @@ func buyByPeriod(sub *model.Subscription, o *model.Order, p *model.Plan, now tim
 	planID, groupID := p.ID, p.GroupID
 	sub.PlanID, sub.GroupID = &planID, &groupID
 	sub.ExpiredAt = expireAfter(o.Period, sub.ExpiredAt, now.Unix())
+	if deduct > 0 && sub.ExpiredAt != nil {
+		e := *sub.ExpiredAt - deduct
+		sub.ExpiredAt = &e
+	}
 }
 
 // buyByOneTime 一次性套餐开通（原项目 buyByOneTime）：长期有效，未折抵时保留原一次性套餐的剩余流量。

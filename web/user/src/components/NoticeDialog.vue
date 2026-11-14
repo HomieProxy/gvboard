@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { formatTime } from '@gv/shared'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
-import Markdown from './Markdown.vue'
+import Markdown from '@gv/shared/content/Markdown.vue'
 import type { Notice } from '../types'
 
 defineProps<{ notice: Notice | null }>()

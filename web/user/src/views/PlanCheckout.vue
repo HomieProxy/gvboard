@@ -65,6 +65,17 @@ const changing = computed(() => {
   return !!s && !!s.plan && s.plan.id !== id && (s.expired_at === null || s.expired_at > nowUnix())
 })
 
+const immediate = ref(false)
+const renewing = computed(() => {
+  const s = targetSub.value
+  return !!s && s.plan?.id === id && s.expired_at !== null && s.expired_at > nowUnix() &&
+    period.value !== 'reset_price' && period.value !== 'onetime_price'
+})
+const renewModes = computed(() => [
+  { value: false, title: t('plan.renewEarly'), hint: t('plan.renewEarlyHint') },
+  { value: true, title: t('plan.renewNow'), hint: t('plan.renewNowHint') },
+])
+
 const targets = computed(() => [{ label: t('plan.targetNew'), value: 0 }, ...subOptions()])
 
 watch(periods, (list) => {
@@ -95,6 +106,7 @@ async function submit() {
       period: period.value,
       coupon_code: coupon.value?.code || undefined,
       subscription_id: target.value || 0,
+      immediate: renewing.value && immediate.value,
     })
     router.replace(`/order/${tradeNo}`)
   } catch (e) {
@@ -159,6 +171,24 @@ onMounted(async () => {
             </CardHeader>
             <CardContent class="space-y-3">
               <SelectBox :model-value="target" :options="targets" @update:model-value="(v) => (target = Number(v))" />
+              <div v-if="renewing" class="grid gap-3 sm:grid-cols-2">
+                <button
+                  v-for="m in renewModes"
+                  :key="String(m.value)"
+                  type="button"
+                  :class="
+                    cn(
+                      'relative rounded-lg border p-3 pr-8 text-left transition-colors hover:border-primary/60',
+                      immediate === m.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : '',
+                    )
+                  "
+                  @click="immediate = m.value"
+                >
+                  <div class="text-sm font-medium">{{ m.title }}</div>
+                  <div class="mt-1 text-xs text-muted-foreground">{{ m.hint }}</div>
+                  <CheckIcon v-if="immediate === m.value" class="absolute top-2.5 right-2.5 size-4 text-primary" />
+                </button>
+              </div>
               <Alert v-if="changing && biz && !biz.plan_change" variant="destructive">
                 <TriangleAlertIcon />
                 <AlertDescription>{{ t('plan.changeDisabled') }}</AlertDescription>

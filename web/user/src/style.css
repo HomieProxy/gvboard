@@ -1,5 +1,5 @@
 @import "../../shared/src/styles/theme.css";
-@import "./components/md.css";
+@import "../../shared/src/content/md.css";
 
 html, body, #app { min-height: 100%; }
 body {

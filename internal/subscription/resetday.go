@@ -72,6 +72,40 @@ func ResetPeriod(sub *model.Subscription, plan *model.Plan, global int64, now ti
 	return &p
 }
 
+// CycleEnd 当前流量周期的结束时间：下次流量重置时间与到期时间中较早的一个；不重置时为到期时间。
+// 与定时任务一致，重置发生在重置日 0 点，当天已过 0 点即视为已重置。只用于未到期的周期订阅。
+func CycleEnd(sub *model.Subscription, plan *model.Plan, global int64, now time.Time) time.Time {
+	expire := time.Unix(*sub.ExpiredAt, 0).In(now.Location())
+	var next time.Time
+	y, m, loc := now.Year(), now.Month(), now.Location()
+	switch resetMethod(plan, global) {
+	case ResetMonthFirstDay:
+		next = time.Date(y, m+1, 1, 0, 0, 0, 0, loc)
+	case ResetYearFirstDay:
+		next = time.Date(y+1, 1, 1, 0, 0, 0, 0, loc)
+	case ResetExpireDay:
+		for k := time.Month(0); k <= 2; k++ {
+			last := time.Date(y, m+k+1, 0, 0, 0, 0, 0, loc).Day()
+			t := time.Date(y, m+k, min(expire.Day(), last), 0, 0, 0, 0, loc)
+			if t.After(now) {
+				next = t
+				break
+			}
+		}
+	case ResetYearExpireDay:
+		next = time.Date(y, expire.Month(), expire.Day(), 0, 0, 0, 0, loc)
+		if !next.After(now) {
+			next = next.AddDate(1, 0, 0)
+		}
+	default:
+		return expire
+	}
+	if next.IsZero() || next.After(expire) {
+		return expire
+	}
+	return next
+}
+
 func lastDayOfMonth(t time.Time) int {
 	return time.Date(t.Year(), t.Month()+1, 0, 0, 0, 0, 0, t.Location()).Day()
 }

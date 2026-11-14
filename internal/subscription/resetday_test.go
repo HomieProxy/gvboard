@@ -124,6 +124,34 @@ func TestResetDayNil(t *testing.T) {
 	}
 }
 
+func TestCycleEnd(t *testing.T) {
+	loc := time.FixedZone("CST", 8*3600)
+	at := func(y int, m time.Month, d, h int) time.Time { return time.Date(y, m, d, h, 0, 0, 0, loc) }
+	now := at(2026, 1, 31, 10)
+	planID := int64(1)
+	cases := []struct {
+		name   string
+		method int
+		expire time.Time
+		want   time.Time
+	}{
+		{"每月 1 日", ResetMonthFirstDay, at(2026, 6, 15, 12), at(2026, 2, 1, 0)},
+		{"按到期日每月：顺延到下月最后一天", ResetExpireDay, at(2026, 6, 30, 12), at(2026, 2, 28, 0)},
+		{"按到期日每月：当天 0 点已重置", ResetExpireDay, at(2026, 7, 31, 12), at(2026, 2, 28, 0)},
+		{"每年 1 月 1 日", ResetYearFirstDay, at(2027, 6, 1, 0), at(2027, 1, 1, 0)},
+		{"按到期日每年", ResetYearExpireDay, at(2027, 3, 5, 8), at(2026, 3, 5, 0)},
+		{"不重置时为到期时间", ResetNever, at(2026, 3, 5, 8), at(2026, 3, 5, 8)},
+		{"到期早于重置日", ResetMonthFirstDay, at(2026, 1, 31, 20), at(2026, 1, 31, 20)},
+	}
+	for _, c := range cases {
+		exp := c.expire.Unix()
+		sub := &model.Subscription{PlanID: &planID, ExpiredAt: &exp}
+		if got := CycleEnd(sub, &model.Plan{ResetTrafficMethod: ptr(c.method)}, 0, now); !got.Equal(c.want) {
+			t.Errorf("%s：期望 %s，实际 %s", c.name, c.want, got)
+		}
+	}
+}
+
 func TestTOTPTokenMatchesPHP(t *testing.T) {
 	got := TOTPToken(123, "f0e1d2c3b4a5968778695a4b3c2d1e0f", 5, time.Unix(1794563356, 0))
 	if want := "MTIzOjIxYTFiNDA0MWRiMDA0ODAxYWQwZTgwOTY4MzRjM2MzNjVhOTgzYWE"; got != want {

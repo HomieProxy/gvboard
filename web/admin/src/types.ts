@@ -110,6 +110,7 @@ export interface Order {
   actual_commission_balance: number | null
   paid_at: number | null
   subscription_id: number | null
+  immediate: number
   created_at: number
   updated_at: number
   plan_name?: string

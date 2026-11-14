@@ -11,7 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardAction } from '@gv/shared
 import { Button } from '@gv/shared/ui/button'
 import { Alert, AlertDescription } from '@gv/shared/ui/alert'
 import { Skeleton } from '@gv/shared/ui/skeleton'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
 import { cfg, http } from '../api'
 import { errText, toast } from '../ui'
 import { biz, clientOnly, loadBiz, loadMe, loadStat, loadSubs, me, money, stat, subs } from '../store'
@@ -35,11 +34,11 @@ const cards = computed(() => [
   { label: t('dashboard.openTickets'), value: stat.value?.open_tickets ?? 0, icon: MessageSquareIcon, to: '/tickets' },
   { label: t('dashboard.invitees'), value: stat.value?.invitees ?? 0, icon: UsersIcon, to: '/invite' },
 ])
-const downloadShow = ref(false)
+const showDownloads = () => document.getElementById('client-downloads')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 const shortcuts = computed<{ title: string; desc: string; icon: Component; to?: RouteLocationRaw; action?: () => void }[]>(() => [
   { title: t('dashboard.tutorial'), desc: t('dashboard.tutorialDesc', { site: cfg.value.site.name }), icon: BookOpenIcon, to: '/knowledge' },
   clientOnly.value
-    ? { title: t('client.title'), desc: t('client.shortcutDesc'), icon: DownloadIcon, action: () => (downloadShow.value = true) }
+    ? { title: t('client.title'), desc: t('client.shortcutDesc'), icon: DownloadIcon, action: showDownloads }
     : {
         title: t('dashboard.oneClick'),
         desc: t('dashboard.oneClickDesc'),
@@ -126,6 +125,16 @@ onMounted(async () => {
           </Card>
         </section>
 
+        <section v-if="biz && clientOnly" id="client-downloads">
+          <h2 class="mb-3 text-base font-semibold">{{ t('client.title') }}</h2>
+          <Card>
+            <CardContent class="space-y-4">
+              <p class="text-sm text-muted-foreground">{{ t('client.tip') }}</p>
+              <ClientDownloads :clients="biz.clients || []" />
+            </CardContent>
+          </Card>
+        </section>
+
         <section>
           <h2 class="mb-3 text-base font-semibold">{{ t('dashboard.shortcuts') }}</h2>
           <Card class="py-0">
@@ -181,14 +190,5 @@ onMounted(async () => {
     </div>
 
     <NoticeDialog v-model:open="noticeShow" :notice="notice" />
-    <Dialog v-model:open="downloadShow">
-      <DialogContent class="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{{ t('client.title') }}</DialogTitle>
-          <DialogDescription>{{ t('client.tip') }}</DialogDescription>
-        </DialogHeader>
-        <ClientDownloads :clients="biz?.clients || []" />
-      </DialogContent>
-    </Dialog>
   </div>
 </template>

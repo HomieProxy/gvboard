@@ -52,8 +52,10 @@ type Order struct {
 	PaidAt                  *int64  `gorm:"column:paid_at" json:"paid_at"`
 	// SubscriptionID 订单作用的订阅（Gvboard 新增）。新开订阅的订单在开通后回填。
 	SubscriptionID *int64 `gorm:"column:subscription_id" json:"subscription_id"`
-	CreatedAt      int64  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt      int64  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	// Immediate 同套餐续费时立即生效（Gvboard 新增，决策 D68）：清零已用流量并扣除本周期剩余时间。
+	Immediate int   `gorm:"column:immediate" json:"immediate"`
+	CreatedAt int64 `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt int64 `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 func (Order) TableName() string { return "v2_order" }

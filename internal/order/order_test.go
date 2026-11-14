@@ -311,11 +311,30 @@ func testOpenAndRenew(t *testing.T, e *env) {
 	if o2.Type != model.OrderTypeRenew || *s2.ExpiredAt != addMonths(*s.ExpiredAt, 3) || s2.U != 0 || s2.D != 0 {
 		t.Errorf("续费结果不正确: type=%d expired=%d u=%d", o2.Type, *s2.ExpiredAt, s2.U)
 	}
+	// 提前续费不清零流量；立即生效清零流量并扣除本周期剩余时间（决策 D68）
+	e.set(t, map[string]any{"renew_order_event_id": 0})
+	e.DB.Model(&model.Plan{}).Where("id = ?", p.ID).Update("reset_traffic_method", subscription.ResetNever)
+	e.DB.Model(&s2).Updates(map[string]any{"u": 10, "d": 20})
+	o3 := e.buy(t, u.ID, CreateInput{PlanID: p.ID, Period: PeriodMonth, SubscriptionID: s.ID})
+	s3 := e.sub(t, s.ID)
+	if o3.Immediate != 0 || *s3.ExpiredAt != addMonths(*s2.ExpiredAt, 1) || s3.U != 10 || s3.D != 20 {
+		t.Errorf("提前续费结果不正确: %+v %+v", o3, s3)
+	}
+	now := time.Now().Unix()
+	o4 := e.buy(t, u.ID, CreateInput{PlanID: p.ID, Period: PeriodMonth, SubscriptionID: s.ID, Immediate: true})
+	s4 := e.sub(t, s.ID)
+	if o4.Immediate != 1 || s4.U != 0 || s4.D != 0 || !near(*s4.ExpiredAt, addMonths(*s3.ExpiredAt, 1)-(*s3.ExpiredAt-now), 5) {
+		t.Errorf("立即生效结果不正确: immediate=%d u=%d expired=%d", o4.Immediate, s4.U, *s4.ExpiredAt)
+	}
 	// 主订阅不受影响
 	var n int64
 	e.DB.Model(&model.Subscription{}).Where("user_id = ?", u.ID).Count(&n)
 	if n != 2 {
 		t.Errorf("应有主订阅与新开订阅共 2 个，实际 %d", n)
+	}
+	// 新购订单忽略立即生效
+	if o5 := e.buy(t, u.ID, CreateInput{PlanID: p.ID, Period: PeriodMonth, Immediate: true}); o5.Immediate != 0 {
+		t.Errorf("新购订单不应标记立即生效: %+v", o5)
 	}
 
 	// 订单详情

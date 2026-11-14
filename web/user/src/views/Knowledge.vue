@@ -11,7 +11,7 @@ import { http } from '../api'
 import { errText, toast } from '../ui'
 import { loadSubs, subOptions } from '../store'
 import type { KnowledgeArticle, KnowledgeCategory } from '../types'
-import Markdown from '../components/Markdown.vue'
+import Markdown from '@gv/shared/content/Markdown.vue'
 import PageHeader from '../components/common/PageHeader.vue'
 import SelectBox from '../components/common/SelectBox.vue'
 

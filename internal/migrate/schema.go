@@ -170,7 +170,8 @@ func Schema() []Table {
 			def("commission_balance", "int", "0"),
 			null("actual_commission_balance", "int"),
 			null("paid_at", "int"),
-			null("subscription_id", "int"), // Gvboard 新增
+			null("subscription_id", "int"),   // Gvboard 新增
+			def("immediate", "tinyint", "0"), // Gvboard 新增（决策 D68）
 		},
 			unique("trade_no", "trade_no"),
 			idx("idx_user", "user_id"),

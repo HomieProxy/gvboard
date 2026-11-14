@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { LogOutIcon, UserIcon, ChevronsUpDownIcon } from '@lucide/vue'
@@ -32,6 +32,7 @@ const groups = computed(() => {
 })
 const active = computed(() => String(route.meta.nav || ''))
 const current = computed(() => nav.find((n) => n.key === active.value))
+const logoFailed = ref(false)
 
 async function logout() {
   await confirm(t('common.logoutConfirm'), async () => {
@@ -62,9 +63,9 @@ onMounted(() => {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" as-child>
               <RouterLink to="/dashboard">
-                <div class="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                  <img v-if="cfg.site.logo" :src="cfg.site.logo" alt="" class="size-8 object-contain" />
-                  <span v-else class="text-sm font-bold">{{ (cfg.site.name || 'G').slice(0, 1) }}</span>
+                <img v-if="cfg.site.logo && !logoFailed" :src="cfg.site.logo" alt="" class="size-8 shrink-0 object-contain" @error="logoFailed = true" />
+                <div v-else class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <span class="text-sm font-bold">{{ (cfg.site.name || 'G').slice(0, 1) }}</span>
                 </div>
                 <span class="truncate font-semibold">{{ cfg.site.name }}</span>
               </RouterLink>
