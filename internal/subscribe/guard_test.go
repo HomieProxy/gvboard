@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -322,6 +323,21 @@ func testDeliverGuard(t *testing.T, e *env) {
 	}
 	if page, err := s.Logs(ctx, LogQuery{Token: sub.Token}); err != nil || page.Total != 1 || page.Data[0].Email != u.Email {
 		t.Errorf("按 token 查询日志并返回邮箱不正确: %+v %v", page, err)
+	}
+	plan := &model.Plan{Name: "日志套餐", GroupID: 1, TransferEnable: 100}
+	e.create(t, plan)
+	s.DB.Model(sub).Updates(map[string]any{"plan_id": plan.ID, "name": ""})
+	if page, _ := s.Logs(ctx, LogQuery{Token: sub.Token}); page.Data[0].SubscriptionName != "日志套餐" {
+		t.Errorf("订阅无名称时日志应显示套餐名: %q", page.Data[0].SubscriptionName)
+	}
+	s.DB.Model(sub).Update("name", "家庭")
+	if page, _ := s.Logs(ctx, LogQuery{Token: sub.Token}); page.Data[0].SubscriptionName != "家庭" {
+		t.Errorf("日志应显示订阅名称: %q", page.Data[0].SubscriptionName)
+	}
+	if stats, err := s.SubStats(ctx, 0, "", 200); err != nil || !slices.ContainsFunc(stats, func(st SubStat) bool {
+		return st.SubscriptionID == sub.ID && st.SubscriptionName == "家庭"
+	}) {
+		t.Errorf("订阅统计应返回订阅名称: %+v %v", stats, err)
 	}
 	for range 3 {
 		get("/api/v1/client/subscribe?token=bad", "clash")

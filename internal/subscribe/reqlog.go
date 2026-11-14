@@ -208,10 +208,46 @@ type LogQuery struct {
 	PageSize       int    `form:"page_size"`
 }
 
-// LogView 请求日志与所属用户的邮箱（用户已删除时为空）。
+// LogView 请求日志与所属用户的邮箱（用户已删除时为空）、订阅名称。
 type LogView struct {
 	model.SubscribeLog
-	Email string `json:"email"`
+	Email            string `json:"email"`
+	SubscriptionName string `json:"subscription_name"`
+}
+
+// subscriptionNames 订阅显示名：有名称用名称，否则用其当前套餐名（与管理端其他页面一致）；订阅已删除时没有对应项。
+func (s *Service) subscriptionNames(ctx context.Context, ids []int64) (map[int64]string, error) {
+	out := map[int64]string{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	var subs []model.Subscription
+	if err := s.DB.WithContext(ctx).Select("id", "name", "plan_id").Where("id IN ?", ids).Find(&subs).Error; err != nil {
+		return nil, err
+	}
+	var planIDs []int64
+	for _, sub := range subs {
+		if sub.Name == "" && sub.PlanID != nil {
+			planIDs = append(planIDs, *sub.PlanID)
+		}
+	}
+	plans := map[int64]string{}
+	if len(planIDs) > 0 {
+		var ps []model.Plan
+		if err := s.DB.WithContext(ctx).Select("id", "name").Where("id IN ?", planIDs).Find(&ps).Error; err != nil {
+			return nil, err
+		}
+		for _, p := range ps {
+			plans[p.ID] = p.Name
+		}
+	}
+	for _, sub := range subs {
+		out[sub.ID] = sub.Name
+		if sub.Name == "" && sub.PlanID != nil {
+			out[sub.ID] = plans[*sub.PlanID]
+		}
+	}
+	return out, nil
 }
 
 // LogPage 请求日志分页结果。
@@ -275,8 +311,14 @@ func (s *Service) Logs(ctx context.Context, q LogQuery) (*LogPage, error) {
 		return nil, err
 	}
 	ids := make([]int64, 0, len(rows))
+	subIDs := make([]int64, 0, len(rows))
 	for _, r := range rows {
 		ids = append(ids, r.UserID)
+		subIDs = append(subIDs, r.SubscriptionID)
+	}
+	names, err := s.subscriptionNames(ctx, subIDs)
+	if err != nil {
+		return nil, err
 	}
 	var users []model.User
 	if len(ids) > 0 {
@@ -289,19 +331,20 @@ func (s *Service) Logs(ctx context.Context, q LogQuery) (*LogPage, error) {
 		emails[u.ID] = u.Email
 	}
 	for _, r := range rows {
-		out.Data = append(out.Data, LogView{SubscribeLog: r, Email: emails[r.UserID]})
+		out.Data = append(out.Data, LogView{SubscribeLog: r, Email: emails[r.UserID], SubscriptionName: names[r.SubscriptionID]})
 	}
 	return out, nil
 }
 
 // SubStat 单个订阅在一段时间内的请求统计，用于发现分享或异常拉取。
 type SubStat struct {
-	SubscriptionID int64 `json:"subscription_id"`
-	UserID         int64 `json:"user_id"`
-	IPs            int64 `json:"ips"`
-	Requests       int64 `json:"requests"`
-	Blocked        int64 `json:"blocked"`
-	LastAt         int64 `json:"last_at"`
+	SubscriptionID   int64  `json:"subscription_id"`
+	SubscriptionName string `json:"subscription_name" gorm:"-"`
+	UserID           int64  `json:"user_id"`
+	IPs              int64  `json:"ips"`
+	Requests         int64  `json:"requests"`
+	Blocked          int64  `json:"blocked"`
+	LastAt           int64  `json:"last_at"`
 }
 
 // SubStats 按订阅汇总 since 之后的请求：不同 IP 数、请求数、被拦截数，按 IP 数（或请求数）倒序取前 limit 个。
@@ -322,10 +365,24 @@ func (s *Service) SubStats(ctx context.Context, since int64, orderBy string, lim
 		Order(order + ", subscription_id ASC").
 		Limit(limit).
 		Scan(&out).Error
+	if err != nil {
+		return nil, err
+	}
 	if out == nil {
 		out = []SubStat{}
 	}
-	return out, err
+	ids := make([]int64, 0, len(out))
+	for _, st := range out {
+		ids = append(ids, st.SubscriptionID)
+	}
+	names, err := s.subscriptionNames(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range out {
+		out[i].SubscriptionName = names[out[i].SubscriptionID]
+	}
+	return out, nil
 }
 
 // DayCount 某天的计数。

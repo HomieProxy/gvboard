@@ -229,9 +229,14 @@ async function cleanLogs() {
   })
 }
 
+function subLabel(r: { subscription_id: number; subscription_name?: string }) {
+  return r.subscription_name ? `${r.subscription_name}（#${r.subscription_id}）` : `#${r.subscription_id}`
+}
+
 // ---------- 订阅统计 ----------
 interface SubStat {
   subscription_id: number
+  subscription_name: string
   user_id: number
   ips: number
   requests: number
@@ -361,7 +366,7 @@ onMounted(async () => {
             <button type="button" class="block max-w-48 truncate text-left text-primary hover:underline" :title="`${row.email}（在用户管理中查看）`" @click="viewUser(row.user_id)">
               {{ row.email || `#${row.user_id}` }}
             </button>
-            <span class="text-xs text-muted-foreground tabular-nums">订阅 #{{ row.subscription_id }}</span>
+            <span class="block max-w-48 truncate text-xs text-muted-foreground" :title="subLabel(row)">订阅 {{ subLabel(row) }}</span>
           </template>
           <template #cell-token="{ row }"><span class="font-mono text-xs" :title="row.token || ''">{{ shortToken(row.token) }}</span></template>
           <template #cell-ip="{ row }"><span class="font-mono text-xs">{{ row.ip }}</span></template>
@@ -387,7 +392,7 @@ onMounted(async () => {
           <Button @click="stats.load"><SearchIcon />查询</Button>
         </div>
         <DataTable :columns="statCols" :rows="stats.rows.value" :loading="stats.loading.value" row-key="subscription_id">
-          <template #cell-subscription_id="{ row }"><span class="tabular-nums">#{{ row.subscription_id }}</span></template>
+          <template #cell-subscription_id="{ row }"><span class="block max-w-56 truncate" :title="subLabel(row)">{{ subLabel(row) }}</span></template>
           <template #cell-user_id="{ row }">
             <button type="button" class="tabular-nums hover:text-primary" @click="router.push({ path: '/users', query: { id: row.user_id } })">#{{ row.user_id }}</button>
           </template>
@@ -496,7 +501,7 @@ onMounted(async () => {
           </dd>
           <dt class="text-muted-foreground">订阅</dt>
           <dd class="flex flex-wrap items-center gap-2">
-            <span class="tabular-nums">#{{ detail.subscription_id }}</span>
+            <span>{{ subLabel(detail) }}</span>
             <Button variant="link" size="sm" class="h-auto px-0" @click="filterLogs({ subscription_id: detail.subscription_id })">只看该订阅的日志</Button>
           </dd>
           <dt class="text-muted-foreground">Token</dt>

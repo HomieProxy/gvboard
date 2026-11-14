@@ -351,4 +351,5 @@ export interface SubscribeLog {
   token: string | null
   path: string | null
   email: string
+  subscription_name: string
 }
