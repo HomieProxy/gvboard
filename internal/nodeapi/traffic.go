@@ -171,6 +171,14 @@ func RegisterTask(q *queue.Queue, s *Service) {
 // statChunk 每批写入的统计行数。
 const statChunk = 500
 
+// 多个任务并发插入同一天的新统计行时，MySQL 唯一索引的间隙锁会互相死锁（按 ID 排序也无法避免），
+// 因此统计事务持有命名锁依次执行；statAttempts 为仍遇到并发冲突时的最多执行次数。
+const (
+	statLock        = "stat_traffic"
+	statLockTimeout = 30 * time.Second
+	statAttempts    = 5
+)
+
 // Stat 在一个事务中原子累加节点与用户的当日流量统计（决策 D38），失败时整体回滚，重试不会重复计数。
 // 统计的是未乘倍率的原始流量，用户统计按订阅与倍率分行。
 func (s *Service) Stat(ctx context.Context, t statTask) error {
@@ -186,7 +194,12 @@ func (s *Service) Stat(ctx context.Context, t statTask) error {
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	now := s.now().Unix()
-	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return database.Transaction(ctx, s.DB, statAttempts, func(tx *gorm.DB) error {
+		unlock, err := database.XactLock(tx, statLock, statLockTimeout)
+		if err != nil {
+			return err
+		}
+		defer unlock()
 		owners := make(map[int64]int64, len(ids))
 		for i := 0; i < len(ids); i += 1000 {
 			var subs []model.Subscription

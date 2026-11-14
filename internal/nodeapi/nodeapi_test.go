@@ -275,6 +275,7 @@ func TestNodeAPI(t *testing.T) {
 			t.Run("可用订阅", func(t *testing.T) { testUsers(t, newEnv(t, driver)) })
 			t.Run("流量累计与写入", func(t *testing.T) { testTraffic(t, newEnv(t, driver)) })
 			t.Run("并发上报", func(t *testing.T) { testConcurrent(t, newEnv(t, driver)) })
+			t.Run("并发统计", func(t *testing.T) { testConcurrentStat(t, newEnv(t, driver)) })
 			t.Run("在线IP", func(t *testing.T) { testAlive(t, newEnv(t, driver)) })
 			t.Run("节点配置", func(t *testing.T) { testConfig(t, newEnv(t, driver)) })
 			t.Run("HTTP", func(t *testing.T) { testHTTP(t, newEnv(t, driver)) })
@@ -460,6 +461,49 @@ func testConcurrent(t *testing.T, e *env) {
 	rows := statUsers(t, e.DB)
 	if len(rows) != 2 || rows[0].U != n || rows[1].D != 4*n {
 		t.Fatalf("并发后统计不准确: %+v", rows)
+	}
+}
+
+// testConcurrentStat 多个统计任务并发插入相互重叠的新统计行（MySQL 间隙锁会死锁），应全部成功且不重复计数。
+func testConcurrentStat(t *testing.T, e *env) {
+	ctx := context.Background()
+	u, first := e.user(t, "stat@x.com", nil)
+	ids := []int64{first.ID}
+	for len(ids) < 120 {
+		ids = append(ids, e.sub(t, u.ID, nil).ID)
+	}
+	const workers, rounds, width = 10, 5, 60
+	var wg sync.WaitGroup
+	errs := make(chan error, workers*rounds)
+	for w := range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for r := range rounds {
+				data := Traffic{}
+				for k := range width {
+					data[ids[(w*7+k)%len(ids)]] = [2]int64{1, 2}
+				}
+				errs <- e.Stat(ctx, statTask{ServerID: 1, ServerType: model.ServerTypeTrojan, Rate: 1, RecordAt: int64(r+1) * 86400, Data: data})
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("并发统计不应失败: %v", err)
+		}
+	}
+	var sum struct{ U, D int64 }
+	e.DB.Model(&model.StatUser{}).Select("COALESCE(SUM(u), 0) AS u, COALESCE(SUM(d), 0) AS d").Scan(&sum)
+	if want := int64(workers * rounds * width); sum.U != want || sum.D != 2*want {
+		t.Fatalf("并发统计总量不准确: %+v，应为 %d", sum, want)
+	}
+	var server struct{ U int64 }
+	e.DB.Model(&model.StatServer{}).Select("COALESCE(SUM(u), 0) AS u").Scan(&server)
+	if server.U != int64(workers*rounds*width) {
+		t.Fatalf("并发节点统计不准确: %d", server.U)
 	}
 }
 

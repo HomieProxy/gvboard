@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"html"
 	"slices"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"gvboard/internal/cache"
+	"gvboard/internal/database"
 	"gvboard/internal/model"
 	"gvboard/internal/telegram"
 )
@@ -133,8 +133,7 @@ func (s *Service) resetWhere(ctx context.Context, scope func(tx *gorm.DB) *gorm.
 		if err == nil {
 			return n, nil
 		}
-		msg := strings.ToLower(err.Error())
-		if attempt >= resetRetries || (!strings.Contains(msg, "40001") && !strings.Contains(msg, "deadlock")) {
+		if attempt >= resetRetries || !database.IsRetryable(err) {
 			return 0, err
 		}
 		select {
