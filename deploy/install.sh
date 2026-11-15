@@ -111,7 +111,8 @@ get_binary() {
     info "使用本地程序：$bin"
     cp "$bin" "$TMP_DIR/gvboard"
   else
-    [[ "$REPO" == *__GVB_REPO__* ]] && die "请把 gvboard 可执行文件放在脚本同一目录，或设置 GVB_REPO=owner/name"
+    # 发布时占位符会被替换为 owner/name；这里不能写占位符原文，否则会被一起替换
+    [[ "$REPO" == */* ]] || die "请把 gvboard 可执行文件放在脚本同一目录，或设置 GVB_REPO=owner/name"
     local base="https://github.com/$REPO/releases" name="gvboard_linux_${ARCH}.tar.gz"
     if [ "$VERSION" = latest ]; then base="$base/latest/download"; else base="$base/download/$VERSION"; fi
     info "下载 ${GITHUB_PROXY}${base}/${name}"
