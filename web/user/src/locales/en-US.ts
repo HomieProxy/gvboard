@@ -405,6 +405,35 @@ const m: Messages = {
     quickLoginHint: 'Scan the QR code or open the link to log in. Valid for 60 seconds, single use',
     generate: 'Generate link',
   },
+  home: {
+    badge: 'Global acceleration network',
+    tagline: 'Fast, stable and secure network acceleration. One account, connected everywhere.',
+    start: 'Get started',
+    login: 'Sign in',
+    hud: 'GLOBAL NETWORK TOPOLOGY',
+    scroll: 'Explore',
+    featuresEyebrow: 'Features',
+    featuresTitle: 'Built for speed and stability',
+    featuresDesc: 'From nodes to clients, every part is designed for a smoother connection.',
+    features: {
+      global: { title: 'Global nodes', desc: 'Quality routes across multiple regions with nearby access for low latency and high stability.' },
+      protocol: { title: 'Multi-protocol', desc: 'VLESS, REALITY, Hysteria2, TUIC, AnyTLS and more, balancing speed and resilience.' },
+      client: { title: 'Every platform', desc: 'Windows, macOS, Android, iOS and Linux. Import your subscription in one tap.' },
+      multi: { title: 'Multiple subscriptions', desc: 'Hold several subscriptions in one account for different devices or family members.' },
+      traffic: { title: 'Transparent usage', desc: 'Check usage, expiry date and traffic details at any time.' },
+      secure: { title: 'Security & privacy', desc: 'Encrypted transport throughout keeps your data and privacy protected.' },
+    },
+    stepsEyebrow: 'How it works',
+    stepsTitle: 'Get started in three steps',
+    steps: {
+      register: { title: 'Create an account', desc: 'Sign up with your email in seconds.' },
+      plan: { title: 'Choose a plan', desc: 'Pick the plan that fits you, with multiple payment methods.' },
+      import: { title: 'Import subscription', desc: 'Copy the link or scan the QR code in your client and connect.' },
+    },
+    ctaTitle: 'Ready to connect the world?',
+    ctaDesc: 'Start now for a faster, more stable connection.',
+    rights: 'All rights reserved.',
+  },
 }
 
 export default m

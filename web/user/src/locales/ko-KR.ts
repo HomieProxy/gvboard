@@ -405,6 +405,35 @@ const m: Messages = {
     quickLoginHint: 'QR 코드를 스캔하거나 링크를 열면 로그인됩니다. 60초간 유효하며 한 번만 사용할 수 있습니다',
     generate: '로그인 링크 생성',
   },
+  home: {
+    badge: '글로벌 가속 네트워크',
+    tagline: '안정적이고 빠르며 안전한 글로벌 네트워크 가속 서비스. 하나의 계정으로 세계와 연결하세요.',
+    start: '지금 시작하기',
+    login: '로그인',
+    hud: '글로벌 네트워크 토폴로지',
+    scroll: '아래로 살펴보기',
+    featuresEyebrow: '핵심 장점',
+    featuresTitle: '속도와 안정성을 위해 설계',
+    featuresDesc: '노드부터 클라이언트까지, 더 매끄러운 연결을 위해 세심하게 설계했습니다.',
+    features: {
+      global: { title: '글로벌 노드', desc: '여러 지역의 고품질 회선에 가까운 곳으로 접속해 낮은 지연과 높은 안정성을 제공합니다.' },
+      protocol: { title: '다중 프로토콜', desc: 'VLESS, REALITY, Hysteria2, TUIC, AnyTLS 등 주요 프로토콜을 지원합니다.' },
+      client: { title: '모든 플랫폼 지원', desc: 'Windows, macOS, Android, iOS, Linux 모두 지원하며 구독을 한 번에 가져올 수 있습니다.' },
+      multi: { title: '한 계정, 여러 구독', desc: '하나의 계정으로 여러 구독을 보유하고 기기나 가족별로 나눠 쓸 수 있습니다.' },
+      traffic: { title: '투명한 사용량', desc: '사용량, 만료일, 트래픽 내역을 언제든지 확인할 수 있습니다.' },
+      secure: { title: '보안과 개인정보', desc: '모든 전송이 암호화되어 데이터와 개인정보를 보호합니다.' },
+    },
+    stepsEyebrow: '이용 방법',
+    stepsTitle: '세 단계로 시작하기',
+    steps: {
+      register: { title: '계정 만들기', desc: '이메일로 몇 초 만에 가입할 수 있습니다.' },
+      plan: { title: '요금제 선택', desc: '필요에 맞는 요금제를 선택하세요. 다양한 결제 수단을 지원합니다.' },
+      import: { title: '구독 가져오기', desc: '구독 링크를 복사하거나 QR 코드를 스캔해 바로 연결하세요.' },
+    },
+    ctaTitle: '세계와 연결할 준비가 되셨나요?',
+    ctaDesc: '지금 시작하고 더 빠르고 안정적인 연결을 경험하세요.',
+    rights: 'All rights reserved.',
+  },
 }
 
 export default m

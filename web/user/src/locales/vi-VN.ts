@@ -405,6 +405,35 @@ const m: Messages = {
     quickLoginHint: 'Quét mã QR hoặc mở liên kết để đăng nhập. Hiệu lực 60 giây, chỉ dùng một lần',
     generate: 'Tạo liên kết đăng nhập',
   },
+  home: {
+    badge: 'Mạng tăng tốc toàn cầu',
+    tagline: 'Dịch vụ tăng tốc mạng toàn cầu ổn định, nhanh và an toàn. Một tài khoản, kết nối mọi nơi.',
+    start: 'Bắt đầu ngay',
+    login: 'Đăng nhập',
+    hud: 'MẠNG LƯỚI TOÀN CẦU',
+    scroll: 'Khám phá',
+    featuresEyebrow: 'Ưu điểm',
+    featuresTitle: 'Sinh ra cho tốc độ và sự ổn định',
+    featuresDesc: 'Từ máy chủ đến ứng dụng, mọi thành phần đều được thiết kế để kết nối mượt mà hơn.',
+    features: {
+      global: { title: 'Máy chủ toàn cầu', desc: 'Tuyến chất lượng cao ở nhiều khu vực, tự động kết nối điểm gần nhất, độ trễ thấp và ổn định.' },
+      protocol: { title: 'Đa giao thức', desc: 'Hỗ trợ VLESS, REALITY, Hysteria2, TUIC, AnyTLS và nhiều giao thức khác.' },
+      client: { title: 'Mọi nền tảng', desc: 'Windows, macOS, Android, iOS, Linux. Nhập gói đăng ký chỉ với một chạm.' },
+      multi: { title: 'Nhiều gói trong một tài khoản', desc: 'Một tài khoản có thể sở hữu nhiều gói đăng ký cho các thiết bị hoặc người thân khác nhau.' },
+      traffic: { title: 'Lưu lượng minh bạch', desc: 'Xem lưu lượng đã dùng, ngày hết hạn và chi tiết sử dụng bất cứ lúc nào.' },
+      secure: { title: 'Bảo mật và riêng tư', desc: 'Toàn bộ dữ liệu được mã hóa khi truyền, bảo vệ quyền riêng tư của bạn.' },
+    },
+    stepsEyebrow: 'Cách sử dụng',
+    stepsTitle: 'Bắt đầu với ba bước',
+    steps: {
+      register: { title: 'Tạo tài khoản', desc: 'Đăng ký bằng email chỉ trong vài giây.' },
+      plan: { title: 'Chọn gói', desc: 'Chọn gói phù hợp, hỗ trợ nhiều phương thức thanh toán.' },
+      import: { title: 'Nhập gói đăng ký', desc: 'Sao chép liên kết hoặc quét mã QR trong ứng dụng và kết nối ngay.' },
+    },
+    ctaTitle: 'Sẵn sàng kết nối thế giới?',
+    ctaDesc: 'Bắt đầu ngay để có kết nối nhanh hơn, ổn định hơn.',
+    rights: 'Bảo lưu mọi quyền.',
+  },
 }
 
 export default m

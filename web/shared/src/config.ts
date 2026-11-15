@@ -7,6 +7,8 @@ export interface SiteInfo {
   url: string
   logo: string
   terms_url: string
+  /** 访客访问根路径时是否显示首页 */
+  home?: boolean
 }
 
 export interface RegisterInfo {

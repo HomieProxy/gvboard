@@ -92,6 +92,7 @@ func TestUserSide(t *testing.T) {
 		`<script>window.APP_CONFIG={"api":"/api/t1",`,
 		`"theme":{"config":{"footer":"\u003c/script\u003e\u003cb\u003ex\u003c/b\u003e"},"id":"custom"}`,
 		`"name":"测试\u003c站\u003e"`,
+		`"home":true`,
 		`"register":{`,
 		"</script></HEAD>",
 	} {

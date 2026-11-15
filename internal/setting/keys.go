@@ -227,6 +227,7 @@ var defs = []Def{
 	{Key: "logo", Type: TypeString, Default: "", Group: GroupSite},
 	{Key: "force_https", Type: TypeBool, Default: 0, Group: GroupSite},
 	{Key: "stop_register", Type: TypeBool, Default: 0, Group: GroupSite},
+	{Key: "home_enable", Type: TypeBool, Default: 1, Group: GroupSite},
 	{Key: "subscribe_url", Type: TypeString, Default: "", Group: GroupSite},
 	{Key: "subscribe_path", Type: TypeString, Default: "", Group: GroupSite, Validate: validateSubscribePath},
 	{Key: "try_out_enable", Type: TypeBool, Default: 0, Group: GroupSite},

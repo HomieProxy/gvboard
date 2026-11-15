@@ -582,12 +582,18 @@ func testHTTP(t *testing.T, e *env) {
 		Data SiteConfig `json:"data"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &site)
-	if w.Code != 200 || site.Data.Site.Name != "Gvboard" || site.Data.Register.CaptchaKey != "site-key" || len(site.Data.Register.EmailSuffixes) == 0 {
-		t.Errorf("公开站点配置不正确: %s", w.Body)
+	if w.Code != 200 || site.Data.Site.Name != "Gvboard" || !site.Data.Site.Home || site.Data.Register.CaptchaKey != "site-key" || len(site.Data.Register.EmailSuffixes) == 0 {
+		t.Errorf("公开站点配置不正确（首页默认开启）: %s", w.Body)
 	}
 	for _, leak := range []string{"secret-key", "is_email_verify", "recaptcha", "v2board"} {
 		if strings.Contains(strings.ToLower(w.Body.String()), strings.ToLower(leak)) {
 			t.Errorf("公开站点配置不应包含 %q: %s", leak, w.Body)
 		}
+	}
+	e.set(t, map[string]any{"home_enable": 0})
+	site.Data = SiteConfig{}
+	_ = json.Unmarshal(do(api, "GET", "/api/t1/site", "", nil).Body.Bytes(), &site)
+	if site.Data.Site.Home {
+		t.Error("关闭首页后 site.home 应为 false")
 	}
 }

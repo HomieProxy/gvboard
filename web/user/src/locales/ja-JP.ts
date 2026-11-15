@@ -405,6 +405,35 @@ const m: Messages = {
     quickLoginHint: 'QR コードを読み取るかリンクを開くとログインできます。60 秒間有効で 1 回のみ使用できます',
     generate: 'リンクを生成',
   },
+  home: {
+    badge: 'グローバル高速ネットワーク',
+    tagline: '安定・高速・安全なグローバルネットワーク高速化サービス。ひとつのアカウントで世界とつながる。',
+    start: '今すぐ始める',
+    login: 'ログイン',
+    hud: 'グローバルネットワーク',
+    scroll: 'スクロール',
+    featuresEyebrow: '特長',
+    featuresTitle: '速さと安定性のために',
+    featuresDesc: 'ノードからクライアントまで、より快適な接続のために設計されています。',
+    features: {
+      global: { title: 'グローバルノード', desc: '複数地域の高品質な回線に最寄りから接続。低遅延で安定しています。' },
+      protocol: { title: 'マルチプロトコル', desc: 'VLESS、REALITY、Hysteria2、TUIC、AnyTLS などに対応し、速度と耐障害性を両立。' },
+      client: { title: '全プラットフォーム対応', desc: 'Windows・macOS・Android・iOS・Linux に対応。サブスクリプションをワンタップで読み込めます。' },
+      multi: { title: '1 アカウントで複数サブスク', desc: '1 つのアカウントで複数のサブスクリプションを持ち、端末や家族ごとに使い分けられます。' },
+      traffic: { title: 'わかりやすい使用量', desc: '使用量・有効期限・通信明細をいつでも確認できます。' },
+      secure: { title: 'セキュリティとプライバシー', desc: '通信はすべて暗号化され、データとプライバシーを守ります。' },
+    },
+    stepsEyebrow: '使い方',
+    stepsTitle: '3 ステップで開始',
+    steps: {
+      register: { title: 'アカウント登録', desc: 'メールアドレスで数秒で登録できます。' },
+      plan: { title: 'プランを選択', desc: '用途に合ったプランを選択。複数の支払い方法に対応。' },
+      import: { title: 'サブスクを読み込む', desc: 'リンクをコピーするか QR コードを読み込んで、すぐに接続。' },
+    },
+    ctaTitle: '世界とつながる準備はできましたか？',
+    ctaDesc: '今すぐ始めて、より速く安定した接続を体験しましょう。',
+    rights: 'All rights reserved.',
+  },
 }
 
 export default m

@@ -41,6 +41,7 @@ export const configGroups: ConfigGroup[] = [
       { key: 'app_url', label: '站点网址', kind: 'text', help: '当前网站最新网址，将会在邮件等需要用于网址处体现。', placeholder: '请输入站点URL，末尾不要/' },
       { key: 'force_https', label: '强制HTTPS', kind: 'switch', help: '当站点没有使用HTTPS，CDN或反代开启强制HTTPS时需要开启。' },
       { key: 'logo', label: 'LOGO', kind: 'text', help: '用于显示需要LOGO的地方。', placeholder: '请输入LOGO URL，末尾不要/' },
+      { key: 'home_enable', label: '用户端首页', kind: 'switch', help: '开启后访客打开用户端时先看到首页；关闭后直接进入登录页。已登录的用户始终直接进入仪表盘。' },
       {
         key: 'subscribe_url',
         label: '订阅URL',

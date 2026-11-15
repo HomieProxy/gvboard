@@ -399,6 +399,35 @@ const m: Messages = {
     quickLoginHint: '用手機掃描 QR 碼或開啟連結即可登入，60 秒內有效且只能使用一次',
     generate: '產生登入連結',
   },
+  home: {
+    badge: '全球加速網路',
+    tagline: '穩定、高速、安全的全球網路加速服務，一個帳號暢連世界。',
+    start: '立即開始',
+    login: '登入帳號',
+    hud: '全球網路拓撲',
+    scroll: '向下探索',
+    featuresEyebrow: '核心優勢',
+    featuresTitle: '為速度與穩定而生',
+    featuresDesc: '從節點到用戶端，每個環節都經過精心設計，只為更流暢的連線體驗。',
+    features: {
+      global: { title: '全球節點', desc: '多地區優質線路，智慧就近接入，低延遲、高穩定。' },
+      protocol: { title: '多協定支援', desc: '支援 VLESS、REALITY、Hysteria2、TUIC、AnyTLS 等主流協定，兼顧速度與抗干擾能力。' },
+      client: { title: '全平台用戶端', desc: 'Windows、macOS、Android、iOS、Linux 全面支援，一鍵匯入訂閱即可使用。' },
+      multi: { title: '一個帳號多份訂閱', desc: '同一帳號可同時擁有多份訂閱，分給不同裝置或家人使用，互不影響。' },
+      traffic: { title: '用量清晰透明', desc: '已用流量、到期時間與流量明細隨時可查，每一筆消耗都清清楚楚。' },
+      secure: { title: '安全與隱私', desc: '全程加密傳輸，有效保護你的資料與隱私。' },
+    },
+    stepsEyebrow: '使用流程',
+    stepsTitle: '三步開始使用',
+    steps: {
+      register: { title: '註冊帳號', desc: '使用電子郵件註冊，幾秒鐘即可完成。' },
+      plan: { title: '選擇方案', desc: '依需求選擇合適的方案，支援多種付款方式。' },
+      import: { title: '匯入訂閱', desc: '複製訂閱連結或掃碼匯入用戶端，即刻連線。' },
+    },
+    ctaTitle: '準備好連接世界了嗎？',
+    ctaDesc: '現在就開始，體驗更快、更穩的網路連線。',
+    rights: '保留所有權利',
+  },
 }
 
 export default m

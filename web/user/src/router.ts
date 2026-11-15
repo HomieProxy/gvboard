@@ -4,7 +4,7 @@ import {
   LayoutDashboardIcon, LayersIcon, ShoppingBagIcon, ReceiptTextIcon, WalletIcon, UsersIcon, MessageSquareIcon, BookOpenIcon,
   MegaphoneIcon, ActivityIcon, UserIcon,
 } from '@lucide/vue'
-import { token } from './api'
+import { cfg, token } from './api'
 
 export interface NavItem {
   path: string
@@ -51,6 +51,7 @@ export const router = createRouter({
   history: createWebHashHistory(),
   scrollBehavior: () => ({ top: 0 }),
   routes: [
+    { path: '/', component: () => import('./views/Home.vue'), meta: { public: true } },
     {
       path: '/',
       component: () => import('./layouts/AuthLayout.vue'),
@@ -66,7 +67,11 @@ export const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  if (to.path === '/') return token.value ? '/dashboard' : '/login'
+  if (to.path === '/') {
+    if (token.value) return '/dashboard'
+    if (cfg.value.site.home === false) return '/login'
+    return
+  }
   // 快捷登录链接（带 verify 参数）即使已登录也交给登录页处理
   if (to.meta.public) {
     if (token.value && !to.query.verify) return '/dashboard'

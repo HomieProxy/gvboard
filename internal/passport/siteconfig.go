@@ -16,6 +16,8 @@ type SiteInfo struct {
 	URL         string `json:"url"`
 	Logo        string `json:"logo"`
 	TermsURL    string `json:"terms_url"`
+	// Home 访客访问根路径时是否显示首页（关闭时直接进入登录页）。
+	Home bool `json:"home"`
 }
 
 // RegisterInfo 注册页需要的选项。
@@ -36,6 +38,7 @@ func BuildSiteConfig(s *setting.Service) SiteConfig {
 			URL:         s.String("app_url"),
 			Logo:        s.String("logo"),
 			TermsURL:    s.String("tos_url"),
+			Home:        s.Bool("home_enable"),
 		},
 		Register: RegisterInfo{
 			Closed:         s.Bool("stop_register"),

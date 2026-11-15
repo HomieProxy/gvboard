@@ -19,7 +19,7 @@ export interface UserConfig {
 
 export const cfg = ref<UserConfig>({
   api: '',
-  site: { name: '', description: '', url: '', logo: '', terms_url: '' },
+  site: { name: '', description: '', url: '', logo: '', terms_url: '', home: true },
   register: { closed: false, email_code: false, invite_required: false, email_suffixes: [], captcha_key: '' },
   theme: { id: 'default', config: {} },
 })
