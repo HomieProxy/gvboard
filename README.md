@@ -164,6 +164,14 @@ bash install.sh
 
 需要事先准备好空数据库（MySQL 字符集 `utf8mb4`）与 Redis 6.0+。Docker、宝塔面板、手动安装、从原生产库迁移的步骤见 [部署文档](docs/部署文档.md)。
 
+## 对接节点
+
+节点通信接口（`/api/v1/server/...`、`/api/v2/server/...`）与原版路径相同且始终可用，**不需要开启任何 `compat.*` 兼容开关**。v2node、V2bX 等节点后端按原来的方式填写：面板地址填面板域名，`ApiKey` 填管理端“系统配置 → 节点”中的通讯密钥，`NodeID` 填节点 ID。从原 v2board 迁移的站点，节点配置无需修改。
+
+已在本地用 v2node v0.4.7 实测 VLESS（TCP / REALITY + Vision）、VMess WS、Shadowsocks、Trojan、Hysteria2、TUIC、AnyTLS：节点拉取配置与用户、真实代理流量、流量上报入账、在线 IP 上报均正常。
+
+> v2node v0.4.7 官方镜像的 Shadowsocks 2022 节点会启动失败（`proxy/shadowsocks_2022: bad key`），并导致同一个 v2node 进程里的其它节点也无法启动。这是 v2node 生成内部占位用户密钥的问题，对接原版 v2board 同样存在；上游已在提交 `1a3f896` 修复，请使用之后发布的版本或自行从源码编译。
+
 ## 从源码编译
 
 需要 Go 1.26、Node.js 20+（只有修改前端时需要）。
