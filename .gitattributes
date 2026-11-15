@@ -1,6 +1,8 @@
 * text=auto eol=lf
 *.go text eol=lf
 *.bat text eol=crlf
+# 原版的 Surge / Surfboard 规则模板为 CRLF，订阅内容需逐字节一致，不做换行转换
+internal/subscribe/rules/*.conf -text
 *.png binary
 *.jpg binary
 *.ico binary
