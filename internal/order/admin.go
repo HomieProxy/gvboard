@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -81,6 +82,18 @@ func (s *Service) SavePlan(ctx context.Context, in PlanInput) error {
 	if m := in.ResetTrafficMethod; m != nil && (*m < 0 || *m > 4) {
 		return errAdminInvalid
 	}
+	// 套餐表的这些列为 int，超出范围时数据库拒绝写入
+	for _, v := range []*int64{in.MonthPrice, in.QuarterPrice, in.HalfYearPrice, in.YearPrice, in.TwoYearPrice,
+		in.ThreeYearPrice, in.OnetimePrice, in.ResetPrice} {
+		if !fitsInt32(v) {
+			return errAdminPlanPrice
+		}
+	}
+	for _, v := range []*int64{in.TransferEnable, in.DeviceLimit, in.SpeedLimit, in.CapacityLimit} {
+		if !fitsInt32(v) {
+			return errAdminPlanRange
+		}
+	}
 	p := model.Plan{
 		Name: in.Name, Content: in.Content, GroupID: *in.GroupID, TransferEnable: *in.TransferEnable,
 		DeviceLimit: in.DeviceLimit, SpeedLimit: in.SpeedLimit, CapacityLimit: in.CapacityLimit, ResetTrafficMethod: in.ResetTrafficMethod,
@@ -111,6 +124,10 @@ func (s *Service) SavePlan(ctx context.Context, in PlanInput) error {
 		p.ID = in.ID
 		return tx.Model(&p).Select(planColumns).Updates(&p).Error
 	})
+}
+
+func fitsInt32(v *int64) bool {
+	return v == nil || (*v >= math.MinInt32 && *v <= math.MaxInt32)
 }
 
 // DeletePlan 删除套餐。存在相关订单或订阅时不能删除（对应原项目 admin/plan/drop）。

@@ -684,6 +684,10 @@ func testTimeoutAndIdempotent(t *testing.T, e *env) {
 func testAdminPlanCoupon(t *testing.T, e *env) {
 	ctx := context.Background()
 	wantErr(t, e.SavePlan(ctx, PlanInput{Name: "x"}), errAdminInvalid)
+	big := PlanInput{Name: "x", GroupID: ptr(int64(3)), TransferEnable: ptr(int64(10)), YearPrice: ptr(int64(9999999900))}
+	wantErr(t, e.SavePlan(ctx, big), errAdminPlanPrice)
+	big.YearPrice, big.TransferEnable = nil, ptr(int64(1)<<40)
+	wantErr(t, e.SavePlan(ctx, big), errAdminPlanRange)
 	in := PlanInput{Name: "新套餐", GroupID: ptr(int64(3)), TransferEnable: ptr(int64(10)), MonthPrice: ptr(int64(990)), SpeedLimit: ptr(int64(5))}
 	if err := e.SavePlan(ctx, in); err != nil {
 		t.Fatal(err)

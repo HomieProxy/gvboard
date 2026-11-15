@@ -42,6 +42,8 @@ var (
 var (
 	errAdminInvalid      = httpx.Validation("参数有误")
 	errAdminPlanNotExist = httpx.NotFoundErr("该订阅不存在")
+	errAdminPlanPrice    = httpx.Validation("金额超出范围（最大 21474836.47）")
+	errAdminPlanRange    = httpx.Validation("流量、设备数、限速或容纳用户量超出范围")
 	errAdminPlanHasOrder = httpx.Conflict("该订阅下存在订单无法删除")
 	errAdminPlanHasSub   = httpx.Conflict("该订阅下存在用户无法删除")
 	errAdminCouponNone   = httpx.NotFoundErr("优惠券不存在")
