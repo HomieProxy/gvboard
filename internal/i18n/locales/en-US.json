@@ -98,6 +98,7 @@
     "There are too many password errors, please try again after :minute minutes.": "There are too many password errors, please try again after :minute minutes.",
     "Reset failed, Please try again later": "Reset failed, Please try again later",
     "Too many requests, please try again later.": "Too many requests, please try again later.",
+    "System busy, please try again later.": "System busy, please try again later.",
     "Not logged in or login expired": "Not logged in or login expired",
     "Invalid parameters": "Invalid parameters",
     "Renewal is not allowed": "Renewal is not allowed",

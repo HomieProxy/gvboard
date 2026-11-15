@@ -256,6 +256,32 @@ func TestClientsValidation(t *testing.T) {
 	}
 }
 
+func TestProxyCIDRsValidation(t *testing.T) {
+	cases := []struct {
+		in   []string
+		fail bool
+	}{
+		{nil, false},
+		{[]string{"173.245.48.0/20", "2400:cb00::/32", "1.2.3.4", "::1", "10.0.0.0/8", "2001::/16"}, false},
+		{[]string{"0.0.0.0/0"}, true},
+		{[]string{"::/0"}, true},
+		{[]string{"10.0.0.0/7"}, true},
+		{[]string{"2001::/15"}, true},
+		{[]string{"::ffff:0.0.0.0/96"}, true},
+		{[]string{"1.2.3"}, true},
+		{[]string{" 1.2.3.4"}, true},
+		{[]string{"fe80::1%eth0"}, true},
+	}
+	for _, c := range cases {
+		if err := validateProxyCIDRs(c.in); (err != nil) != c.fail {
+			t.Errorf("%v 校验结果 %v，期望失败=%v", c.in, err, c.fail)
+		}
+	}
+	if err := validateProxyCIDRs(make([]string, 501)); err == nil {
+		t.Error("超过 500 项应报错")
+	}
+}
+
 func containsSubstr(list []string, sub string) bool {
 	for _, s := range list {
 		if strings.Contains(s, sub) {

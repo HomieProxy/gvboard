@@ -98,6 +98,7 @@
     "There are too many password errors, please try again after :minute minutes.": "密码错误次数过多，请 :minute 分钟后再试",
     "Reset failed, Please try again later": "重置失败，请稍后再试",
     "Too many requests, please try again later.": "请求过于频繁，请稍后再试",
+    "System busy, please try again later.": "系统繁忙，请稍后再试",
     "Not logged in or login expired": "未登录或登录已过期",
     "Invalid parameters": "参数有误",
     "Renewal is not allowed": "当前不允许提前开始新周期",

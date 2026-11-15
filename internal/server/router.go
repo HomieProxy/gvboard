@@ -10,6 +10,7 @@ import (
 	"gvboard/internal/config"
 	"gvboard/internal/httpx"
 	"gvboard/internal/middleware"
+	"gvboard/internal/realip"
 )
 
 // LegacyPrefix 原 v2board 接口前缀。
@@ -19,6 +20,8 @@ const LegacyPrefix = "/api/v1"
 type Router struct {
 	Engine *gin.Engine
 	Config *config.Config
+	// RealIP 真实 IP 解析器，启动时由调用方接入后台设置中的可信代理。
+	RealIP *realip.Resolver
 
 	// API 原生 API（自定义前缀），Gvboard 前端只使用这一组。
 	API *gin.RouterGroup
@@ -77,7 +80,12 @@ func NewRouter(cfg *config.Config, log *zap.Logger, extra ...gin.HandlerFunc) (*
 	e.HandleMethodNotAllowed = false
 	e.RemoveExtraSlash = false
 	e.ContextWithFallback = true
-	if err := e.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+	realIP, err := realip.New(cfg.Server.TrustedProxies)
+	if err != nil {
+		return nil, err
+	}
+	// 真实 IP 由 realIP 解析并写回 RemoteAddr，Gin 不再信任任何代理，c.ClientIP() 即解析结果。
+	if err := e.SetTrustedProxies(nil); err != nil {
 		return nil, err
 	}
 
@@ -86,6 +94,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, extra ...gin.HandlerFunc) (*
 		corsPrefixes = append(corsPrefixes, LegacyPrefix)
 	}
 	e.Use(
+		realIP.Middleware(),
 		middleware.Recovery(log),
 		middleware.SecurityHeaders(),
 		middleware.Logger(log),
@@ -97,6 +106,7 @@ func NewRouter(cfg *config.Config, log *zap.Logger, extra ...gin.HandlerFunc) (*
 	r := &Router{
 		Engine:     e,
 		Config:     cfg,
+		RealIP:     realIP,
 		API:        e.Group(cfg.API.Prefix),
 		NodeV1:     e.Group("/api/v1/server"),
 		NodeV2:     e.Group("/api/v2/server"),

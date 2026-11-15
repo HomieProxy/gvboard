@@ -199,9 +199,13 @@ func (s *Service) Register(ctx context.Context, in RegisterInput, cl Client) (*A
 		}
 	}
 
+	hash, err := util.HashPasswordLimited(ctx, in.Password)
+	if err != nil {
+		return nil, passwordErr(err)
+	}
 	now := s.now().Unix()
 	var user *model.User
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		exist, err := s.findUserTx(tx, in.Email)
 		if err != nil {
 			return err
@@ -209,7 +213,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput, cl Client) (*A
 		if exist {
 			return errEmailExists
 		}
-		nu := account.NewUser{Email: in.Email, Password: in.Password, LastLoginAt: &now}
+		nu := account.NewUser{Email: in.Email, PasswordHash: hash, LastLoginAt: &now}
 		if in.InviteCode != "" {
 			inviterID, found, err := s.useInviteCode(tx, in.InviteCode)
 			if err != nil {
@@ -300,6 +304,9 @@ func (s *Service) Login(ctx context.Context, in LoginInput, cl Client) (*AuthRes
 	if err := passwordFormat(in.Password, 0); err != nil {
 		return nil, err
 	}
+	if err := s.loginIPLimit(ctx, cl.IP); err != nil {
+		return nil, err
+	}
 	limit := s.Settings.Bool("password_limit_enable")
 	limitKey := s.Cache.KeyOf(cache.KeyPasswordErrorLimit, cacheEmail(in.Email))
 	expire := s.Settings.Int("password_limit_expire")
@@ -319,7 +326,11 @@ func (s *Service) Login(ctx context.Context, in LoginInput, cl Client) (*AuthRes
 	if u == nil {
 		return nil, errLoginFailed
 	}
-	if !util.VerifyPassword(deref(u.PasswordAlgo), deref(u.PasswordSalt), in.Password, u.Password) {
+	ok, err := util.CheckPassword(ctx, deref(u.PasswordAlgo), deref(u.PasswordSalt), in.Password, u.Password)
+	if err != nil {
+		return nil, passwordErr(err)
+	}
+	if !ok {
 		if limit {
 			if err := s.incr(ctx, limitKey, time.Duration(expire)*time.Minute); err != nil {
 				return nil, err
@@ -331,6 +342,37 @@ func (s *Service) Login(ctx context.Context, in LoginInput, cl Client) (*AuthRes
 		return nil, errSuspended
 	}
 	return s.issue(ctx, u, cl)
+}
+
+// loginIPLimit 按 IP 限制登录次数（成功与失败都计数），固定窗口，窗口从第一次登录开始。
+func (s *Service) loginIPLimit(ctx context.Context, ip string) error {
+	if !s.Settings.Bool("login_limit_by_ip_enable") || ip == "" {
+		return nil
+	}
+	key := s.Cache.KeyOf(cache.KeyLoginIPRateLimit, ip)
+	n, err := s.getInt(ctx, key)
+	if err != nil {
+		return err
+	}
+	if n >= s.Settings.Int("login_limit_by_ip_count") {
+		return errTooMany
+	}
+	hits, err := s.Cache.Incr(ctx, key).Result()
+	if err != nil {
+		return err
+	}
+	if hits == 1 {
+		return s.Cache.Expire(ctx, key, time.Duration(s.Settings.Int("login_limit_by_ip_expire"))*time.Minute).Err()
+	}
+	return nil
+}
+
+// passwordErr 密码计算排队超时时提示稍后再试。
+func passwordErr(err error) error {
+	if errors.Is(err, util.ErrPasswordBusy) {
+		return errBusy
+	}
+	return err
 }
 
 func deref(p *string) string {

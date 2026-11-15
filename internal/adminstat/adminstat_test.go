@@ -278,7 +278,7 @@ func TestHTTP(t *testing.T) {
 			t.Fatal(err)
 		}
 		jobs := &fakeJobs{}
-		r.Mount(&Module{DB: e.db, Cache: e.cache, Settings: e.st, Queue: &fakeQueue{workers: 1}, Jobs: jobs, Auth: e.auth, Now: func() time.Time { return e.now }})
+		r.Mount(&Module{DB: e.db, Cache: e.cache, Settings: e.st, Queue: &fakeQueue{workers: 1}, Jobs: jobs, Auth: e.auth, RealIP: r.RealIP, Now: func() time.Time { return e.now }})
 		do := func(method, path, tok string) (int, map[string]any) {
 			req := httptest.NewRequest(method, "/api/t1/"+path, nil)
 			req.Header.Set("Authorization", tok)
@@ -307,6 +307,9 @@ func TestHTTP(t *testing.T) {
 		}
 		if _, body := get(secure+"/system/status", adminTok); body["data"].(map[string]any)["queue"] != true {
 			t.Fatalf("系统状态错误：%v", body)
+		}
+		if _, body := get(secure+"/system/status", adminTok); body["data"].(map[string]any)["real_ip"].(map[string]any)["warning"] != false {
+			t.Fatalf("真实 IP 识别状态错误：%v", body)
 		}
 		for _, p := range []string{"stat/server-rank", "stat/user", "stat/user?user_id=x", "system/logs?level=x"} {
 			if code, _ := get(secure+"/"+p, adminTok); code != http.StatusUnprocessableEntity {

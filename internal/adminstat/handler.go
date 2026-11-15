@@ -11,6 +11,7 @@ import (
 	"gvboard/internal/auth"
 	"gvboard/internal/cache"
 	"gvboard/internal/httpx"
+	"gvboard/internal/realip"
 	"gvboard/internal/scheduler"
 	"gvboard/internal/server"
 	"gvboard/internal/setting"
@@ -26,6 +27,7 @@ type Module struct {
 	SysLog   *syslog.Writer // 可为 nil
 	Jobs     JobRunner      // 可为 nil，此时任务接口不挂载
 	Auth     *auth.Service
+	RealIP   *realip.Resolver // 可为 nil
 	Now      func() time.Time // 测试注入，nil 时为 time.Now
 }
 
@@ -115,6 +117,10 @@ func (m *Module) status(c *gin.Context) {
 	}
 	if m.SysLog != nil {
 		st.SysLogDropped = m.SysLog.Dropped()
+	}
+	if m.RealIP != nil {
+		rep := m.RealIP.Report()
+		st.RealIP = &rep
 	}
 	httpx.OK(c, st)
 }

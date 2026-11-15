@@ -3,6 +3,7 @@ package setting
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"regexp"
 	"unicode/utf8"
@@ -186,6 +187,38 @@ func validateLogHeaders(v any) error {
 	return nil
 }
 
+// validateProxyCIDRs 可信代理 IP 段：IP 或 CIDR，拒绝过大的范围（IPv4 大于 /8、IPv6 大于 /16），
+// 否则任何人都能通过 X-Forwarded-For 伪造 IP。
+func validateProxyCIDRs(v any) error {
+	list, _ := v.([]string)
+	if len(list) > 500 {
+		return fmt.Errorf("最多填写 500 个 IP 段")
+	}
+	for _, s := range list {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			a, err := netip.ParseAddr(s)
+			if err != nil || a.Zone() != "" {
+				return fmt.Errorf("%q 不是合法的 IP 或 IP 段", s)
+			}
+			continue
+		}
+		if p.Addr().Zone() != "" {
+			return fmt.Errorf("%q 不是合法的 IP 或 IP 段", s)
+		}
+		bits, minBits := p.Bits(), 16
+		if p.Addr().Is4() {
+			minBits = 8
+		} else if p.Addr().Is4In6() {
+			bits, minBits = bits-96, 8
+		}
+		if bits < minBits {
+			return fmt.Errorf("IP 段 %q 范围过大，IPv4 不能大于 /8，IPv6 不能大于 /16", s)
+		}
+	}
+	return nil
+}
+
 var defs = []Def{
 	// 站点
 	{Key: "app_name", Type: TypeString, Default: "Gvboard", Group: GroupSite},
@@ -315,6 +348,10 @@ var defs = []Def{
 	{Key: "password_limit_enable", Type: TypeBool, Default: 1, Group: GroupSafe},
 	{Key: "password_limit_count", Type: TypeInt, Default: 5, Group: GroupSafe},
 	{Key: "password_limit_expire", Type: TypeInt, Default: 60, Group: GroupSafe},
+	{Key: "login_limit_by_ip_enable", Type: TypeBool, Default: 0, Group: GroupSafe},
+	{Key: "login_limit_by_ip_count", Type: TypeInt, Default: 30, Group: GroupSafe, Validate: intRange(1, 100000)},
+	{Key: "login_limit_by_ip_expire", Type: TypeInt, Default: 10, Group: GroupSafe, Validate: intRange(1, 1440)},
+	{Key: "trusted_proxy_cidrs", Type: TypeStrings, Default: []string{}, Group: GroupSafe, Validate: validateProxyCIDRs},
 
 	// Gvboard 新增
 	{Key: "subscription_limit", Type: TypeInt, Default: 5, Group: GroupGvboard},

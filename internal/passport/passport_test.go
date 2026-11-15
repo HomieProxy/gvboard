@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"gvboard/internal/auth"
+	"gvboard/internal/cache"
 	"gvboard/internal/config"
 	"gvboard/internal/hook"
 	"gvboard/internal/httpx"
@@ -368,6 +369,27 @@ func testLogin(t *testing.T, e *env) {
 	e.set(t, map[string]any{"password_limit_enable": 0})
 	if _, err := login("user@x.com", "password123"); err != nil {
 		t.Fatalf("关闭限制后应能登录: %v", err)
+	}
+
+	// 按 IP 限制登录次数（默认关闭）：成功与失败都计数，换 IP 不受影响
+	e.set(t, map[string]any{"login_limit_by_ip_enable": 1, "login_limit_by_ip_count": 2, "login_limit_by_ip_expire": 10})
+	ipA, ipB := Client{IP: "10.8.8.8"}, Client{IP: "10.8.8.9"}
+	if _, err := e.svc.Login(ctx, LoginInput{Email: "user@x.com", Password: "password123"}, ipA); err != nil {
+		t.Fatal(err)
+	}
+	_, err = e.svc.Login(ctx, LoginInput{Email: "nobody@x.com", Password: "password123"}, ipA)
+	wantErr(t, err, errLoginFailed)
+	_, err = e.svc.Login(ctx, LoginInput{Email: "user@x.com", Password: "password123"}, ipA)
+	wantErr(t, err, errTooMany)
+	if ttl := e.svc.Cache.TTL(ctx, e.svc.Cache.KeyOf(cache.KeyLoginIPRateLimit, ipA.IP)).Val(); ttl <= 9*time.Minute || ttl > 10*time.Minute {
+		t.Errorf("限制时间应为 10 分钟，实际 %v", ttl)
+	}
+	if _, err := e.svc.Login(ctx, LoginInput{Email: "user@x.com", Password: "password123"}, ipB); err != nil {
+		t.Fatalf("其它 IP 不应受影响: %v", err)
+	}
+	e.set(t, map[string]any{"login_limit_by_ip_enable": 0})
+	if _, err := e.svc.Login(ctx, LoginInput{Email: "user@x.com", Password: "password123"}, ipA); err != nil {
+		t.Fatalf("关闭后应能登录: %v", err)
 	}
 
 	e.db.Model(&model.User{}).Where("email = ?", "User@x.com").Update("banned", 1)

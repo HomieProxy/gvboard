@@ -55,6 +55,7 @@ interface Rank {
 interface Status {
   schedule: boolean
   queue: boolean
+  real_ip?: { total: number; suspect: number; warning: boolean; samples: string[] } | null
 }
 
 const ov = ref<Overview | null>(null)
@@ -172,6 +173,20 @@ const dayText = computed(() => (day.value === 'today' ? '今日' : '昨日'))
       <AlertTitle>后台服务异常</AlertTitle>
       <AlertDescription>
         {{ !status.schedule ? '定时任务未运行。' : '' }}{{ !status.queue ? '队列处理器未运行，邮件、通知等任务不会执行。' : '' }}请检查 worker 进程。
+      </AlertDescription>
+    </Alert>
+    <Alert v-if="status?.real_ip?.warning">
+      <TriangleAlertIcon />
+      <AlertTitle>可能没有正确识别用户真实 IP</AlertTitle>
+      <AlertDescription>
+        <p>
+          最近 {{ status.real_ip.total }} 个请求中有 {{ status.real_ip.suspect }} 个前面还有一层未被信任的代理（通常是 CDN），
+          这些请求被记成了代理的 IP，例如：{{ status.real_ip.samples.join('、') }}。IP 注册限制、IP 登录限制、订阅风控与日志都会受影响。
+        </p>
+        <p>
+          请到 <RouterLink :to="{ path: '/config', query: { tab: 'safe' } }" class="text-primary hover:underline">系统设置 → 安全 → 可信代理IP段</RouterLink>
+          填写 CDN 的回源 IP 段，保存后立即生效。多实例部署时各实例分别统计。
+        </p>
       </AlertDescription>
     </Alert>
 

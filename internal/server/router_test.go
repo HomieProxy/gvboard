@@ -112,6 +112,33 @@ func TestPing(t *testing.T) {
 	}
 }
 
+func TestClientIP(t *testing.T) {
+	cfg := testConfig()
+	cfg.Server.TrustedProxies = []string{"127.0.0.1"}
+	r := newTestRouter(t, cfg)
+	cdn := []string{}
+	r.RealIP.UseDynamic(func() []string { return cdn })
+	var got string
+	r.API.GET("/ip", func(c *gin.Context) { got = c.ClientIP() })
+	get := func(remote, xff string) string {
+		req := httptest.NewRequest(http.MethodGet, "/api/testprefix/ip", nil)
+		req.RemoteAddr = remote
+		req.Header.Set("X-Forwarded-For", xff)
+		r.Engine.ServeHTTP(httptest.NewRecorder(), req)
+		return got
+	}
+	if ip := get("127.0.0.1:1", "1.2.3.4, 104.16.0.1"); ip != "104.16.0.1" {
+		t.Errorf("未配置 CDN 时应取 CDN 地址，实际 %s", ip)
+	}
+	cdn = []string{"104.16.0.0/13"}
+	if ip := get("127.0.0.1:1", "1.2.3.4, 104.16.0.1"); ip != "1.2.3.4" {
+		t.Errorf("后台加入 CDN 后应取用户地址，实际 %s", ip)
+	}
+	if ip := get("5.6.7.8:1", "1.2.3.4"); ip != "5.6.7.8" {
+		t.Errorf("不可信来源的转发头应忽略，实际 %s", ip)
+	}
+}
+
 func TestLegacyGroupSwitch(t *testing.T) {
 	cfg := testConfig()
 	r := newTestRouter(t, cfg)

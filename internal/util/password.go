@@ -1,10 +1,14 @@
 package util
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
+	"runtime"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -37,6 +41,57 @@ func VerifyPassword(algo, salt, password, hash string) bool {
 func HashPassword(password string) (string, error) {
 	b, err := bcrypt.GenerateFromPassword(bcryptInput(password), bcrypt.DefaultCost)
 	return string(b), err
+}
+
+// ErrPasswordBusy 等待密码计算名额超时。
+var ErrPasswordBusy = errors.New("password hashing busy")
+
+// 未登录即可触发的 bcrypt 计算（登录、注册）最多同时占用一半 CPU 核心，
+// 大量请求时排队等待，超时返回 ErrPasswordBusy，保证其它接口仍有 CPU 可用。
+var (
+	passwordSlots = make(chan struct{}, max(1, runtime.GOMAXPROCS(0)/2))
+	passwordWait  = 3 * time.Second
+)
+
+func acquirePasswordSlot(ctx context.Context) (func(), error) {
+	select {
+	case passwordSlots <- struct{}{}:
+		return func() { <-passwordSlots }, nil
+	default:
+	}
+	t := time.NewTimer(passwordWait)
+	defer t.Stop()
+	select {
+	case passwordSlots <- struct{}{}:
+		return func() { <-passwordSlots }, nil
+	case <-t.C:
+		return nil, ErrPasswordBusy
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// CheckPassword 带并发上限的 VerifyPassword，供未登录即可调用的接口使用。
+func CheckPassword(ctx context.Context, algo, salt, password, hash string) (bool, error) {
+	if algo != "" {
+		return VerifyPassword(algo, salt, password, hash), nil
+	}
+	release, err := acquirePasswordSlot(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	return VerifyPassword(algo, salt, password, hash), nil
+}
+
+// HashPasswordLimited 带并发上限的 HashPassword，供未登录即可调用的接口使用。
+func HashPasswordLimited(ctx context.Context, password string) (string, error) {
+	release, err := acquirePasswordSlot(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
+	return HashPassword(password)
 }
 
 // bcrypt 只使用前 72 字节。PHP 静默截断，Go 对超长密码直接报错，这里按 PHP 的方式截断，

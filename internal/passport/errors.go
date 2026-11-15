@@ -31,4 +31,5 @@ var (
 	errResetLimit    = httpx.TooMany("Reset failed, Please try again later")
 	errCodeSent      = httpx.TooMany("Email verification code has been sent, please request again later")
 	errTooMany       = httpx.TooMany("Too many requests, please try again later.")
+	errBusy          = httpx.TooMany("System busy, please try again later.")
 )

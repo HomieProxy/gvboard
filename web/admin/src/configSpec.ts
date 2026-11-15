@@ -113,6 +113,28 @@ export const configGroups: ConfigGroup[] = [
         placeholder: '请输入',
         showIf: 'password_limit_enable',
       },
+      {
+        key: 'login_limit_by_ip_enable',
+        label: 'IP登录限制',
+        kind: 'switch',
+        help: '开启后同一IP在时间窗口内的登录次数（成功与失败都计入）超过上限将被暂时限制。使用CDN或反向代理时请先在下方配置可信代理IP段，否则所有用户会被视为同一IP。',
+      },
+      { key: 'login_limit_by_ip_count', label: '次数', kind: 'int', help: '时间窗口内允许的登录次数。', placeholder: '30', showIf: 'login_limit_by_ip_enable' },
+      {
+        key: 'login_limit_by_ip_expire',
+        label: '时间窗口(分钟)',
+        kind: 'int',
+        help: '从第一次登录开始计时，窗口结束后重新计数。',
+        placeholder: '10',
+        showIf: 'login_limit_by_ip_enable',
+      },
+      {
+        key: 'trusted_proxy_cidrs',
+        label: '可信代理IP段',
+        kind: 'tags',
+        help: '前端或接口经过CDN时，填写CDN的回源IP段（如 173.245.48.0/20），系统才能识别用户真实IP。与配置文件 server.trusted_proxies 合并生效，保存后立即生效。IP段可在CDN服务商的文档中查到；不能填写 0.0.0.0/0 等过大的范围，否则任何人都能伪造IP。',
+        placeholder: '输入IP或IP段后回车',
+      },
     ],
   },
   {

@@ -13,6 +13,7 @@ import (
 	"gvboard/internal/cache"
 	"gvboard/internal/model"
 	"gvboard/internal/queue"
+	"gvboard/internal/realip"
 )
 
 // scheduleTimeout 定时任务心跳超过该时间未更新即视为未运行（与原项目一致为 120 秒）。
@@ -32,6 +33,8 @@ type Status struct {
 	QueueWorkers        int    `json:"queue_workers"`         // 队列处理器进程数
 	QueueConcurrency    int    `json:"queue_concurrency"`     // 总并发数
 	SysLogDropped       int64  `json:"syslog_dropped"`        // 本实例因缓冲区满丢弃的系统日志数
+	// RealIP 本实例最近 10～20 分钟的真实 IP 识别情况，warning 为 true 时可能没有把 CDN 的 IP 段加入可信代理。
+	RealIP *realip.Report `json:"real_ip"`
 }
 
 // SystemStatus 读取定时任务心跳与队列处理器。

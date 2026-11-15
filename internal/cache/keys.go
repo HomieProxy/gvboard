@@ -17,6 +17,7 @@ const (
 	KeyRegisterIPRateLimit          KeyName = "register_ip_rate_limit"         // 注册频率限制
 	KeyLastSendLoginWithMailLinkTS  KeyName = "last_send_login_with_mail_link" // 最后一次发送邮件登录链接时间
 	KeyPasswordErrorLimit           KeyName = "password_error_limit"           // 密码错误次数限制
+	KeyLoginIPRateLimit             KeyName = "login_ip_rate_limit"            // 登录按 IP 限流
 	KeyUserSessions                 KeyName = "user_sessions"                  // 用户会话
 	KeyForgetRequestLimit           KeyName = "forget_request_limit"           // 找回密码次数限制
 	KeySendEmailCodeIPLimit         KeyName = "send_email_code_ip_limit"       // 发送邮箱验证码按 IP 限流（原项目 RateLimiter）
