@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gvboard · 用 Go 重写的 v2board 面板</title>
+<meta name="description" content="Gvboard 是用 Go 重写的代理服务面板，兼容原 v2board 数据库、节点接口与订阅格式。单个可执行文件，支持单账号多订阅、订阅风控、插件与主题。">
+<meta property="og:title" content="Gvboard">
+<meta property="og:description" content="用 Go 重写的 v2board 面板：单个可执行文件，兼容原生产数据库，性能数倍提升。">
+<meta name="theme-color" content="#0b0d17">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236366f1'/%3E%3Ctext x='16' y='22' font-size='17' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b0d17; --bg2: #11142a; --card: rgba(255,255,255,.04); --line: rgba(255,255,255,.09);
+    --text: #e6e8f2; --muted: #9aa0b8; --brand: #6366f1; --brand2: #ec4899; --ok: #10b981;
+    --radius: 14px; --max: 1120px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); line-height: 1.65;
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; text-decoration: none; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 20px; }
+
+  /* 顶栏 */
+  header { position: sticky; top: 0; z-index: 10; backdrop-filter: saturate(160%) blur(10px);
+           background: rgba(11,13,23,.72); border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; height: 60px; gap: 24px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+  .logo i { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font-style: normal;
+            background: linear-gradient(135deg, var(--brand), var(--brand2)); color: #fff; font-size: 15px; }
+  nav { display: flex; gap: 22px; margin-left: auto; font-size: 14px; color: var(--muted); }
+  nav a:hover { color: var(--text); }
+  .gh { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line);
+        border-radius: 8px; font-size: 14px; }
+  .gh:hover { border-color: rgba(255,255,255,.25); }
+
+  /* 首屏 */
+  .hero { position: relative; overflow: hidden; padding: 110px 0 90px; text-align: center; }
+  .hero::before { content: ""; position: absolute; inset: -40% -10% auto; height: 720px; pointer-events: none;
+                  background: radial-gradient(closest-side, rgba(99,102,241,.32), transparent 70%),
+                              radial-gradient(closest-side at 70% 60%, rgba(236,72,153,.18), transparent 70%); }
+  .hero > .wrap { position: relative; }
+  .badge { display: inline-flex; gap: 8px; align-items: center; padding: 5px 12px; border-radius: 999px;
+           border: 1px solid var(--line); background: var(--card); font-size: 13px; color: var(--muted); }
+  .badge b { color: var(--ok); font-weight: 600; }
+  h1 { font-size: clamp(36px, 6vw, 64px); line-height: 1.12; margin: 22px 0 18px; letter-spacing: -.02em; }
+  .grad { background: linear-gradient(90deg, #a5b4fc, var(--brand2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { max-width: 680px; margin: 0 auto; color: var(--muted); font-size: 18px; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 34px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 10px; font-weight: 600; font-size: 15px;
+         border: 1px solid var(--line); background: var(--card); transition: transform .15s, border-color .15s; }
+  .btn:hover { transform: translateY(-1px); border-color: rgba(255,255,255,.25); }
+  .btn.primary { border: 0; color: #fff; background: linear-gradient(135deg, var(--brand), #8b5cf6); box-shadow: 0 8px 30px rgba(99,102,241,.35); }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; max-width: 820px; margin: 60px auto 0; }
+  .stat { padding: 18px 10px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); }
+  .stat b { display: block; font-size: 28px; line-height: 1.2; }
+  .stat span { font-size: 13px; color: var(--muted); }
+
+  /* 通用区块 */
+  section { padding: 84px 0; }
+  section.alt { background: var(--bg2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .head { text-align: center; max-width: 640px; margin: 0 auto 46px; }
+  .head h2 { font-size: clamp(26px, 3.6vw, 36px); margin: 0 0 10px; letter-spacing: -.01em; }
+  .head p { margin: 0; color: var(--muted); }
+
+  /* 功能卡片 */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card { padding: 24px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); }
+  .card .ic { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; font-size: 20px;
+              background: rgba(99,102,241,.15); margin-bottom: 14px; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  /* 性能条形图 */
+  .bench { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .bench .card h3 { margin-bottom: 4px; }
+  .bench .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+  .bar { display: grid; grid-template-columns: 92px 1fr 64px; align-items: center; gap: 10px; font-size: 13px; margin: 9px 0; }
+  .bar .n { color: var(--muted); }
+  .bar .t { height: 10px; border-radius: 99px; background: rgba(255,255,255,.06); overflow: hidden; }
+  .bar .t i { display: block; height: 100%; border-radius: 99px; background: #4b5170; }
+  .bar.go .t i { background: linear-gradient(90deg, var(--brand), var(--brand2)); }
+  .bar.go .n, .bar.go .v { color: var(--text); font-weight: 600; }
+  .bar .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .note { text-align: center; color: var(--muted); font-size: 13px; margin-top: 22px; }
+  .note a { color: #a5b4fc; }
+
+  /* 对比表 */
+  .table { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px; }
+  th, td { padding: 14px 18px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  th { background: rgba(255,255,255,.03); font-weight: 600; }
+  td:first-child { color: var(--muted); white-space: nowrap; }
+  td:last-child { color: var(--text); }
+  td:nth-child(2) { color: var(--muted); }
+
+  /* 安装 */
+  .install { max-width: 820px; margin: 0 auto; }
+  .term { position: relative; border-radius: var(--radius); border: 1px solid var(--line); background: #070811; overflow: hidden; }
+  .term .bar2 { display: flex; align-items: center; gap: 7px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .term .bar2 i { width: 11px; height: 11px; border-radius: 50%; background: #3a3f55; }
+  .term .bar2 span { margin-left: 8px; font-size: 12px; color: var(--muted); }
+  .term pre { margin: 0; padding: 20px; overflow-x: auto; font-size: 14px; line-height: 1.8; }
+  .term .c { color: #6b7192; }
+  .copy { position: absolute; top: 7px; right: 10px; padding: 4px 12px; font-size: 12px; border-radius: 6px; cursor: pointer;
+          border: 1px solid var(--line); background: var(--card); color: var(--muted); }
+  .copy:hover { color: var(--text); }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+  .steps div { padding: 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); font-size: 14px; color: var(--muted); }
+  .steps b { display: block; color: var(--text); margin-bottom: 2px; }
+
+  /* 节点 */
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .chips span { padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); font-size: 14px; }
+
+  /* 文档 */
+  .docs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .docs a { padding: 20px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); transition: border-color .15s; }
+  .docs a:hover { border-color: rgba(99,102,241,.6); }
+  .docs b { display: block; margin-bottom: 4px; }
+  .docs span { font-size: 13px; color: var(--muted); }
+
+  footer { padding: 36px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  footer a:hover { color: var(--text); }
+
+  @media (max-width: 900px) {
+    nav { display: none; }
+    .grid, .docs { grid-template-columns: 1fr 1fr; }
+    .bench, .steps { grid-template-columns: 1fr; }
+    .stats { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 560px) {
+    .hero { padding: 72px 0 60px; }
+    .grid, .docs { grid-template-columns: 1fr; }
+    .gh span { display: none; }
+    .bar { grid-template-columns: 76px 1fr 56px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="logo" href="#"><i>G</i>Gvboard</a>
+    <nav>
+      <a href="#features">功能</a>
+      <a href="#performance">性能</a>
+      <a href="#compare">对比</a>
+      <a href="#install">安装</a>
+      <a href="#docs">文档</a>
+    </nav>
+    <a class="gh" href="https://github.com/gunzi-666/gvboard" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      <span>GitHub</span>
+    </a>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="wrap">
+    <span class="badge"><b>●</b> 兼容原 v2board 生产数据库，迁移后老订阅链接继续可用</span>
+    <h1>用 Go 重写的<br><span class="grad">v2board 面板</span></h1>
+    <p class="lead">单个可执行文件，内置队列与定时任务，不再需要 PHP、Horizon 与 cron。功能与 wyx2685 分支对齐，并加入单账号多订阅、订阅风控、插件与主题。</p>
+    <div class="cta">
+      <a class="btn primary" href="#install">快速安装 →</a>
+      <a class="btn" href="https://github.com/gunzi-666/gvboard/releases/latest" target="_blank" rel="noopener">下载最新版本</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>4.3×</b><span>订阅生成速度</span></div>
+      <div class="stat"><b>11.8×</b><span>节点上报吞吐</span></div>
+      <div class="stat"><b>~50 MB</b><span>运行内存</span></div>
+      <div class="stat"><b>1 个</b><span>可执行文件</span></div>
+    </div>
+  </div>
+</div>
+
+<section id="features">
+  <div class="wrap">
+    <div class="head">
+      <h2>功能</h2>
+      <p>保留原版的全部能力，补上运营中最常用到的部分</p>
+    </div>
+    <div class="grid">
+      <div class="card"><div class="ic">📦</div><h3>单个可执行文件</h3><p>用户端、管理端页面编译在程序中，队列与定时任务内置。一个进程，一条命令启动。</p></div>
+      <div class="card"><div class="ic">🔁</div><h3>无缝迁移</h3><p>直接接入原生产库，<code>gvboard migrate</code> 升级结构；节点接口、订阅格式、支付回调保持兼容。</p></div>
+      <div class="card"><div class="ic">🧾</div><h3>单账号多订阅</h3><p>一个账号可购买多个套餐，每个订阅拥有独立的流量、到期时间与订阅链接。</p></div>
+      <div class="card"><div class="ic">🛡️</div><h3>订阅风控</h3><p>按 User-Agent、IP、请求头拦截或记录订阅请求；频率限制、防分享、请求日志与统计。</p></div>
+      <div class="card"><div class="ic">🧩</div><h3>插件与主题</h3><p>Go 内置插件与沙箱运行的 JS 插件，可监听订单、工单等事件；支持安装外部主题。</p></div>
+      <div class="card"><div class="ic">🗄️</div><h3>MySQL / PostgreSQL</h3><p>支持 MySQL 5.7+ / 8.0 与 PostgreSQL 13+，提供 <code>db-convert</code> 一键转换。</p></div>
+      <div class="card"><div class="ic">✉️</div><h3>通知</h3><p>多个 SMTP 故障转移 / 轮询，邮件模板在管理端编辑；Telegram 管理员通知可按话题分组。</p></div>
+      <div class="card"><div class="ic">🌐</div><h3>灵活部署</h3><p>前后端不分离一键运行，或把前端单独放到 CDN / 静态站点；支持多实例。</p></div>
+      <div class="card"><div class="ic">🧰</div><h3>完善的管理端</h3><p>订单补单、订阅管理、节点与权限组、优惠券、礼品卡、公告、工单、知识库、队列监控。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="performance" class="alt">
+  <div class="wrap">
+    <div class="head">
+      <h2>性能实测</h2>
+      <p>同一台机器，各自限制 2 核 2 GB，1 万有效用户、30 个节点，每秒请求数（越长越好）</p>
+    </div>
+    <div class="bench">
+      <div class="card">
+        <h3>订阅生成（Clash）</h3>
+        <div class="sub">50 并发</div>
+        <div class="bar"><span class="n">原版 FPM</span><span class="t"><i style="width:23.4%"></i></span><span class="v">84.2</span></div>
+        <div class="bar"><span class="n">原版 Webman</span><span class="t"><i style="width:27.3%"></i></span><span class="v">98.3</span></div>
+        <div class="bar go"><span class="n">Gvboard</span><span class="t"><i style="width:100%"></i></span><span class="v">359.6</span></div>
+      </div>
+      <div class="card">
+        <h3>节点上报流量</h3>
+        <div class="sub">50 并发，每次 100 个用户</div>
+        <div class="bar"><span class="n">原版 FPM</span><span class="t"><i style="width:8.5%"></i></span><span class="v">162.0</span></div>
+        <div class="bar"><span class="n">原版 Webman</span><span class="t"><i style="width:29.6%"></i></span><span class="v">565.0</span></div>
+        <div class="bar go"><span class="n">Gvboard</span><span class="t"><i style="width:100%"></i></span><span class="v">1908.4</span></div>
+      </div>
+      <div class="card">
+        <h3>节点拉取用户列表</h3>
+        <div class="sub">20 并发</div>
+        <div class="bar"><span class="n">原版 FPM</span><span class="t"><i style="width:29.8%"></i></span><span class="v">28.6</span></div>
+        <div class="bar"><span class="n">原版 Webman</span><span class="t"><i style="width:25.3%"></i></span><span class="v">24.3</span></div>
+        <div class="bar go"><span class="n">Gvboard</span><span class="t"><i style="width:100%"></i></span><span class="v">95.9</span></div>
+      </div>
+      <div class="card">
+        <h3>内存占用（压测峰值，越短越好）</h3>
+        <div class="sub">单位 MB</div>
+        <div class="bar"><span class="n">原版 FPM</span><span class="t"><i style="width:100%"></i></span><span class="v">~950</span></div>
+        <div class="bar"><span class="n">原版 Webman</span><span class="t"><i style="width:56.8%"></i></span><span class="v">~540</span></div>
+        <div class="bar go"><span class="n">Gvboard</span><span class="t"><i style="width:10%"></i></span><span class="v">~95</span></div>
+      </div>
+    </div>
+    <p class="note">每项重复 3 轮取中位数；100 万用户、PostgreSQL、队列与 30 分钟稳定性测试见 <a href="https://github.com/gunzi-666/gvboard#性能实测" target="_blank" rel="noopener">README</a></p>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <div class="head">
+      <h2>与原版对比</h2>
+      <p>同样的数据库，更少的部件</p>
+    </div>
+    <div class="table">
+      <table>
+        <tr><th>项目</th><th>原版 v2board（wyx2685）</th><th>Gvboard</th></tr>
+        <tr><td>运行环境</td><td>PHP + Laravel 8，Nginx + PHP-FPM（或 Webman）、Horizon、cron</td><td>单个可执行文件，队列与定时任务内置</td></tr>
+        <tr><td>数据库</td><td>MySQL</td><td>MySQL / PostgreSQL</td></tr>
+        <tr><td>订阅</td><td>一个账号一个订阅</td><td>一个账号多个订阅，各自独立流量与到期</td></tr>
+        <tr><td>订阅防护</td><td>一次性 / 限时订阅链接</td><td>同样支持；另有规则拦截、频率限制、防分享、请求日志</td></tr>
+        <tr><td>插件</td><td>无</td><td>Go 内置插件、JS 插件</td></tr>
+        <tr><td>邮件</td><td>单个 SMTP，模板需改文件</td><td>多个 SMTP（故障转移 / 轮询），模板在管理端编辑</td></tr>
+        <tr><td>Telegram</td><td>私聊管理员</td><td>可发到话题群组，按订单 / 工单 / 告警 / 每日统计分话题</td></tr>
+        <tr><td>数据迁移</td><td>—</td><td>直接接入原生产库，老订阅链接继续可用</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="install" class="alt">
+  <div class="wrap">
+    <div class="head">
+      <h2>快速安装</h2>
+      <p>Linux 服务器（root）运行安装脚本，支持全新安装、从原 v2board 迁移与升级</p>
+    </div>
+    <div class="install">
+      <div class="term">
+        <div class="bar2"><i></i><i></i><i></i><span>bash</span></div>
+        <button class="copy" data-copy="install-cmd">复制</button>
+<pre id="install-cmd">mkdir -p /root/gvboard-install && cd /root/gvboard-install
+curl -fsSLO https://github.com/gunzi-666/gvboard/releases/latest/download/install.sh
+bash install.sh</pre>
+      </div>
+      <p class="note" style="text-align:left">国内服务器下载慢时：<code>GITHUB_PROXY=https://ghfast.top/ bash install.sh</code></p>
+      <div class="steps">
+        <div><b>1. 准备环境</b>空数据库（MySQL utf8mb4 或 PostgreSQL）与 Redis 6.0+</div>
+        <div><b>2. 运行脚本</b>按提示填写数据库、Redis、管理员邮箱，自动配置进程守护</div>
+        <div><b>3. 反向代理</b>Nginx / 宝塔反代到程序端口，绑定域名与证书</div>
+      </div>
+      <p class="note">Docker、宝塔面板、手动安装、从原生产库迁移见 <a href="https://github.com/gunzi-666/gvboard/blob/main/docs/部署文档.md" target="_blank" rel="noopener">部署文档</a></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="head">
+      <h2>对接节点</h2>
+      <p>节点通信接口与原版路径相同，v2node、V2bX 等后端按原方式填写，迁移的站点无需修改节点配置</p>
+    </div>
+    <div class="chips">
+      <span>VLESS · REALITY + Vision</span><span>VMess WS</span><span>Shadowsocks</span><span>Trojan</span>
+      <span>Hysteria2</span><span>TUIC</span><span>AnyTLS</span>
+    </div>
+  </div>
+</section>
+
+<section id="docs" class="alt">
+  <div class="wrap">
+    <div class="head">
+      <h2>文档</h2>
+    </div>
+    <div class="docs">
+      <a href="https://github.com/gunzi-666/gvboard/blob/main/docs/部署文档.md" target="_blank" rel="noopener"><b>部署文档</b><span>安装、Docker、迁移、PostgreSQL、分离部署、宝塔</span></a>
+      <a href="https://github.com/gunzi-666/gvboard/blob/main/docs/插件开发说明.md" target="_blank" rel="noopener"><b>插件开发</b><span>Go / JS 插件的结构、权限与事件</span></a>
+      <a href="https://github.com/gunzi-666/gvboard/blob/main/docs/主题开发说明.md" target="_blank" rel="noopener"><b>主题开发</b><span>主题目录结构与安装</span></a>
+      <a href="https://github.com/gunzi-666/gvboard/tree/main/docs/接口参考" target="_blank" rel="noopener"><b>接口参考</b><span>用户端与管理端 API</span></a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>© <span id="year">2026</span> Gvboard</span>
+    <span>
+      <a href="https://github.com/gunzi-666/gvboard" target="_blank" rel="noopener">GitHub</a> ·
+      <a href="https://github.com/gunzi-666/gvboard/releases" target="_blank" rel="noopener">Releases</a> ·
+      <a href="https://github.com/gunzi-666/gvboard/issues" target="_blank" rel="noopener">反馈问题</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear()
+  document.querySelectorAll('[data-copy]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var text = document.getElementById(b.dataset.copy).textContent
+      navigator.clipboard.writeText(text).then(function () {
+        b.textContent = '已复制'
+        setTimeout(function () { b.textContent = '复制' }, 1500)
+      })
+    })
+  })
+</script>
+</body>
+</html>
