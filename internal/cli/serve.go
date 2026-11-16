@@ -109,7 +109,7 @@ func newServeCmd() *cobra.Command {
 				},
 				&adminstat.Module{
 					DB: a.DB, Cache: a.Cache, Settings: a.Settings, Queue: a.Queue, SysLog: a.SysLog, Auth: a.Auth,
-					Jobs: a.Scheduler, RealIP: r.RealIP,
+					Jobs: a.Scheduler, RealIP: r.RealIP, Version: Version, BuildTime: BuildTime,
 				},
 				&legacy.Module{
 					DB: a.DB, Settings: a.Settings, Auth: a.Auth, I18n: a.I18n, Log: a.Log.Named("legacy"),

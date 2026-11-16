@@ -278,7 +278,7 @@ func TestHTTP(t *testing.T) {
 			t.Fatal(err)
 		}
 		jobs := &fakeJobs{}
-		r.Mount(&Module{DB: e.db, Cache: e.cache, Settings: e.st, Queue: &fakeQueue{workers: 1}, Jobs: jobs, Auth: e.auth, RealIP: r.RealIP, Now: func() time.Time { return e.now }})
+		r.Mount(&Module{DB: e.db, Cache: e.cache, Settings: e.st, Queue: &fakeQueue{workers: 1}, Jobs: jobs, Auth: e.auth, RealIP: r.RealIP, Now: func() time.Time { return e.now }, Version: "v9.9.9", BuildTime: "2026-01-02T03:04:05+08:00"})
 		do := func(method, path, tok string) (int, map[string]any) {
 			req := httptest.NewRequest(method, "/api/t1/"+path, nil)
 			req.Header.Set("Authorization", tok)
@@ -291,7 +291,7 @@ func TestHTTP(t *testing.T) {
 		get := func(path, tok string) (int, map[string]any) { return do("GET", path, tok) }
 		paths := []string{
 			"stat/overview", "stat/orders", "stat/server-rank?day=today", "stat/user-rank?day=yesterday",
-			fmt.Sprintf("stat/user?user_id=%d", admin.ID), "system/status", "system/queue", "system/logs?level=ERROR",
+			fmt.Sprintf("stat/user?user_id=%d", admin.ID), "system/status", "system/version", "system/queue", "system/logs?level=ERROR",
 			"system/jobs",
 		}
 		for _, p := range paths {
@@ -307,6 +307,9 @@ func TestHTTP(t *testing.T) {
 		}
 		if _, body := get(secure+"/system/status", adminTok); body["data"].(map[string]any)["queue"] != true {
 			t.Fatalf("系统状态错误：%v", body)
+		}
+		if _, body := get(secure+"/system/version", adminTok); fmt.Sprint(body["data"]) != "map[build_time:2026-01-02T03:04:05+08:00 version:v9.9.9]" {
+			t.Fatalf("版本信息错误：%v", body)
 		}
 		if _, body := get(secure+"/system/status", adminTok); body["data"].(map[string]any)["real_ip"].(map[string]any)["warning"] != false {
 			t.Fatalf("真实 IP 识别状态错误：%v", body)

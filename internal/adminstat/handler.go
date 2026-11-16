@@ -29,6 +29,9 @@ type Module struct {
 	Auth     *auth.Service
 	RealIP   *realip.Resolver // 可为 nil
 	Now      func() time.Time // 测试注入，nil 时为 time.Now
+	// Version、BuildTime 当前运行的程序版本与构建时间（构建时注入，本地编译为 dev 与空）。
+	Version   string
+	BuildTime string
 }
 
 // JobRunner 定时任务列表与手动执行（scheduler.Scheduler）。
@@ -73,6 +76,9 @@ func (m *Module) Register(r *server.Router) {
 		reply(c)(UserStats(c.Request.Context(), m.DB, q))
 	})
 	a.GET("/system/status", m.status)
+	a.GET("/system/version", func(c *gin.Context) {
+		httpx.OK(c, gin.H{"version": m.Version, "build_time": m.BuildTime})
+	})
 	a.GET("/system/queue", func(c *gin.Context) { reply(c)(m.Queue.Stats()) })
 	a.GET("/system/logs", func(c *gin.Context) {
 		var q LogQuery

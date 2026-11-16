@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, type Component } from 'vue'
+import { computed, onMounted, ref, type Component } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
 import {
   LayoutDashboardIcon, SettingsIcon, CreditCardIcon, PaletteIcon, PuzzleIcon, ServerIcon, UsersRoundIcon, RouteIcon,
   PackageIcon, ReceiptIcon, TicketPercentIcon, GiftIcon, UserIcon, MegaphoneIcon, MessageSquareIcon, BookOpenIcon,
-  ShieldIcon, ActivityIcon, ScrollTextIcon, LogOutIcon, MoonIcon, SunIcon,
+  ShieldIcon, ActivityIcon, ScrollTextIcon, LogOutIcon, MoonIcon, SunIcon, TagIcon,
 } from '@lucide/vue'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
@@ -13,7 +13,7 @@ import {
 import { Separator } from '@gv/shared/ui/separator'
 import { Button } from '@gv/shared/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@gv/shared/ui/tooltip'
-import { cfg, setToken } from '../api'
+import { admin, cfg, setToken } from '../api'
 import { menu } from '../router'
 import { colorMode } from '../theme'
 
@@ -60,6 +60,22 @@ const darkHeader = computed(() => cfg.value.theme.header === 'dark' && colorMode
 const activeCls =
   'h-9 data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:shadow-sm ' +
   'data-[active=true]:hover:bg-sidebar-primary/90 data-[active=true]:hover:text-sidebar-primary-foreground'
+
+const releasesURL = 'https://github.com/gunzi-666/gvboard/releases'
+const version = ref<{ version: string; build_time: string } | null>(null)
+const versionTip = computed(() => {
+  const v = version.value
+  if (!v) return ''
+  const built = v.build_time ? `，构建于 ${v.build_time.slice(0, 16).replace('T', ' ')}` : ''
+  return `当前版本 ${v.version}${built}，点击查看版本发布`
+})
+onMounted(async () => {
+  try {
+    version.value = await admin.get('/system/version')
+  } catch {
+    version.value = null
+  }
+})
 
 function toggleDark() {
   colorMode.value = colorMode.value === 'dark' ? 'light' : 'dark'
@@ -110,6 +126,14 @@ function logout() {
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarMenuItem v-if="version">
+            <SidebarMenuButton as-child :tooltip="versionTip" class="text-sidebar-foreground/60">
+              <a :href="releasesURL" target="_blank" rel="noopener noreferrer" :title="versionTip">
+                <TagIcon />
+                <span class="font-mono text-xs">版本 {{ version.version }}</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton tooltip="退出登录" @click="logout">
               <LogOutIcon />
