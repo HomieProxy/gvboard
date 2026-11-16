@@ -147,18 +147,7 @@ func (s *Service) Pay(ctx context.Context, o *model.Order, in order.PayInput) (i
 		return 0, nil, errPaymentUnavailable
 	}
 
-	var handling *int64
-	if p.HandlingFeePercent != nil || (p.HandlingFeeFixed != nil && *p.HandlingFeeFixed != 0) {
-		var pct, fixed float64
-		if p.HandlingFeePercent != nil {
-			pct = *p.HandlingFeePercent
-		}
-		if p.HandlingFeeFixed != nil {
-			fixed = float64(*p.HandlingFeeFixed)
-		}
-		v := int64(math.Round(float64(o.TotalAmount)*(pct/100) + fixed))
-		handling = &v
-	}
+	handling := handlingFee(&p, o.TotalAmount)
 	if err := db.Model(&model.Order{}).Where("id = ?", o.ID).
 		Updates(map[string]any{"handling_amount": handling, "payment_id": p.ID}).Error; err != nil {
 		s.log().Error("保存订单支付方式失败", zap.String("trade_no", o.TradeNo), zap.Error(err))
@@ -246,6 +235,29 @@ func (s *Service) StripePublicKey(ctx context.Context, id int64) (any, error) {
 	return loadConfig(p.Config)["stripe_pk_live"], nil
 }
 
+// handlingFee 支付方式的手续费（分），未设置手续费时为 nil。
+func handlingFee(p *model.Payment, amount int64) *int64 {
+	if p.HandlingFeePercent == nil && (p.HandlingFeeFixed == nil || *p.HandlingFeeFixed == 0) {
+		return nil
+	}
+	var pct, fixed float64
+	if p.HandlingFeePercent != nil {
+		pct = *p.HandlingFeePercent
+	}
+	if p.HandlingFeeFixed != nil {
+		fixed = float64(*p.HandlingFeeFixed)
+	}
+	v := int64(math.Round(float64(amount)*(pct/100) + fixed))
+	return &v
+}
+
+func plus(a int64, b *int64) int64 {
+	if b == nil {
+		return a
+	}
+	return a + *b
+}
+
 // ---------- 支付回调 ----------
 
 // errNotifyRejected 回调被拒绝（支付方式不存在 / 已停用 / 验签失败 / 订单不存在），统一按 404 响应。
@@ -282,16 +294,27 @@ func (s *Service) Notify(ctx context.Context, method, uuid string, n *Notificati
 		log.Warn("回调的订单不存在", zap.String("trade_no", paid.TradeNo), zap.Error(err))
 		return "", errNotifyRejected
 	}
+	// 订单只记录最后一次发起支付的支付方式与手续费。回调来自其它支付方式（用户换过支付方式后
+	// 又付了之前的链接）时按该支付方式的手续费核对，并把订单的支付方式与手续费改为实际付款的。
+	switched := o.PaymentID != nil && *o.PaymentID != p.ID
+	handling := o.HandlingAmount
+	if switched {
+		handling = handlingFee(&p, o.TotalAmount)
+	}
 	if paid.Amount != nil {
-		want := o.TotalAmount
-		if o.HandlingAmount != nil {
-			want += *o.HandlingAmount
-		}
-		if *paid.Amount != want {
+		if want := plus(o.TotalAmount, handling); *paid.Amount != want {
 			log.Warn("回调金额与订单应付金额不符", zap.String("trade_no", o.TradeNo),
 				zap.Int64("want", want), zap.Int64("got", *paid.Amount))
 			return "", errNotifyRejected
 		}
+	}
+	if switched && o.Status == model.OrderStatusPending {
+		if err := s.DB.WithContext(ctx).Model(&model.Order{}).Where("id = ? AND status = ?", o.ID, model.OrderStatusPending).
+			Updates(map[string]any{"handling_amount": handling, "payment_id": p.ID}).Error; err != nil {
+			log.Error("更新订单支付方式失败", zap.String("trade_no", o.TradeNo), zap.Error(err))
+			return "", errNotifyRejected
+		}
+		log.Info("订单改为实际付款的支付方式", zap.String("trade_no", o.TradeNo), zap.Int64("payment_id", p.ID))
 	}
 	if o.Status == model.OrderStatusPending {
 		changed, err := s.Orders.MarkPaid(ctx, o.TradeNo, paid.CallbackNo)

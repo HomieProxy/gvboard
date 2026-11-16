@@ -253,6 +253,88 @@ func testNotify(t *testing.T, e *svcEnv) {
 	if _, err := e.Notify(ctx, "EPaySubmitQrcode", sp.UUID, mk("10.50")); err != nil {
 		t.Errorf("金额等于订单金额 + 手续费时应通过: %v", err)
 	}
+
+	// 手续费：通过 Checkout 发起支付，网关收到的金额与回调核对的金额一致
+	five := 5.0
+	fixed := int64(6)
+	fp := e.payment(t, "EPaySubmitQrcode", `{"url":"https://pay.example.com","pid":"1001","key":"k3y"}`, func(p *model.Payment) {
+		p.HandlingFeePercent, p.HandlingFeeFixed, p.UUID = &five, &fixed, "fee00001"
+	})
+	notify := func(o model.Order, money string) error {
+		params := Params{"pid": "1001", "trade_no": "F" + o.TradeNo, "out_trade_no": o.TradeNo, "money": money, "trade_status": "TRADE_SUCCESS"}
+		params["sign"] = epaySign(params, "k3y")
+		_, err := e.Notify(ctx, "EPaySubmitQrcode", fp.UUID, &Notification{Params: params})
+		return err
+	}
+	o3 := e.deposit(t, e.user(t, "n3@x.com").ID, 1000)
+	e.DB.Model(&model.Order{}).Where("id = ?", o3.ID).Updates(map[string]any{"payment_id": fp.ID, "handling_amount": handlingFee(fp, 1000)})
+	if h := handlingFee(fp, 1000); h == nil || *h != 56 {
+		t.Fatalf("手续费应为 1000×5%%+6 = 56: %v", h)
+	}
+	if err := notify(o3, "10.00"); err == nil {
+		t.Error("同一支付方式：未含手续费的金额应拒绝")
+	}
+	if err := notify(o3, "10.56"); err != nil {
+		t.Errorf("同一支付方式：订单金额 + 手续费应通过: %v", err)
+	}
+
+	// 用户先用 fp 拿到付款链接，又换成无手续费的 p 发起支付，最后付的是 fp 的链接
+	o4 := e.deposit(t, e.user(t, "n4@x.com").ID, 1000)
+	e.DB.Model(&model.Order{}).Where("id = ?", o4.ID).Updates(map[string]any{"payment_id": p.ID, "handling_amount": nil})
+	if err := notify(o4, "10.00"); err == nil {
+		t.Error("换过支付方式：金额与回调所属支付方式的应付金额不符时应拒绝")
+	}
+	if err := notify(o4, "10.56"); err != nil {
+		t.Fatalf("换过支付方式：按回调所属支付方式的手续费核对应通过: %v", err)
+	}
+	e.reload(t, &o4)
+	if o4.Status != model.OrderStatusProcessing || o4.PaymentID == nil || *o4.PaymentID != fp.ID || o4.HandlingAmount == nil || *o4.HandlingAmount != 56 {
+		t.Errorf("订单应改为实际付款的支付方式与手续费: %+v", o4)
+	}
+
+	// CoinPayments 设置手续费：付款链接中的金额原样回调即可通过
+	cp := e.payment(t, "CoinPayments", `{"coinpayments_merchant_id":"m1","coinpayments_ipn_secret":"ipn","coinpayments_currency":"USD"}`, func(p *model.Payment) {
+		p.HandlingFeePercent, p.HandlingFeeFixed, p.UUID = &five, &fixed, "coin0001"
+	})
+	u5 := e.user(t, "n5@x.com")
+	o5 := e.deposit(t, u5.ID, 1000)
+	res, err := e.Orders.Checkout(ctx, u5.ID, o5.TradeNo, order.PayInput{Method: cp.ID, Request: httptest.NewRequest("POST", "http://api.example.com/x", nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	link, _ := url.Parse(res.Data.(string))
+	amountf := link.Query().Get("amountf")
+	if amountf != "10.56" {
+		t.Fatalf("付款链接金额应包含手续费: %s", amountf)
+	}
+	ipn := func(amount string) error {
+		body := url.Values{"merchant": {"m1"}, "item_number": {o5.TradeNo}, "txn_id": {"TX5"}, "status": {"100"}, "amount1": {amount}, "currency1": {"USD"}}.Encode()
+		params := Params{}
+		for k, v := range must(url.ParseQuery(body)) {
+			params[k] = v[0]
+		}
+		h := http.Header{}
+		h.Set("Hmac", hmacSHA512([]byte("ipn"), []byte(body)))
+		_, err := e.Notify(ctx, "CoinPayments", cp.UUID, &Notification{Params: params, Body: []byte(body), Header: h})
+		return err
+	}
+	if err := ipn("10.00"); err == nil {
+		t.Error("CoinPayments：金额被改小时应拒绝")
+	}
+	if err := ipn(amountf); err != nil {
+		t.Errorf("CoinPayments：付款链接金额（含手续费）回调应通过: %v", err)
+	}
+	e.reload(t, &o5)
+	if o5.Status != model.OrderStatusProcessing {
+		t.Errorf("CoinPayments 回调后订单应已支付: %+v", o5)
+	}
+}
+
+func must[T any](v T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+	return v
 }
 
 func testNotifyReject(t *testing.T, e *svcEnv) {
