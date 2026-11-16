@@ -32,10 +32,13 @@ func gwMsg(err error) string {
 func TestRegistry(t *testing.T) {
 	names := Names()
 	want := []string{"PaytaroQR", "Paytaro", "AlipayF2F", "BEasyPaymentUSDT", "BTCPay", "CoinPayments", "Coinbase",
-		"EPay", "EPay2", "EPayQrcode", "EPaySubmitQrcode", "Epusdt", "QrcodeEpay",
+		"EPay", "EPay2", "EPayQrcode", "EPaySubmitQrcode", "Epusdt",
 		"StripeALL", "StripeAlipay", "StripeCheckout", "StripeCredit", "StripeWepay", "TokenPay", "WechatPayNative"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Errorf("网关列表顺序与原项目不一致:\n%v", names)
+	}
+	if g, ok := Lookup("QrcodeEpay"); !ok || g != (ePayQrcode{}) {
+		t.Error("旧名称 QrcodeEpay 应仍可使用（与 EPayQrcode 相同）")
 	}
 	for _, n := range names {
 		g, _ := Lookup(n)
@@ -293,15 +296,32 @@ func TestWebhookGateways(t *testing.T) {
 	}
 
 	// CoinPayments：原始请求体 HMAC 与原项目的重新编码 HMAC 均可
-	cp := Config{"coinpayments_merchant_id": "m1 ", "coinpayments_ipn_secret": "ipn"}
-	raw := "merchant=m1&item_number=" + vTradeNo + "&txn_id=TX&status=100&note="
+	cp := Config{"coinpayments_merchant_id": "m1 ", "coinpayments_ipn_secret": "ipn", "coinpayments_currency": "USD"}
+	raw := "merchant=m1&item_number=" + vTradeNo + "&txn_id=TX&status=100&amount1=12.50000000&currency1=usd&note="
 	for _, sig := range []string{
 		hmacSHA512([]byte("ipn"), []byte(raw)),
-		hmacSHA512([]byte("ipn"), []byte("item_number="+vTradeNo+"&merchant=m1&status=100&txn_id=TX")),
+		hmacSHA512([]byte("ipn"), []byte("amount1=12.50000000&currency1=usd&item_number="+vTradeNo+"&merchant=m1&status=100&txn_id=TX")),
 	} {
 		n := notifyReq("POST", "", "application/x-www-form-urlencoded", raw, "Hmac", sig)
-		if paid, err := (coinPayments{}).Notify(newEnv(cp, nil), n); err != nil || paid.Reply != "IPN OK" {
+		if paid, err := (coinPayments{}).Notify(newEnv(cp, nil), n); err != nil || paid.Reply != "IPN OK" || paid.Amount == nil || *paid.Amount != 1250 {
 			t.Errorf("CoinPayments 回调: %+v %v", paid, err)
+		}
+	}
+	// 用户改了付款链接中的币种或金额：币种不符、金额无法换算为分时拒绝，金额交由服务层与订单比较
+	for _, body := range []string{
+		"merchant=m1&item_number=N&txn_id=TX&status=100&amount1=12.5&currency1=LTCT",
+		"merchant=m1&item_number=N&txn_id=TX&status=100&currency1=USD",
+		"merchant=m1&item_number=N&txn_id=TX&status=100&amount1=12.505&currency1=USD",
+		"merchant=m1&item_number=N&txn_id=TX&status=100&amount1=-1&currency1=USD",
+	} {
+		n := notifyReq("POST", "", "application/x-www-form-urlencoded", body, "Hmac", hmacSHA512([]byte("ipn"), []byte(body)))
+		if paid, err := (coinPayments{}).Notify(newEnv(cp, nil), n); err == nil {
+			t.Errorf("CoinPayments 应拒绝 %s: %+v", body, paid)
+		}
+	}
+	for s, want := range map[string]int64{"0.01": 1, "12": 1200, "12.5": 1250, "100.10000000": 10010} {
+		if got, ok := decimalCents(s); !ok || got != want {
+			t.Errorf("decimalCents(%q) = %d %v", s, got, ok)
 		}
 	}
 	pending := "merchant=m1&item_number=N&txn_id=TX&status=1"

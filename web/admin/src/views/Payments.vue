@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { PlusIcon, RefreshCwIcon, PencilIcon, Trash2Icon, Loader2Icon, CopyIcon } from '@lucide/vue'
 import { copyText, formatMoney } from '@gv/shared'
 import { Button } from '@gv/shared/ui/button'
@@ -67,6 +67,11 @@ const form = ref({
   notify_domain: '',
   handling_fee_fixed: null as number | null,
   handling_fee_percent: null as number | null,
+})
+// 已有支付方式使用的旧网关名称（如 QrcodeEpay）不在可选列表中，编辑时仍显示原名称
+const gatewayOptions = computed(() => {
+  const p = form.value.payment
+  return !p || gateways.value.some((g) => g.value === p) ? gateways.value : [...gateways.value, { label: p, value: p }]
 })
 const fields = ref<[string, FormField][]>([])
 const config = ref<Record<string, string>>({})
@@ -201,7 +206,7 @@ onMounted(async () => {
             </FormItem>
           </div>
           <FormItem label="接口文件">
-            <SelectBox :model-value="form.payment" :options="gateways" @update:model-value="(v) => (form.payment = String(v))" />
+            <SelectBox :model-value="form.payment" :options="gatewayOptions" @update:model-value="(v) => (form.payment = String(v))" />
           </FormItem>
           <div v-if="formLoading" class="flex justify-center py-4"><Loader2Icon class="size-5 animate-spin text-muted-foreground" /></div>
           <template v-else>

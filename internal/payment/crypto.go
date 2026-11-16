@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -188,5 +190,30 @@ func (coinPayments) Notify(e *Env, n *Notification) (*Paid, error) {
 	if status < 100 && status != 2 {
 		return nil, errVerify
 	}
-	return &Paid{TradeNo: p.Str("item_number"), CallbackNo: p.Str("txn_id"), Reply: "IPN OK"}, nil
+	// 付款链接没有签名，用户可以改链接中的金额与币种后付款，必须核对实际下单的金额与币种
+	if !strings.EqualFold(strings.TrimSpace(p.Str("currency1")), strings.TrimSpace(e.Config.Str("coinpayments_currency"))) {
+		return nil, errVerify
+	}
+	amount, ok := decimalCents(p.Str("amount1"))
+	if !ok {
+		return nil, errVerify
+	}
+	return &Paid{TradeNo: p.Str("item_number"), CallbackNo: p.Str("txn_id"), Amount: &amount, Reply: "IPN OK"}, nil
+}
+
+var reDecimal = regexp.MustCompile(`^(\d{1,15})(?:\.(\d{1,18}))?$`)
+
+// decimalCents 把 "12.5"、"12.50000000" 这类金额转换为分；分以下有非零位时视为无效。
+func decimalCents(s string) (int64, bool) {
+	m := reDecimal.FindStringSubmatch(strings.TrimSpace(s))
+	if m == nil {
+		return 0, false
+	}
+	frac := m[2] + "00"
+	if strings.Trim(frac[2:], "0") != "" {
+		return 0, false
+	}
+	whole, _ := strconv.ParseInt(m[1], 10, 64)
+	cents, _ := strconv.ParseInt(frac[:2], 10, 64)
+	return whole*100 + cents, true
 }

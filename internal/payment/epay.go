@@ -14,6 +14,8 @@ import (
 func init() {
 	Register("EPay", ePay{})
 	Register("EPayQrcode", ePayQrcode{})
+	// 原生产站点自行添加的 QrcodeEpay 与 EPayQrcode 相同，只保留旧名称供已有的支付方式使用
+	registerAlias("QrcodeEpay", "EPayQrcode")
 	Register("Paytaro", paytaro{})
 	Register("PaytaroQR", paytaroQR{})
 }

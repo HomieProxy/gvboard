@@ -12,10 +12,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// 原生产站点自行添加的支付类（EPay2、QrcodeEpay、EPaySubmitQrcode、TokenPay），按其源码实现。
+// 原生产站点自行添加的支付类（EPay2、EPaySubmitQrcode、TokenPay），按其源码实现；QrcodeEpay 见 epay.go。
 func init() {
 	Register("EPay2", ePay2{})
-	Register("QrcodeEpay", ePayQrcode{})
 	Register("EPaySubmitQrcode", ePaySubmitQrcode{})
 	Register("TokenPay", tokenPay{})
 }

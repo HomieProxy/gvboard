@@ -132,6 +132,7 @@ type Gateway interface {
 type regEntry struct {
 	g       Gateway
 	enabled func() bool // 插件提供的网关：插件停用时为 false
+	alias   bool        // 兼容旧名称：可按名称查找，不出现在可选列表中
 }
 
 func (e regEntry) available() bool { return e.enabled == nil || e.enabled() }
@@ -146,6 +147,18 @@ func Register(name string, g Gateway) {
 	if err := register(name, g, nil); err != nil {
 		panic(err)
 	}
+}
+
+// registerAlias 为已注册的内置网关登记旧名称，已使用旧名称的支付方式仍可下单、回调与编辑。
+func registerAlias(alias, name string) {
+	regMu.Lock()
+	defer regMu.Unlock()
+	e, ok := registry[name]
+	if _, dup := registry[alias]; !ok || dup || len(alias) > 16 {
+		panic("payment: 别名注册失败: " + alias)
+	}
+	e.alias = true
+	registry[alias] = e
 }
 
 // RegisterExt 注册插件提供的支付网关，enabled 返回 false 时该网关视为不存在。
@@ -197,7 +210,7 @@ func Names() []string {
 	regMu.RLock()
 	all := make([]string, 0, len(registry))
 	for k, e := range registry {
-		if e.available() {
+		if e.available() && !e.alias {
 			all = append(all, k)
 		}
 	}
