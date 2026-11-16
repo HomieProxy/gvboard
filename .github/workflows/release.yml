@@ -1,6 +1,7 @@
 # 推送 v* 标签时：测试 → 构建前端 → 交叉编译 → 发布 GitHub Release
 #   git tag v1.0.0
 #   git push origin v1.0.0
+# 版本说明取自 .github/release-notes/{标签}.md（需在打标签前提交），没有该文件时使用 GitHub 自动生成的说明。
 # 也可在 Actions 页手动运行（只构建、不发布），用于检查构建是否正常。
 name: release
 
@@ -112,10 +113,18 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+      - name: 版本说明
+        id: notes
+        if: github.ref_type == 'tag'
+        run: |
+          f=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then echo "path=$f" >> "$GITHUB_OUTPUT"; else echo "未找到 $f，使用自动生成的说明"; fi
+
       - name: 发布 Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.path }}
+          generate_release_notes: ${{ steps.notes.outputs.path == '' }}
           prerelease: ${{ contains(github.ref_name, '-') }}
