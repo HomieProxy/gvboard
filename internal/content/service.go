@@ -11,6 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"gvboard/internal/hook"
 	"gvboard/internal/httpx"
 	"gvboard/internal/model"
 	"gvboard/internal/phpx"
@@ -32,7 +33,9 @@ type Service struct {
 	Subscriptions *subscription.Service
 	// Translate 按语言翻译文案，未设置时原样返回。
 	Translate func(locale, key string) string
-	now       func() int64
+	// Hooks 插件过滤器（knowledge.article），可为 nil。
+	Hooks hook.Hooks
+	now   func() int64
 }
 
 func (s *Service) nowUnix() int64 {
@@ -308,6 +311,12 @@ func (s *Service) Article(ctx context.Context, userID, id, subscriptionID int64,
 		"{{safeBase64SubscribeUrl}}", base64.RawURLEncoding.EncodeToString([]byte(link)),
 		"{{subscribeToken}}", sub.Token,
 	).Replace(k.Body)
+	if s.Hooks != nil {
+		v := hook.Apply(s.Hooks, ctx, hook.FilterKnowledgeArticle, hook.KnowledgeArticle{
+			UserID: userID, ArticleID: k.ID, Locale: locale, Available: available, Body: k.Body,
+		})
+		k.Body = v.Body
+	}
 	return &k, nil
 }
 

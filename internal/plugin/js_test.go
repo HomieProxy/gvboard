@@ -479,6 +479,7 @@ plugin.on('user.registered', function (ev) { kv.set('reg:' + ev.data.user_id, ev
 plugin.on('order.paid', function () { throw new Error('处理失败'); });
 plugin.filter('order.amount', 10, function (v) { var old = v.amount; v.amount = Math.floor(v.amount * plugin.config().rate / 100); v.items.push({ label: '九折', amount: v.amount - old }); v.user_id = 1; return v; });
 plugin.filter('plan.badges', function (v) { v.plans.forEach(function (p) { p.badges.push('JS 标签'); }); return v; });
+plugin.filter('knowledge.article', function (v) { v.body = v.body.replace('{x}', v.available ? '用户' + v.user_id : '无'); v.user_id = 9; return v; });
 plugin.filter('order.amount', 1, function (v) { if (v.user_id === 999) { while (true) {} } });
 plugin.filter('mail.message', function (m) { m.subject = '[' + meta.tag + '] ' + m.subject; return m; });
 plugin.filter('subscribe.content', function (c) { c.body = c.body + '\n#' + util.upper(c.client); c.headers.push(['x-demo', '1']); return c; });
@@ -539,7 +540,7 @@ func TestJSRuntime(t *testing.T) {
 		if v := install(t, m, demoPkg(t)); v.Status != StatusOK {
 			t.Fatalf("安装失败：%+v", v)
 		}
-		if v := statusOf(t, m, "jsdemo"); len(v.Features.Events) != 2 || len(v.Features.Filters) != 5 || len(v.Features.Routes) != 11 || len(v.Features.Jobs) != 1 {
+		if v := statusOf(t, m, "jsdemo"); len(v.Features.Events) != 2 || len(v.Features.Filters) != 6 || len(v.Features.Routes) != 11 || len(v.Features.Jobs) != 1 {
 			t.Fatalf("注册内容错误：%+v", v.Features)
 		}
 		if err := m.SaveConfig(ctx, "jsdemo", map[string]any{"token": "bad"}); err != nil {
@@ -565,6 +566,10 @@ func TestJSRuntime(t *testing.T) {
 		badges := hook.Apply(m, ctx, hook.FilterPlanBadges, hook.PlanBadges{UserID: 1, Plans: []hook.PlanBadge{{PlanID: 3}}})
 		if len(badges.Plans) != 1 || len(badges.Plans[0].Badges) != 1 || badges.Plans[0].Badges[0] != "JS 标签" {
 			t.Fatalf("套餐标签过滤错误：%+v", badges)
+		}
+		art := hook.Apply(m, ctx, hook.FilterKnowledgeArticle, hook.KnowledgeArticle{UserID: 3, ArticleID: 1, Available: true, Body: "a{x}b"})
+		if art.Body != "a用户3b" || art.UserID != 3 {
+			t.Fatalf("知识库文章过滤错误（只能修改正文）：%+v", art)
 		}
 		for i := 0; i < 2; i++ {
 			start := time.Now()

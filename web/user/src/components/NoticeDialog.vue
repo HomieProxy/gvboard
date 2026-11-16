@@ -3,6 +3,7 @@ import { formatTime } from '@gv/shared'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@gv/shared/ui/dialog'
 import Markdown from '@gv/shared/content/Markdown.vue'
 import type { Notice } from '../types'
+import { copied } from '../ui'
 
 defineProps<{ notice: Notice | null }>()
 const open = defineModel<boolean>('open', { required: true })
@@ -16,7 +17,7 @@ const open = defineModel<boolean>('open', { required: true })
         <DialogDescription v-if="notice">{{ formatTime(notice.created_at) }}</DialogDescription>
       </DialogHeader>
       <img v-if="notice?.img_url" :src="notice.img_url" alt="" class="w-full rounded-lg" />
-      <Markdown v-if="notice" :source="notice.content" />
+      <Markdown v-if="notice" :source="notice.content" @copied="copied" />
     </DialogContent>
   </Dialog>
 </template>

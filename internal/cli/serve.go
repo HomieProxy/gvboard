@@ -64,6 +64,7 @@ func newServeCmd() *cobra.Command {
 			contents := &content.Service{
 				DB: a.DB, Settings: a.Settings, Subscriptions: subs,
 				Translate: func(locale, key string) string { return a.I18n.T(locale, key, nil) },
+				Hooks:     sv.plugins,
 			}
 			nodeAllow, err := nodeapi.ParseWhitelist(a.Config.Node.IPWhitelist)
 			if err != nil {

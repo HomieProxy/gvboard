@@ -224,6 +224,20 @@ type MailMessage struct {
 	HTML     string `json:"html"`
 }
 
+// KnowledgeArticle 知识库文章过滤器的值（用户查看文章时，访问限制与订阅变量处理之后），只采用修改后的 Body。
+// Body 为 HTML 或 Markdown，插件可替换其中的自定义占位符；插入用户数据时必须自行转义。
+type KnowledgeArticle struct {
+	UserID    int64  `json:"user_id"`
+	ArticleID int64  `json:"article_id"`
+	Locale    string `json:"locale"`
+	// Available 用户是否有可用订阅（与访问限制区块的判断相同）。
+	Available bool   `json:"available"`
+	Body      string `json:"body"`
+}
+
+// maxArticleBody 过滤后的文章正文上限。
+const maxArticleBody = 1 << 20
+
 // maxAmount 过滤器允许的最大订单金额（分），与下单充值上限一致。
 const maxAmount = 9999999 * 100
 
@@ -258,9 +272,21 @@ var (
 		}
 		return n, nil
 	}}
+	FilterKnowledgeArticle = Filter[KnowledgeArticle]{Name: "knowledge.article", Check: func(_ Source, o, n KnowledgeArticle) (KnowledgeArticle, error) {
+		if len(n.Body) > maxArticleBody {
+			return o, fmt.Errorf("文章内容不能超过 %d KB", maxArticleBody>>10)
+		}
+		if n.Body == "" && o.Body != "" {
+			return o, errors.New("文章内容不能为空")
+		}
+		out := o
+		out.Body = n.Body
+		return out, nil
+	}}
 )
 
 // Filters 全部过滤器名称。
 func Filters() []string {
-	return []string{FilterOrderAmount.Name, FilterPlanBadges.Name, FilterSubscribeServers.Name, FilterSubscribeContent.Name, FilterMailMessage.Name}
+	return []string{FilterOrderAmount.Name, FilterPlanBadges.Name, FilterSubscribeServers.Name, FilterSubscribeContent.Name,
+		FilterMailMessage.Name, FilterKnowledgeArticle.Name}
 }

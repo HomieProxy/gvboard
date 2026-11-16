@@ -8,7 +8,7 @@ import { Input } from '@gv/shared/ui/input'
 import { Skeleton } from '@gv/shared/ui/skeleton'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@gv/shared/ui/sheet'
 import { http } from '../api'
-import { errText, toast } from '../ui'
+import { copied, errText, toast } from '../ui'
 import { loadSubs, subOptions } from '../store'
 import type { KnowledgeArticle, KnowledgeCategory } from '../types'
 import Markdown from '@gv/shared/content/Markdown.vue'
@@ -120,7 +120,7 @@ onMounted(() => {
           <div v-if="articleLoading" class="absolute inset-0 flex items-center justify-center bg-background/60">
             <Loader2Icon class="size-6 animate-spin text-muted-foreground" />
           </div>
-          <Markdown v-if="article" :source="article.body" />
+          <Markdown v-if="article" :source="article.body" @copied="copied" />
         </div>
       </SheetContent>
     </Sheet>

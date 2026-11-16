@@ -15,7 +15,11 @@ export function toast(type: 'success' | 'error' | 'warning' | 'info', text: stri
 }
 
 export async function copy(text: string) {
-  const ok = await copyText(text)
+  copied(await copyText(text))
+}
+
+/** 复制结果提示（Markdown 内容中 data-copy 元素的 copied 事件也用它） */
+export function copied(ok: boolean) {
   toast(ok ? 'success' : 'error', t(ok ? 'common.copied' : 'common.copyFailed'))
 }
 

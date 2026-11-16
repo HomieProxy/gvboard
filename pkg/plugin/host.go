@@ -103,6 +103,7 @@ type (
 	SubscribeServers = hook.SubscribeServers
 	SubscribeContent = hook.SubscribeContent
 	MailMessage      = hook.MailMessage
+	KnowledgeArticle = hook.KnowledgeArticle
 )
 
 // 过滤器（类型为 hook.Filter[T]，配合 AddFilter 使用）。
@@ -112,6 +113,7 @@ var (
 	FilterSubscribeServers = hook.FilterSubscribeServers
 	FilterSubscribeContent = hook.FilterSubscribeContent
 	FilterMailMessage      = hook.FilterMailMessage
+	FilterKnowledgeArticle = hook.FilterKnowledgeArticle
 )
 
 // AddFilter 注册带类型的过滤器：

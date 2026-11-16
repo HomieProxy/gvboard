@@ -16,6 +16,7 @@ import (
 	"gvboard/internal/account"
 	"gvboard/internal/auth"
 	"gvboard/internal/config"
+	"gvboard/internal/hook"
 	"gvboard/internal/httpx"
 	"gvboard/internal/model"
 	"gvboard/internal/phpx"
@@ -119,6 +120,7 @@ func TestContent(t *testing.T) {
 			t.Run("公告", func(t *testing.T) { testNotices(t, newEnv(t, driver)) })
 			t.Run("知识库列表与管理", func(t *testing.T) { testArticles(t, newEnv(t, driver)) })
 			t.Run("文章详情", func(t *testing.T) { testArticle(t, newEnv(t, driver)) })
+			t.Run("文章插件过滤", func(t *testing.T) { testArticleHook(t, newEnv(t, driver)) })
 			t.Run("HTTP", func(t *testing.T) { testHTTP(t, newEnv(t, driver)) })
 		})
 	}
@@ -395,6 +397,67 @@ func testArticle(t *testing.T, e *env) {
 	}
 	if _, err := e.Article(ctx, u.ID, 999, 0, "https://s.example.com", "zh-CN"); err != ErrArticleNotFound {
 		t.Fatalf("不存在的文章: %v", err)
+	}
+}
+
+// articleHooks 测试用插件管理器：记录收到的值，并按 fn 修改文章。
+type articleHooks struct {
+	got []hook.KnowledgeArticle
+	fn  func(v hook.KnowledgeArticle) hook.KnowledgeArticle
+}
+
+func (h *articleHooks) Emit(context.Context, string, any) {}
+
+func (h *articleHooks) Filter(_ context.Context, name string, v any, _ func(any) any, check func(hook.Source, any, any) (any, error)) any {
+	if name != hook.FilterKnowledgeArticle.Name {
+		return v
+	}
+	a := v.(hook.KnowledgeArticle)
+	h.got = append(h.got, a)
+	out, err := check(hook.Source{Code: "p", Name: "插件"}, v, h.fn(a))
+	if err != nil {
+		return v
+	}
+	return out
+}
+
+// testArticleHook 插件过滤器在访问限制与订阅变量处理之后执行，只能修改正文。
+func testArticleHook(t *testing.T, e *env) {
+	ctx := context.Background()
+	h := &articleHooks{fn: func(v hook.KnowledgeArticle) hook.KnowledgeArticle {
+		v.UserID, v.ArticleID = 0, 0
+		v.Body = strings.ReplaceAll(v.Body, "{apple_id}", "<b>账号</b>")
+		return v
+	}}
+	e.Hooks = h
+	e.set(t, map[string]any{"app_name": "测试站"})
+	u, sub := e.user(t)
+	id := e.article(t, "zh-CN", "c", "t", "{{siteName}} {apple_id}<!--access start-->{apple_id}<!--access end-->", true)
+
+	// 无可用订阅：访问区块已替换为提示，插件看不到区块内的占位符
+	k, err := e.Article(ctx, u.ID, id, 0, "https://s.example.com", "en-US")
+	want := `测试站 <b>账号</b><div class="content-locked">T(You must have a valid subscription to view content in this area)</div>`
+	if err != nil || k.Body != want {
+		t.Fatalf("无可用订阅：%v\n%s", err, k.Body)
+	}
+	if g := h.got[0]; g.UserID != u.ID || g.ArticleID != id || g.Locale != "en-US" || g.Available || strings.Contains(g.Body, "{{siteName}}") {
+		t.Fatalf("插件收到的值错误：%+v", g)
+	}
+
+	e.DB.Model(sub).Updates(map[string]any{"transfer_enable": int64(1) << 30, "expired_at": testNow + 3600})
+	k, _ = e.Article(ctx, u.ID, id, 0, "https://s.example.com", "zh-CN")
+	if k.Body != "测试站 <b>账号</b><!--access start--><b>账号</b><!--access end-->" || !h.got[1].Available {
+		t.Fatalf("有可用订阅：%s", k.Body)
+	}
+
+	for name, fn := range map[string]func(v hook.KnowledgeArticle) hook.KnowledgeArticle{
+		"清空正文": func(v hook.KnowledgeArticle) hook.KnowledgeArticle { v.Body = ""; return v },
+		"超过上限": func(v hook.KnowledgeArticle) hook.KnowledgeArticle { v.Body = strings.Repeat("x", 1<<20+1); return v },
+	} {
+		h.fn = fn
+		if k, _ := e.Article(ctx, u.ID, id, 0, "https://s.example.com", "zh-CN"); !strings.Contains(k.Body, "{apple_id}") {
+			t.Fatalf("%s：应忽略插件的修改：%.80s", name, k.Body)
+		}
 	}
 }
 

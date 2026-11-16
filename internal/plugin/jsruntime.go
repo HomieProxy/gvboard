@@ -990,6 +990,15 @@ func filterDecode(name string, old any, b []byte) (any, error) {
 		return o, nil
 	case hook.SubscribeServers:
 		return decodeServers(o, b)
+	case hook.KnowledgeArticle:
+		n := struct {
+			Body string `json:"body"`
+		}{o.Body}
+		if err := json.Unmarshal(b, &n); err != nil {
+			return nil, err
+		}
+		o.Body = n.Body
+		return o, nil
 	}
 	return nil, fmt.Errorf("过滤器 %s 不支持 JS 插件", name)
 }

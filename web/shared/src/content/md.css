@@ -18,3 +18,4 @@
 .md td, .md th { border: 1px solid var(--border); padding: .35em .75em; }
 .md hr { border: 0; border-top: 1px solid var(--border); margin: 1.5em 0; }
 .content-locked { padding: .75rem; border-radius: .5rem; background: color-mix(in oklab, var(--color-amber-500) 12%, transparent); color: var(--color-amber-700); }
+.md [data-copy] { cursor: pointer; }

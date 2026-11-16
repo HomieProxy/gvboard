@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import mdCss from './md.css?inline'
+import { copyText } from '../format'
 
 // 公告、文档由管理员编写，允许 HTML（与原项目一致）
 const md = new MarkdownIt({ html: true, linkify: true, breaks: true })
@@ -13,6 +14,20 @@ const htmlStart = /^\s*<(!--|!doctype|html|head|body|style|div|section|article|h
 const docSelector = /(^|[\s,{}])(html|body)(?=\s*[,{.:#[>~+\s])/g
 
 const props = defineProps<{ source: string | null | undefined }>()
+const emit = defineEmits<{ copied: [ok: boolean] }>()
+
+// 内容中带 data-copy 属性的元素点击即复制属性值（不需要在内容中写脚本），复制后 1.5 秒内带 data-copied 属性
+async function onClick(e: Event) {
+  const el = (e.target as Element | null)?.closest?.('[data-copy]')
+  if (!el) return
+  e.preventDefault()
+  const ok = await copyText(el.getAttribute('data-copy') || '')
+  if (ok) {
+    el.setAttribute('data-copied', '')
+    setTimeout(() => el.removeAttribute('data-copied'), 1500)
+  }
+  emit('copied', ok)
+}
 const html = computed(() => {
   const s = props.source || ''
   return htmlStart.test(s) ? s : md.render(s)
@@ -24,7 +39,10 @@ const host = ref<HTMLElement>()
 let root: ShadowRoot | null = null
 function paint() {
   if (!host.value) return
-  root ??= host.value.attachShadow({ mode: 'open' })
+  if (!root) {
+    root = host.value.attachShadow({ mode: 'open' })
+    root.addEventListener('click', onClick)
+  }
   root.innerHTML = `<style>:host{display:block}@layer md{${mdCss}}</style><div class="md">${html.value}</div>`
   root.querySelectorAll('.md style').forEach((s) => {
     s.textContent = (s.textContent || '').replace(docSelector, '$1.md')

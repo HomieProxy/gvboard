@@ -167,3 +167,32 @@ func TestPlanBadges(t *testing.T) {
 		}
 	}
 }
+
+func TestKnowledgeArticle(t *testing.T) {
+	ctx := context.Background()
+	base := KnowledgeArticle{UserID: 1, ArticleID: 2, Locale: "zh-CN", Available: true, Body: "a{apple_id}b"}
+	h := &fakeHooks{}
+	apply := func(f func(v KnowledgeArticle) KnowledgeArticle) KnowledgeArticle {
+		h.filter = func(v any) any { return f(v.(KnowledgeArticle)) }
+		return Apply(h, ctx, FilterKnowledgeArticle, base)
+	}
+	got := apply(func(v KnowledgeArticle) KnowledgeArticle {
+		v.Body = strings.ReplaceAll(v.Body, "{apple_id}", "<b>x</b>")
+		v.UserID, v.ArticleID, v.Locale, v.Available = 9, 9, "en-US", false
+		return v
+	})
+	if want := (KnowledgeArticle{UserID: 1, ArticleID: 2, Locale: "zh-CN", Available: true, Body: "a<b>x</b>b"}); got != want {
+		t.Fatalf("只能修改正文：%+v", got)
+	}
+	for name, f := range map[string]func(v KnowledgeArticle) KnowledgeArticle{
+		"清空正文": func(v KnowledgeArticle) KnowledgeArticle { v.Body = ""; return v },
+		"超过上限": func(v KnowledgeArticle) KnowledgeArticle { v.Body = strings.Repeat("x", maxArticleBody+1); return v },
+	} {
+		if got := apply(f); got != base {
+			t.Errorf("%s 时应忽略修改：%.40s", name, got.Body)
+		}
+	}
+	if got := apply(func(v KnowledgeArticle) KnowledgeArticle { v.Body = strings.Repeat("x", maxArticleBody); return v }); len(got.Body) != maxArticleBody {
+		t.Fatal("正好 1 MB 应允许")
+	}
+}
