@@ -158,11 +158,11 @@ const planChoices = () => [{ label: '无订阅', value: null }, ...planOptions.v
             <DateTimeInput v-if="!form.forever" v-model="form.expired_at" />
           </div>
         </FormItem>
-        <div class="grid grid-cols-2 gap-3 rounded-lg border p-3 sm:col-span-2 sm:grid-cols-4">
-          <label class="flex items-center justify-between gap-2 text-sm">封禁 <BoolSwitch v-model="form.banned" /></label>
-          <label class="flex items-center justify-between gap-2 text-sm">自动续费 <BoolSwitch v-model="form.auto_renewal" /></label>
-          <label class="flex items-center justify-between gap-2 text-sm">到期提醒 <BoolSwitch v-model="form.remind_expire" /></label>
-          <label class="flex items-center justify-between gap-2 text-sm">流量提醒 <BoolSwitch v-model="form.remind_traffic" /></label>
+        <div class="divide-y rounded-lg border sm:col-span-2">
+          <label class="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">封禁 <BoolSwitch v-model="form.banned" /></label>
+          <label class="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">自动续费 <BoolSwitch v-model="form.auto_renewal" /></label>
+          <label class="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">到期提醒 <BoolSwitch v-model="form.remind_expire" /></label>
+          <label class="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">流量提醒 <BoolSwitch v-model="form.remind_traffic" /></label>
         </div>
       </div>
       <DialogFooter>

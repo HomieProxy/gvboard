@@ -329,10 +329,10 @@ const commissionTypes = [
             <FormItem label="推荐返利比例"><NumInput v-model="acc.commission_rate" :min="0" :max="100" suffix="%" placeholder="跟随系统设置" /></FormItem>
             <FormItem label="专享折扣比例"><NumInput v-model="acc.discount" :min="0" :max="100" suffix="%" placeholder="无" /></FormItem>
             <FormItem label="订阅数量上限"><NumInput v-model="acc.subscription_limit" :min="0" :max="1000" placeholder="跟随系统设置" /></FormItem>
-            <div class="grid grid-cols-3 gap-3 rounded-lg border p-3 sm:col-span-2">
-              <label class="flex items-center justify-between gap-2 text-sm">账户状态（封禁） <BoolSwitch v-model="acc.banned" /></label>
-              <label class="flex items-center justify-between gap-2 text-sm">是否管理员 <BoolSwitch v-model="acc.is_admin" /></label>
-              <label class="flex items-center justify-between gap-2 text-sm">是否员工 <BoolSwitch v-model="acc.is_staff" /></label>
+            <div class="divide-y rounded-lg border sm:col-span-2">
+              <label class="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">账户状态（封禁） <BoolSwitch v-model="acc.banned" /></label>
+              <label class="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">是否管理员 <BoolSwitch v-model="acc.is_admin" /></label>
+              <label class="flex items-center justify-between gap-4 px-3 py-2.5 text-sm">是否员工 <BoolSwitch v-model="acc.is_staff" /></label>
             </div>
             <FormItem label="备注" class="sm:col-span-2"><Textarea v-model="acc.remarks" rows="3" /></FormItem>
             <div class="flex justify-end sm:col-span-2">
