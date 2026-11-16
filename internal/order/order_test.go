@@ -402,6 +402,20 @@ func testUpgrade(t *testing.T, e *env) {
 		t.Errorf("开通后应退回差额 %d，余额 %d -> %d", *o.RefundAmount, balanceBefore, got)
 	}
 
+	// 优惠券与会员折扣叠加超过 100%：订单金额最低为 0，退款不超过剩余价值
+	now = time.Now().Unix()
+	e.DB.Create(&model.Coupon{Code: "UP90", Name: "x", Type: CouponPercent, Value: 90, Show: 1, StartedAt: now - 60, EndedAt: now + 3600})
+	e.DB.Model(&model.User{}).Where("id = ?", u.ID).Update("discount", 20)
+	no, err = e.Create(ctx, u.ID, CreateInput{PlanID: a.ID, Period: PeriodMonth, SubscriptionID: subID, CouponCode: "UP90"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o := e.order(t, no); val(o.DiscountAmount) != 1000 || o.TotalAmount != 0 || o.RefundAmount == nil || *o.RefundAmount != val(o.SurplusAmount) {
+		t.Errorf("叠加优惠时退款应等于剩余价值: %+v", o)
+	}
+	e.Cancel(ctx, u.ID, no)
+	e.DB.Model(&model.User{}).Where("id = ?", u.ID).Update("discount", nil)
+
 	// 关闭折抵：按原价计费
 	e.set(t, map[string]any{"surplus_enable": 0})
 	no, _ = e.Create(ctx, u.ID, CreateInput{PlanID: a.ID, Period: PeriodMonth, SubscriptionID: subID})
@@ -567,6 +581,19 @@ func testCoupon(t *testing.T, e *env) {
 		t.Errorf("优惠金额不应超过价格: %+v", o)
 	}
 	e.Cancel(ctx, u.ID, no)
+	// 优惠券与会员折扣叠加超过 100% 时最多减到 0
+	mk("P90", func(c *model.Coupon) { c.Type, c.Value = CouponPercent, 90 })
+	e.DB.Model(u).Update("discount", 20)
+	q, err := e.Preview(ctx, u.ID, CreateInput{PlanID: p.ID, Period: PeriodMonth, CouponCode: "P90"})
+	if err != nil || q.Coupon != 900 || q.UserDiscount != 100 || q.Total != 0 {
+		t.Fatalf("叠加试算不正确: %+v %v", q, err)
+	}
+	no, _ = e.Create(ctx, u.ID, CreateInput{PlanID: p.ID, Period: PeriodMonth, CouponCode: "P90"})
+	if o := e.order(t, no); val(o.DiscountAmount) != 1000 || o.TotalAmount != 0 {
+		t.Errorf("叠加优惠不应超过价格: %+v", o)
+	}
+	e.Cancel(ctx, u.ID, no)
+	e.DB.Model(u).Update("discount", nil)
 	// 每人限用：已支付的订单计入次数
 	no, _ = e.Create(ctx, u.ID, CreateInput{PlanID: p.ID, Period: PeriodMonth, CouponCode: "ONCE"})
 	e.Paid(ctx, no, "")

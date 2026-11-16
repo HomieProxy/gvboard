@@ -244,13 +244,14 @@ func (s *Service) quotePlan(ctx context.Context, tx *gorm.DB, u *model.User, in 
 		}
 		d.couponID = &id
 	}
-	// 会员折扣（原项目 setVipDiscount）：按原价计算，与优惠券叠加
+	// 会员折扣（原项目 setVipDiscount）：按原价计算，与优惠券叠加。
+	// 叠加后最多减到 0：原项目没有上限，金额为负时升级订单会把负数部分计入退款、加到余额。
 	if u.Discount != nil && *u.Discount != 0 {
 		v := 0.0
 		if d.discount != nil {
 			v = *d.discount
 		}
-		d.userOff = d.total * (float64(*u.Discount) / 100)
+		d.userOff = min(d.total*(float64(*u.Discount)/100), d.total-v)
 		v += d.userOff
 		d.discount = &v
 	}
