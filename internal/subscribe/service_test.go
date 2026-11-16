@@ -129,13 +129,13 @@ type nameHooks map[string]func(v any) any
 
 func (nameHooks) Emit(context.Context, string, any) {}
 
-func (h nameHooks) Filter(_ context.Context, name string, v any, check func(old, new any) error) any {
+func (h nameHooks) Filter(_ context.Context, name string, v any, _ func(any) any, check func(hook.Source, any, any) (any, error)) any {
 	f := h[name]
 	if f == nil {
 		return v
 	}
-	out := f(v)
-	if check(v, out) != nil {
+	out, err := check(hook.Source{}, v, f(v))
+	if err != nil {
 		return v
 	}
 	return out

@@ -328,6 +328,16 @@ onMounted(() => {
               <dd><StatusBadge :tone="commissionStatus[detail.commission_status]?.[1]">{{ commissionStatus[detail.commission_status]?.[0] }}</StatusBadge></dd>
             </dl>
           </template>
+          <template v-if="detail.adjustments?.length">
+            <Separator />
+            <div>
+              <div class="mb-2 font-medium">插件调整明细<span class="ml-2 text-xs font-normal text-muted-foreground">减免已计入优惠金额</span></div>
+              <div v-for="(a, i) in detail.adjustments" :key="i" class="flex justify-between py-1 text-xs text-muted-foreground">
+                <span>{{ a.label }}<span class="ml-2 font-mono">{{ a.plugin }}</span></span>
+                <span class="tabular-nums text-foreground">{{ (a.amount < 0 ? '-' : '+') + formatMoney(Math.abs(a.amount)) }}</span>
+              </div>
+            </div>
+          </template>
           <template v-if="detail.commission_log.length">
             <Separator />
             <div>

@@ -47,3 +47,24 @@ func TestDiscount(t *testing.T) {
 		}
 	}
 }
+
+func TestBadgeAndWidget(t *testing.T) {
+	cases := []struct {
+		r            rule
+		badge, value string
+		text         string
+	}{
+		{rule{percent: 20}, "首单立减 20%", "-20%", "首次购买套餐立减 20%，下单时自动抵扣"},
+		{rule{percent: 30, maxOff: 1050, plans: []int64{1}}, "首单立减 30%", "-30%", "首次购买套餐立减 30%，最多减免 10.50（限指定套餐），下单时自动抵扣"},
+		{rule{percent: 100}, "首单免费", "免费", "首次购买套餐免费，下单时自动抵扣"},
+	}
+	for _, c := range cases {
+		w := c.r.widget()
+		if c.r.badge() != c.badge || w.Value != c.value || w.Text != c.text || w.Hidden {
+			t.Fatalf("%+v：标签 %q，卡片 %+v", c.r, c.r.badge(), w)
+		}
+		if len(w.Actions) != 1 || w.Actions[0].Link != "/plans" || w.Actions[0].Path != "" {
+			t.Fatalf("卡片按钮应跳转到套餐页：%+v", w.Actions)
+		}
+	}
+}

@@ -934,8 +934,22 @@ type jsContent struct {
 }
 
 func filterEncode(name string, v any) ([]byte, error) {
-	if c, ok := v.(hook.SubscribeContent); ok && name == hook.FilterSubscribeContent.Name {
+	switch c := v.(type) {
+	case hook.SubscribeContent:
 		return json.Marshal(jsContent{c.UserID, c.SubscriptionID, c.Client, c.ContentType, c.Headers, string(c.Body)})
+	case hook.OrderAmount:
+		if c.Items == nil {
+			c.Items = []hook.AmountItem{}
+		}
+		return json.Marshal(c)
+	case hook.PlanBadges:
+		c.Plans = slices.Clone(c.Plans)
+		for i := range c.Plans {
+			if c.Plans[i].Badges == nil {
+				c.Plans[i].Badges = []string{}
+			}
+		}
+		return json.Marshal(c)
 	}
 	return json.Marshal(v)
 }
@@ -947,12 +961,23 @@ func filterDecode(name string, old any, b []byte) (any, error) {
 	}
 	switch o := old.(type) {
 	case hook.OrderAmount:
-		n := o
+		var n struct {
+			Amount int64             `json:"amount"`
+			Items  []hook.AmountItem `json:"items"`
+		}
+		// 复制一份：Unmarshal 会复用切片的底层数组，不能改动原值
+		n.Amount, n.Items = o.Amount, slices.Clone(o.Items)
 		if err := json.Unmarshal(b, &n); err != nil {
 			return nil, err
 		}
-		o.Amount = n.Amount
+		o.Amount, o.Items = n.Amount, n.Items
 		return o, nil
+	case hook.PlanBadges:
+		var n hook.PlanBadges
+		if err := json.Unmarshal(b, &n); err != nil {
+			return nil, err
+		}
+		return n, nil
 	case hook.MailMessage:
 		err := json.Unmarshal(b, &o)
 		return o, err

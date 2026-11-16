@@ -62,9 +62,16 @@ func (s *Service) log() *zap.Logger {
 
 // draft 下单过程中的金额。原项目金额以小数参与计算，这里同样保留小数，写入订单时再四舍五入到分。
 type draft struct {
+	preview      bool
 	planID       int64
 	period       string
+	subID        *int64
+	couponID     *int64
 	typ          int
+	price        int64   // 原价
+	coupon       float64 // 优惠券减免
+	userOff      float64 // 会员折扣
+	items        []hook.AmountItem
 	total        float64
 	discount     *float64
 	surplus      *float64
@@ -119,6 +126,7 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (str
 			return errPending
 		}
 		o := &model.Order{UserID: userID, PlanID: in.PlanID, TradeNo: util.GenerateOrderNo()}
+		var items []hook.AmountItem
 		if in.PlanID == 0 {
 			if in.DepositAmount <= 0 {
 				return errDepositMin
@@ -132,13 +140,20 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (str
 			}
 			o.Period = PeriodDeposit
 			d.fill(o)
-		} else {
-			if err := s.createPlanOrder(ctx, tx, u, in, o); err != nil {
-				return err
-			}
+		} else if items, err = s.createPlanOrder(ctx, tx, u, in, o); err != nil {
+			return err
 		}
 		if err := tx.Create(o).Error; err != nil {
 			return err
+		}
+		if len(items) > 0 {
+			rows := make([]model.OrderAdjustment, len(items))
+			for i, it := range items {
+				rows[i] = model.OrderAdjustment{OrderID: o.ID, Plugin: it.Plugin, Label: it.Label, Amount: it.Amount}
+			}
+			if err := tx.Create(&rows).Error; err != nil {
+				return err
+			}
 		}
 		created = o
 		return nil
@@ -150,7 +165,26 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (str
 	return created.TradeNo, nil
 }
 
-func (s *Service) createPlanOrder(ctx context.Context, tx *gorm.DB, u *model.User, in CreateInput, o *model.Order) error {
+// createPlanOrder 计算套餐订单金额、扣减优惠券次数与余额并填入 o，返回插件的调整明细。
+func (s *Service) createPlanOrder(ctx context.Context, tx *gorm.DB, u *model.User, in CreateInput, o *model.Order) ([]hook.AmountItem, error) {
+	d := &draft{}
+	if err := s.quotePlan(ctx, tx, u, in, d); err != nil {
+		return nil, err
+	}
+	if err := s.setInvite(tx, u, d); err != nil {
+		return nil, err
+	}
+	o.Period, o.SubscriptionID, o.CouponID = in.Period, d.subID, d.couponID
+	d.fill(o)
+	if in.Immediate && o.Type == model.OrderTypeRenew && in.Period != PeriodOnetime {
+		o.Immediate = 1
+	}
+	return d.items, nil
+}
+
+// quotePlan 校验并计算套餐订单金额，结果写入 d（下单与试算共用）。
+// d.preview 为 true 时只读取：不锁定优惠券、不扣减优惠券次数与余额。
+func (s *Service) quotePlan(ctx context.Context, tx *gorm.DB, u *model.User, in CreateInput, d *draft) error {
 	now := s.now().Unix()
 	var plan model.Plan
 	if err := tx.Take(&plan, in.PlanID).Error; errors.Is(err, gorm.ErrRecordNotFound) {
@@ -199,25 +233,25 @@ func (s *Service) createPlanOrder(ctx context.Context, tx *gorm.DB, u *model.Use
 		}
 	} else {
 		id := sub.ID
-		o.SubscriptionID = &id
+		d.subID = &id
 	}
 
-	o.Period = in.Period
-	d := &draft{planID: plan.ID, period: in.Period, total: float64(*price)}
+	d.planID, d.period, d.price, d.total = plan.ID, in.Period, *price, float64(*price)
 	if in.CouponCode != "" {
 		id, err := s.useCoupon(tx, in.CouponCode, d, u.ID)
 		if err != nil {
 			return err
 		}
-		o.CouponID = &id
+		d.couponID = &id
 	}
-	// 会员折扣（原项目 setVipDiscount）
+	// 会员折扣（原项目 setVipDiscount）：按原价计算，与优惠券叠加
 	if u.Discount != nil && *u.Discount != 0 {
 		v := 0.0
 		if d.discount != nil {
 			v = *d.discount
 		}
-		v += d.total * (float64(*u.Discount) / 100)
+		d.userOff = d.total * (float64(*u.Discount) / 100)
+		v += d.userOff
 		d.discount = &v
 	}
 	if d.discount != nil {
@@ -230,32 +264,38 @@ func (s *Service) createPlanOrder(ctx context.Context, tx *gorm.DB, u *model.Use
 	if s.Hooks != nil {
 		v := hook.Apply(s.Hooks, ctx, hook.FilterOrderAmount, hook.OrderAmount{
 			UserID: u.ID, PlanID: plan.ID, Period: in.Period, SubscriptionID: in.SubscriptionID, Type: d.typ, Amount: int64(d.total),
+			Preview: d.preview, Items: []hook.AmountItem{},
 		})
-		d.total = float64(v.Amount)
+		d.total, d.items = float64(v.Amount), v.Items
+		// 插件的减免计入订单优惠金额（加价只记录在明细中）
+		var off float64
+		for _, it := range v.Items {
+			if it.Amount < 0 {
+				off -= float64(it.Amount)
+			}
+		}
+		if off > 0 {
+			if d.discount == nil {
+				d.discount = new(float64)
+			}
+			*d.discount += off
+		}
 	}
 	// 余额抵扣：余额足够时全部用余额支付，否则用完余额后支付剩余部分
 	if u.Balance > 0 && d.total > 0 {
-		use := u.Balance
-		if u.Balance-int64(d.total) > 0 {
-			use = int64(d.total)
-		}
-		res := tx.Model(&model.User{}).Where("id = ? AND balance >= ?", u.ID, use).Update("balance", gorm.Expr("balance - ?", use))
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected != 1 {
-			return errInsufficient
+		use := min(u.Balance, int64(d.total))
+		if !d.preview {
+			res := tx.Model(&model.User{}).Where("id = ? AND balance >= ?", u.ID, use).Update("balance", gorm.Expr("balance - ?", use))
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected != 1 {
+				return errInsufficient
+			}
 		}
 		b := float64(use)
 		d.balance = &b
 		d.total -= b
-	}
-	if err := s.setInvite(tx, u, d); err != nil {
-		return err
-	}
-	d.fill(o)
-	if in.Immediate && o.Type == model.OrderTypeRenew && in.Period != PeriodOnetime {
-		o.Immediate = 1
 	}
 	return nil
 }

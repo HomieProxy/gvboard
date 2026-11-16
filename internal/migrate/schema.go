@@ -438,6 +438,13 @@ func Schema() []Table {
 			null("manifest", "text"),
 			null("archive", "longtext"),
 		}, Index{Name: "uniq_code", Cols: []string{"plugin_code"}, Unique: true, Ensure: true}),
+		// 插件对订单金额的调整明细（决策 D76）
+		table("v2_order_adjustment", []Column{
+			col("order_id", "int"),
+			def("plugin", "varchar(64)", "''"),
+			def("label", "varchar(64)", "''"),
+			def("amount", "int", "0"),
+		}, Index{Name: "idx_order", Cols: []string{"order_id"}, Ensure: true}),
 		// Telegram 机器人的用户偏好（决策 D51）
 		table("v2_user_telegram", []Column{
 			col("user_id", "int"),

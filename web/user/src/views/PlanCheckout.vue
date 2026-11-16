@@ -14,7 +14,8 @@ import { cn } from '@gv/shared/lib/utils'
 import { http } from '../api'
 import { errText, toast } from '../ui'
 import { biz, loadBiz, loadMe, loadSubs, me, money, subOptions, subs } from '../store'
-import { PERIODS, type Coupon, type Period, type Plan } from '../types'
+import { PERIODS, type Coupon, type Period, type Plan, type Quote } from '../types'
+import StatusBadge from '../components/common/StatusBadge.vue'
 import PlanContent from '../components/PlanContent.vue'
 import SelectBox from '../components/common/SelectBox.vue'
 
@@ -49,16 +50,34 @@ const periods = computed(() => {
 })
 const price = computed(() => periods.value.find((p) => p.value === period.value)?.price ?? 0)
 
-const couponOff = computed(() => {
-  const c = coupon.value
-  if (!c) return 0
-  return c.type === 1 ? Math.min(c.value, price.value) : Math.round((price.value * c.value) / 100)
-})
-const userOff = computed(() => {
-  const d = me.value?.discount
-  return d ? Math.round(((price.value - couponOff.value) * d) / 100) : 0
-})
-const payable = computed(() => Math.max(0, price.value - couponOff.value - userOff.value))
+// 金额明细以服务器试算为准（与下单的计算一致，含插件的优惠）
+const quote = ref<Quote | null>(null)
+const quoting = ref(false)
+let quoteSeq = 0
+async function refreshQuote() {
+  const seq = ++quoteSeq
+  if (!period.value) {
+    quote.value = null
+    return
+  }
+  quoting.value = true
+  try {
+    const q = await http.post<Quote>('/user/orders/preview', {
+      plan_id: id,
+      period: period.value,
+      coupon_code: coupon.value?.code || undefined,
+      subscription_id: target.value || 0,
+      immediate: renewing.value && immediate.value,
+    })
+    if (seq === quoteSeq) quote.value = q
+  } catch {
+    if (seq === quoteSeq) quote.value = null
+  } finally {
+    if (seq === quoteSeq) quoting.value = false
+  }
+}
+const payable = computed(() => quote.value?.total ?? price.value)
+const signed = (n: number) => (n < 0 ? '-' : '+') + money(Math.abs(n))
 
 const changing = computed(() => {
   const s = targetSub.value
@@ -82,6 +101,7 @@ watch(periods, (list) => {
   if (!list.some((p) => p.value === period.value)) period.value = list[0]?.value ?? null
 })
 watch([period, target], () => (coupon.value = null))
+watch([period, target, coupon, immediate], refreshQuote)
 
 async function applyCoupon() {
   if (!couponCode.value.trim() || !period.value) return
@@ -158,6 +178,9 @@ onMounted(async () => {
           <Card>
             <CardHeader>
               <CardTitle>{{ plan.name }}</CardTitle>
+              <div v-if="plan.badges?.length" class="flex flex-wrap gap-1.5">
+                <StatusBadge v-for="b in plan.badges.slice(0, 3)" :key="b" tone="primary">{{ b }}</StatusBadge>
+              </div>
             </CardHeader>
             <CardContent v-if="plan.content">
               <PlanContent :content="plan.content" />
@@ -247,21 +270,35 @@ onMounted(async () => {
             <div class="space-y-2 text-sm">
               <div class="flex justify-between gap-2">
                 <span class="text-muted-foreground">{{ plan.name }} × {{ periods.find((p) => p.value === period)?.label }}</span>
-                <span class="tabular-nums">{{ money(price) }}</span>
+                <span class="tabular-nums">{{ money(quote?.price ?? price) }}</span>
               </div>
-              <div v-if="couponOff" class="flex justify-between gap-2">
-                <span class="text-muted-foreground">{{ t('plan.couponDiscount') }}</span>
-                <span class="text-success tabular-nums">-{{ money(couponOff) }}</span>
-              </div>
-              <div v-if="userOff" class="flex justify-between gap-2">
-                <span class="text-muted-foreground">{{ t('profile.discount', { n: me?.discount }) }}</span>
-                <span class="text-success tabular-nums">-{{ money(userOff) }}</span>
-              </div>
+              <template v-if="quote">
+                <div v-if="quote.coupon" class="flex justify-between gap-2">
+                  <span class="text-muted-foreground">{{ t('plan.couponDiscount') }}</span>
+                  <span class="text-success tabular-nums">-{{ money(quote.coupon) }}</span>
+                </div>
+                <div v-if="quote.user_discount" class="flex justify-between gap-2">
+                  <span class="text-muted-foreground">{{ t('profile.discount', { n: me?.discount }) }}</span>
+                  <span class="text-success tabular-nums">-{{ money(quote.user_discount) }}</span>
+                </div>
+                <div v-if="quote.surplus" class="flex justify-between gap-2">
+                  <span class="text-muted-foreground">{{ t('order.surplus') }}</span>
+                  <span class="text-success tabular-nums">-{{ money(quote.surplus) }}</span>
+                </div>
+                <div v-for="(it, i) in quote.items" :key="i" class="flex justify-between gap-2">
+                  <span class="min-w-0 truncate text-muted-foreground">{{ it.label }}</span>
+                  <span :class="['tabular-nums', it.amount < 0 && 'text-success']">{{ signed(it.amount) }}</span>
+                </div>
+                <div v-if="quote.balance" class="flex justify-between gap-2">
+                  <span class="text-muted-foreground">{{ t('order.balance') }}</span>
+                  <span class="tabular-nums">-{{ money(quote.balance) }}</span>
+                </div>
+              </template>
             </div>
             <Separator />
             <div class="flex items-baseline justify-between gap-2">
               <span class="text-sm">{{ t('plan.payable') }}</span>
-              <span class="text-2xl font-semibold tabular-nums">{{ money(payable) }}</span>
+              <span :class="['text-2xl font-semibold tabular-nums transition-opacity', quoting && 'opacity-50']">{{ money(payable) }}</span>
             </div>
             <p class="text-xs text-muted-foreground">{{ t('plan.payableHint') }}</p>
             <Button class="w-full" size="lg" :disabled="!period || submitting" @click="submit">

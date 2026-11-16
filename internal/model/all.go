@@ -4,7 +4,7 @@ package model
 func All() []any {
 	return []any{
 		&User{}, &Subscription{}, &InviteCode{}, &CommissionLog{},
-		&Order{}, &Plan{}, &Coupon{}, &Giftcard{}, &Payment{},
+		&Order{}, &OrderAdjustment{}, &Plan{}, &Coupon{}, &Giftcard{}, &Payment{},
 		&Notice{}, &Knowledge{}, &Ticket{}, &TicketMessage{}, &Log{}, &MailLog{},
 		&Stat{}, &StatServer{}, &StatUser{},
 		&ServerGroup{}, &ServerRoute{},

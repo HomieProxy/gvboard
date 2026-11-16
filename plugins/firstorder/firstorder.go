@@ -1,12 +1,14 @@
 // Package firstorder 示例插件：新用户首单优惠。用户第一次购买套餐（新购）时，按比例减免订单金额。
-// 演示过滤器（修改下单金额）、读取数据库、配置校验与用户接口。
+// 演示过滤器（修改下单金额并附带明细、为套餐添加标签）、仪表盘卡片、读取数据库、配置校验与用户接口。
 //
-//	GET {api}/plugin/first_order/eligible  当前用户能否享受首单优惠（主题可据此显示“首单立减”）
+//	GET {api}/plugin/first_order/eligible  当前用户能否享受首单优惠
+//	GET {api}/plugin/first_order/widget    仪表盘卡片状态（不能享受时隐藏）
 package firstorder
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strconv"
@@ -33,8 +35,8 @@ type Plugin struct{}
 
 func (Plugin) Info() sdk.Info {
 	return sdk.Info{
-		Code: "first_order", Name: "首单优惠", Version: "1.0.0", Author: "Gvboard",
-		Description: "从未购买过套餐的用户新购套餐时按比例减免金额（在优惠券之后计算）",
+		Code: "first_order", Name: "首单优惠", Version: "1.1.0", Author: "Gvboard",
+		Description: "从未购买过套餐的用户新购套餐时按比例减免金额（在优惠券之后计算），仪表盘显示首单优惠卡片，套餐显示“首单立减”标签",
 	}
 }
 
@@ -78,6 +80,34 @@ func (r rule) applies(planID int64) bool {
 	return len(r.plans) == 0 || slices.Contains(r.plans, planID)
 }
 
+// badge 套餐标签。
+func (r rule) badge() string {
+	if r.percent == 100 {
+		return "首单免费"
+	}
+	return "首单立减 " + strconv.FormatInt(r.percent, 10) + "%"
+}
+
+// widget 仪表盘卡片状态。
+func (r rule) widget() sdk.WidgetState {
+	text := "首次购买套餐立减 " + strconv.FormatInt(r.percent, 10) + "%"
+	if r.percent == 100 {
+		text = "首次购买套餐免费"
+	}
+	if r.maxOff > 0 {
+		text += "，最多减免 " + fmt.Sprintf("%d.%02d", r.maxOff/100, r.maxOff%100)
+	}
+	if len(r.plans) > 0 {
+		text += "（限指定套餐）"
+	}
+	text += "，下单时自动抵扣"
+	value := "-" + strconv.FormatInt(r.percent, 10) + "%"
+	if r.percent == 100 {
+		value = "免费"
+	}
+	return sdk.WidgetState{Text: text, Value: value, Actions: []sdk.WidgetAction{{Label: "去选套餐", Link: "/plans"}}}
+}
+
 // discount 减免金额（分），向下取整且不超过上限与订单金额。
 func (r rule) discount(amount int64) int64 {
 	off := amount * r.percent / 100
@@ -102,6 +132,7 @@ func purchased(ctx context.Context, db *gorm.DB, userID int64) (bool, error) {
 }
 
 func (Plugin) Setup(h sdk.Host) error {
+	h.Widget(sdk.Widget{Key: "first_order", Slot: sdk.SlotDashboard, Title: "首单优惠", Icon: sdk.IconSparkles, State: "/widget"})
 	sdk.AddFilter(h, sdk.FilterOrderAmount, 100, func(ctx context.Context, v sdk.OrderAmount) (sdk.OrderAmount, error) {
 		if v.Type != orderTypeNew || v.Amount <= 0 {
 			return v, nil
@@ -114,8 +145,26 @@ func (Plugin) Setup(h sdk.Host) error {
 		if err != nil {
 			return v, err
 		}
-		if !done {
-			v.Amount -= r.discount(v.Amount)
+		if off := r.discount(v.Amount); !done && off > 0 {
+			v.Amount -= off
+			v.Items = append(v.Items, sdk.AmountItem{Label: "首单优惠", Amount: -off})
+		}
+		return v, nil
+	})
+
+	sdk.AddFilter(h, sdk.FilterPlanBadges, 100, func(ctx context.Context, v sdk.PlanBadges) (sdk.PlanBadges, error) {
+		r, err := parseRule(h.Config())
+		if err != nil {
+			return v, nil
+		}
+		done, err := purchased(ctx, h.DB(), v.UserID)
+		if err != nil || done {
+			return v, err
+		}
+		for i := range v.Plans {
+			if r.applies(v.Plans[i].PlanID) {
+				v.Plans[i].Badges = append(v.Plans[i].Badges, r.badge())
+			}
 		}
 		return v, nil
 	})
@@ -132,6 +181,24 @@ func (Plugin) Setup(h sdk.Host) error {
 			return
 		}
 		sdk.OK(c, gin.H{"eligible": !done, "percent": r.percent, "max_off": r.maxOff, "plan_ids": r.plans})
+	})
+
+	h.UserRoutes().GET("/widget", func(c *gin.Context) {
+		r, err := parseRule(h.Config())
+		if err != nil {
+			sdk.OK(c, sdk.WidgetState{Hidden: true})
+			return
+		}
+		done, err := purchased(c.Request.Context(), h.DB(), sdk.CurrentUser(c).ID)
+		if err != nil {
+			sdk.Fail(c, http.StatusInternalServerError, "服务繁忙")
+			return
+		}
+		if done {
+			sdk.OK(c, sdk.WidgetState{Hidden: true})
+			return
+		}
+		sdk.OK(c, r.widget())
 	})
 	return nil
 }

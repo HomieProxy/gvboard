@@ -99,11 +99,13 @@ func safeEvent(ctx context.Context, h sdk.EventHandler, ev sdk.Event) (err error
 
 // Filter 依次执行已启用插件的过滤器（priority 升序，相同时按插件标识）。
 // 某个过滤器出错、超时、panic、返回类型不同或未通过 check 时跳过该插件的修改。
-func (m *Manager) Filter(ctx context.Context, name string, value any, check func(old, new any) error) any {
+func (m *Manager) Filter(ctx context.Context, name string, value any, clone func(any) any, check func(src hook.Source, old, new any) (any, error)) any {
 	var regs []filterReg
+	names := map[string]string{}
 	for _, e := range m.list() {
 		if len(e.filters[name]) > 0 && m.Enabled(e.code) {
 			regs = append(regs, e.filters[name]...)
+			names[e.code] = e.info.Name
 		}
 	}
 	sort.SliceStable(regs, func(i, j int) bool {
@@ -113,12 +115,16 @@ func (m *Manager) Filter(ctx context.Context, name string, value any, check func
 		return regs[i].code < regs[j].code
 	})
 	for _, r := range regs {
-		out, err := m.runFilter(ctx, r, value)
+		in := value
+		if clone != nil {
+			in = clone(value)
+		}
+		out, err := m.runFilter(ctx, r, in)
 		if err == nil && reflect.TypeOf(out) != reflect.TypeOf(value) {
 			err = fmt.Errorf("返回值类型 %T 与 %T 不同", out, value)
 		}
 		if err == nil && check != nil {
-			err = check(value, out)
+			out, err = check(hook.Source{Code: r.code, Name: names[r.code]}, value, out)
 		}
 		if err != nil {
 			m.log().Warn("插件过滤器执行失败，已忽略", zap.String("plugin", r.code), zap.String("filter", name), zap.Error(err))

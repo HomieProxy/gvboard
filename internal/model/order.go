@@ -88,6 +88,19 @@ type Plan struct {
 
 func (Plan) TableName() string { return "v2_plan" }
 
+// OrderAdjustment 插件对订单金额的调整明细（v2_order_adjustment，Gvboard 新增，决策 D76）。Amount 为分，负数为减免。
+type OrderAdjustment struct {
+	ID        int64  `gorm:"column:id;primaryKey" json:"-"`
+	OrderID   int64  `gorm:"column:order_id" json:"-"`
+	Plugin    string `gorm:"column:plugin" json:"plugin"`
+	Label     string `gorm:"column:label" json:"label"`
+	Amount    int64  `gorm:"column:amount" json:"amount"`
+	CreatedAt int64  `gorm:"column:created_at;autoCreateTime" json:"-"`
+	UpdatedAt int64  `gorm:"column:updated_at;autoUpdateTime" json:"-"`
+}
+
+func (OrderAdjustment) TableName() string { return "v2_order_adjustment" }
+
 // Coupon 优惠券（v2_coupon）。type：1 按金额，2 按比例。
 type Coupon struct {
 	ID               int64   `gorm:"column:id;primaryKey" json:"id"`

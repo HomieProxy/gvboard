@@ -559,8 +559,9 @@ func (s *Service) AdminOrders(ctx context.Context, in OrderQuery) (*PageResult[A
 // AdminOrderDetail 管理端订单详情，附带佣金记录与被折抵的订单。
 type AdminOrderDetail struct {
 	AdminOrder
-	CommissionLog []model.CommissionLog `json:"commission_log"`
-	SurplusOrders []model.Order         `json:"surplus_orders"`
+	CommissionLog []model.CommissionLog   `json:"commission_log"`
+	SurplusOrders []model.Order           `json:"surplus_orders"`
+	Adjustments   []model.OrderAdjustment `json:"adjustments"`
 }
 
 func (s *Service) adminOrder(db *gorm.DB, tradeNo string) (*model.Order, error) {
@@ -591,6 +592,9 @@ func (s *Service) AdminDetail(ctx context.Context, tradeNo string) (*AdminOrderD
 		if err := db.Where("id IN ?", []int64(o.SurplusOrderIDs)).Find(&d.SurplusOrders).Error; err != nil {
 			return nil, err
 		}
+	}
+	if d.Adjustments, err = adjustments(db, o.ID); err != nil {
+		return nil, err
 	}
 	return d, nil
 }

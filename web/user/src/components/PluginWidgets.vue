@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, type Component } from 'vue'
+import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   CalendarCheckIcon, CoinsIcon, GiftIcon, MegaphoneIcon, PuzzleIcon, SparklesIcon, StarIcon, TicketIcon, TrophyIcon,
@@ -14,6 +15,7 @@ import type { PluginWidget, PluginWidgetState } from '../types'
 
 const props = defineProps<{ position: string }>()
 const { t } = useI18n()
+const router = useRouter()
 
 const icons: Record<string, Component> = {
   puzzle: PuzzleIcon,
@@ -26,8 +28,9 @@ const icons: Record<string, Component> = {
   coins: CoinsIcon,
   megaphone: MegaphoneIcon,
 }
-// 插件只能请求自己路由前缀下的路径
+// 插件只能请求自己路由前缀下的路径、跳转到站内页面
 const pathPattern = /^\/[A-Za-z0-9_/-]{0,127}$/
+const valid = (p: unknown): p is string => typeof p === 'string' && pathPattern.test(p)
 
 interface Item {
   w: PluginWidget
@@ -51,9 +54,15 @@ function normalize(s: PluginWidgetState | null): PluginWidgetState {
     text: clip(v.text, 200),
     value: clip(v.value, 32),
     actions: (Array.isArray(v.actions) ? v.actions : [])
-      .filter((a) => a && typeof a.path === 'string' && pathPattern.test(a.path))
+      .filter((a) => a && (a.link ? valid(a.link) : valid(a.path)))
       .slice(0, 2)
-      .map((a) => ({ label: clip(a.label, 16) || t('common.confirm'), path: a.path, disabled: a.disabled === true, confirm: clip(a.confirm, 200) })),
+      .map((a) => ({
+        label: clip(a.label, 16) || t('common.confirm'),
+        path: a.link ? undefined : a.path,
+        link: a.link || undefined,
+        disabled: a.disabled === true,
+        confirm: clip(a.confirm, 200),
+      })),
   }
 }
 
@@ -70,6 +79,10 @@ async function refresh(it: Item) {
 }
 
 async function act(it: Item, a: NonNullable<PluginWidgetState['actions']>[number]) {
+  if (a.link) {
+    router.push(a.link)
+    return
+  }
   const run = async () => {
     const r = await http.post<{ message?: unknown } | null>(base(it.w) + a.path)
     const msg = r && typeof r === 'object' ? clip(r.message, 200) : ''
@@ -80,7 +93,7 @@ async function act(it: Item, a: NonNullable<PluginWidgetState['actions']>[number
     await confirm(a.confirm, run)
     return
   }
-  it.busy = a.path
+  it.busy = a.path || ''
   try {
     await run()
   } catch (e) {
@@ -123,7 +136,7 @@ onMounted(async () => {
             <div v-if="it.state?.actions?.length" class="flex flex-wrap gap-2 pt-2">
               <Button
                 v-for="(a, i) in it.state.actions"
-                :key="a.path + i"
+                :key="i"
                 size="sm"
                 :variant="i === 0 ? 'default' : 'outline'"
                 :disabled="a.disabled || !!it.busy || it.loading"

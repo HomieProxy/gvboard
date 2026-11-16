@@ -36,6 +36,13 @@ const current = computed(() => methods.value.find((m) => m.id === method.value) 
 const fee = (m: PaymentMethod | null) =>
   m && order.value ? Math.round((order.value.total_amount * (m.handling_fee_percent || 0)) / 100 + (m.handling_fee_fixed || 0)) : 0
 const productName = computed(() => (order.value?.plan_id === 0 ? t('order.deposit') : order.value?.plan?.name || ''))
+// 原价：实付加上各项抵扣；插件加价不计入优惠，需要减去
+const originalPrice = computed(() => {
+  const o = order.value
+  if (!o) return 0
+  const extra = (o.adjustments || []).reduce((s, a) => s + Math.max(a.amount, 0), 0)
+  return o.total_amount + (o.discount_amount || 0) + (o.surplus_amount || 0) + (o.balance_amount || 0) - extra
+})
 const targetName = computed(() => {
   const id = order.value?.subscription_id
   if (!id) return t('order.newSubscription')
@@ -292,11 +299,17 @@ onUnmounted(() => clearInterval(timer))
             <div class="space-y-2 text-sm">
               <div class="flex justify-between gap-2">
                 <span class="text-muted-foreground">{{ t('plan.price') }}</span>
-                <span class="tabular-nums">{{ money(order.total_amount + (order.discount_amount || 0) + (order.surplus_amount || 0) + (order.balance_amount || 0)) }}</span>
+                <span class="tabular-nums">{{ money(originalPrice) }}</span>
               </div>
               <div v-if="order.discount_amount" class="flex justify-between gap-2">
                 <span class="text-muted-foreground">{{ t('order.discount') }}</span>
                 <span class="tabular-nums text-success">-{{ money(order.discount_amount) }}</span>
+              </div>
+              <div v-for="(a, i) in order.adjustments || []" :key="i" class="flex justify-between gap-2 ps-3 text-xs">
+                <span class="min-w-0 truncate text-muted-foreground">{{ a.label }}</span>
+                <span :class="['tabular-nums', a.amount < 0 ? 'text-success' : 'text-muted-foreground']">
+                  {{ (a.amount < 0 ? '-' : '+') + money(Math.abs(a.amount)) }}
+                </span>
               </div>
               <div v-if="order.surplus_amount && order.type === 3" class="flex justify-between gap-2">
                 <span class="text-muted-foreground">{{ t('order.surplus') }}</span>

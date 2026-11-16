@@ -114,6 +114,28 @@ export interface Plan {
   reset_price: number | null
   reset_traffic_method: number | null
   capacity_limit: number | null
+  /** 插件追加的标签（如“首单立减 20%”），纯文本显示 */
+  badges?: string[]
+}
+
+/** 插件对订单金额的调整明细（分，负数为减免） */
+export interface AmountItem {
+  label: string
+  amount: number
+  plugin: string
+}
+
+/** 结算试算（POST /user/orders/preview），各项为分 */
+export interface Quote {
+  type: number
+  price: number
+  coupon: number
+  user_discount: number
+  surplus: number
+  refund: number
+  items: AmountItem[]
+  balance: number
+  total: number
 }
 
 export interface Order {
@@ -141,6 +163,8 @@ export interface OrderDetail extends Order {
   get_amount?: number
   try_out_plan_id: number
   surplus_orders?: Order[]
+  /** 插件调整明细，减免部分已计入 discount_amount */
+  adjustments?: AmountItem[]
 }
 
 export interface CheckoutResult {
@@ -240,7 +264,7 @@ export interface PluginWidgetState {
   hidden?: boolean
   text?: string
   value?: string
-  actions?: { label: string; path: string; disabled?: boolean; confirm?: string }[]
+  actions?: { label: string; path?: string; link?: string; disabled?: boolean; confirm?: string }[]
 }
 
 export interface KnowledgeCategory {

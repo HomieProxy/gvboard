@@ -156,9 +156,9 @@ type filterHooks func(v any) any
 
 func (filterHooks) Emit(context.Context, string, any) {}
 
-func (f filterHooks) Filter(_ context.Context, _ string, v any, check func(old, new any) error) any {
-	out := f(v)
-	if check(v, out) != nil {
+func (f filterHooks) Filter(_ context.Context, _ string, v any, _ func(any) any, check func(hook.Source, any, any) (any, error)) any {
+	out, err := check(hook.Source{}, v, f(v))
+	if err != nil {
 		return v
 	}
 	return out

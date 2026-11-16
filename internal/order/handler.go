@@ -27,6 +27,7 @@ type Module struct {
 //	GET  {api}/user/plans/:id                      套餐详情
 //	GET  {api}/user/orders                         订单列表，可选 ?status=
 //	POST {api}/user/orders                         下单
+//	POST {api}/user/orders/preview                 结算试算（参数同下单）
 //	GET  {api}/user/orders/:trade_no               订单详情
 //	GET  {api}/user/orders/:trade_no/status        订单状态
 //	POST {api}/user/orders/:trade_no/checkout      结算
@@ -45,6 +46,7 @@ func (m *Module) Register(r *server.Router) {
 	u.GET("/plans/:id", m.plan)
 	u.GET("/orders", m.orders)
 	u.POST("/orders", m.create)
+	u.POST("/orders/preview", m.preview)
 	u.GET("/orders/:trade_no", m.detail)
 	u.GET("/orders/:trade_no/status", m.status)
 	u.POST("/orders/:trade_no/checkout", m.checkout)
@@ -103,7 +105,7 @@ func idParam(c *gin.Context) (int64, bool) {
 // ---------- 用户端 ----------
 
 func (m *Module) plans(c *gin.Context) {
-	v, err := m.Svc.Plans(c.Request.Context())
+	v, err := m.Svc.UserPlans(c.Request.Context(), uid(c))
 	respond(c, v, err)
 }
 
@@ -112,7 +114,7 @@ func (m *Module) plan(c *gin.Context) {
 	if !ok {
 		return
 	}
-	v, err := m.Svc.Plan(c.Request.Context(), uid(c), id)
+	v, err := m.Svc.UserPlan(c.Request.Context(), uid(c), id)
 	respond(c, v, err)
 }
 
@@ -136,6 +138,15 @@ func (m *Module) create(c *gin.Context) {
 		return
 	}
 	v, err := m.Svc.Create(c.Request.Context(), uid(c), in)
+	respond(c, v, err)
+}
+
+func (m *Module) preview(c *gin.Context) {
+	var in CreateInput
+	if !bind(c, &in) {
+		return
+	}
+	v, err := m.Svc.Preview(c.Request.Context(), uid(c), in)
 	respond(c, v, err)
 }
 

@@ -2,6 +2,10 @@ package hook
 
 import (
 	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"unicode/utf8"
 
 	"gvboard/internal/phpx"
 )
@@ -86,7 +90,8 @@ type Traffic struct {
 	Download   int64  `json:"download"`
 }
 
-// OrderAmount 下单金额过滤器的值：已计算优惠券、会员折扣与升级折抵，尚未扣除余额。只采用修改后的 Amount（分，不能为负）。
+// OrderAmount 下单金额过滤器的值：已计算优惠券、会员折扣与升级折抵，尚未扣除余额。
+// 只采用修改后的 Amount（分，不能为负）与新追加的 Items。
 type OrderAmount struct {
 	UserID         int64  `json:"user_id"`
 	PlanID         int64  `json:"plan_id"`
@@ -94,6 +99,103 @@ type OrderAmount struct {
 	SubscriptionID int64  `json:"subscription_id"` // 0 表示新开订阅
 	Type           int    `json:"type"`
 	Amount         int64  `json:"amount"`
+	// Preview 为 true 时是结算页试算，不会创建订单。过滤器在试算与下单时都会执行，不要在其中修改数据。
+	Preview bool `json:"preview"`
+	// Items 之前的插件追加的调整明细。修改 Amount 时追加说明，合计必须等于 Amount 的变化；
+	// 不追加时以插件名称自动生成一条。
+	Items []AmountItem `json:"items"`
+}
+
+// AmountItem 订单金额调整明细，显示在结算页与订单详情。
+type AmountItem struct {
+	Label  string `json:"label"`  // 名称，如“首单优惠”，1～32 个字符
+	Amount int64  `json:"amount"` // 调整金额（分），负数为减免
+	Plugin string `json:"plugin"` // 插件标识，由系统填写
+}
+
+// PlanBadges 套餐标签过滤器的值：当前用户看到的套餐。插件只能向 Badges 追加标签。
+type PlanBadges struct {
+	UserID int64       `json:"user_id"`
+	Plans  []PlanBadge `json:"plans"`
+}
+
+// PlanBadge 一个套餐的标签。
+type PlanBadge struct {
+	PlanID int64    `json:"plan_id"`
+	Badges []string `json:"badges"` // 每个 1～16 个字符，每个套餐最多 3 个
+}
+
+// 调整明细与标签的限制。
+const (
+	maxItemsPerPlugin = 3
+	maxItems          = 20
+	maxItemLabel      = 32
+	maxBadges         = 3
+	maxBadgeLabel     = 16
+)
+
+func validLabel(s string, max int) bool {
+	return s != "" && s == strings.TrimSpace(s) && utf8.RuneCountInString(s) <= max
+}
+
+// checkOrderAmount 只采用 Amount 与新追加的明细；修改了金额但没有明细时以插件名称生成一条。
+func checkOrderAmount(src Source, o, n OrderAmount) (OrderAmount, error) {
+	if n.Amount < 0 || n.Amount > maxAmount {
+		return o, errors.New("订单金额无效")
+	}
+	if len(n.Items) < len(o.Items) || !slices.Equal(n.Items[:len(o.Items)], o.Items) {
+		return o, errors.New("不能修改其它插件的调整明细")
+	}
+	added := slices.Clone(n.Items[len(o.Items):])
+	diff := n.Amount - o.Amount
+	if len(added) == 0 && diff != 0 {
+		added = []AmountItem{{Label: src.Name, Amount: diff}}
+	}
+	if len(added) > maxItemsPerPlugin {
+		return o, fmt.Errorf("每个插件最多追加 %d 条调整明细", maxItemsPerPlugin)
+	}
+	var sum int64
+	for i := range added {
+		if !validLabel(added[i].Label, maxItemLabel) || added[i].Amount == 0 {
+			return o, errors.New("调整明细的名称或金额无效")
+		}
+		sum += added[i].Amount
+		added[i].Plugin = src.Code
+	}
+	if sum != diff {
+		return o, errors.New("调整明细合计与金额变化不一致")
+	}
+	if len(o.Items)+len(added) > maxItems {
+		return o, errors.New("调整明细过多")
+	}
+	out := o
+	out.Amount = n.Amount
+	out.Items = append(slices.Clone(o.Items), added...)
+	return out, nil
+}
+
+// checkPlanBadges 只采用各套餐新追加的标签。
+func checkPlanBadges(_ Source, o, n PlanBadges) (PlanBadges, error) {
+	if len(n.Plans) != len(o.Plans) {
+		return o, errors.New("不能增减套餐")
+	}
+	out := PlanBadges{UserID: o.UserID, Plans: make([]PlanBadge, len(o.Plans))}
+	for i, p := range o.Plans {
+		q := n.Plans[i]
+		if q.PlanID != p.PlanID || len(q.Badges) < len(p.Badges) || !slices.Equal(q.Badges[:len(p.Badges)], p.Badges) {
+			return o, errors.New("不能修改套餐或其它插件的标签")
+		}
+		if len(q.Badges) > maxBadges {
+			return o, fmt.Errorf("每个套餐最多 %d 个标签", maxBadges)
+		}
+		for _, b := range q.Badges[len(p.Badges):] {
+			if !validLabel(b, maxBadgeLabel) {
+				return o, errors.New("标签无效")
+			}
+		}
+		out.Plans[i] = PlanBadge{PlanID: p.PlanID, Badges: slices.Clone(q.Badges)}
+	}
+	return out, nil
 }
 
 // SubscribeServers 订阅下发节点列表过滤器的值，只采用修改后的 Servers。
@@ -127,33 +229,38 @@ const maxAmount = 9999999 * 100
 
 // 过滤器。
 var (
-	FilterOrderAmount = Filter[OrderAmount]{Name: "order.amount", Check: func(_, n OrderAmount) error {
-		if n.Amount < 0 || n.Amount > maxAmount {
-			return errors.New("订单金额无效")
-		}
-		return nil
+	FilterOrderAmount = Filter[OrderAmount]{Name: "order.amount", Check: checkOrderAmount, Clone: func(v OrderAmount) OrderAmount {
+		v.Items = slices.Clone(v.Items)
+		return v
 	}}
-	FilterSubscribeServers = Filter[SubscribeServers]{Name: "subscribe.servers", Check: func(_, n SubscribeServers) error {
+	FilterPlanBadges = Filter[PlanBadges]{Name: "plan.badges", Check: checkPlanBadges, Clone: func(v PlanBadges) PlanBadges {
+		v.Plans = slices.Clone(v.Plans)
+		for i := range v.Plans {
+			v.Plans[i].Badges = slices.Clone(v.Plans[i].Badges)
+		}
+		return v
+	}}
+	FilterSubscribeServers = Filter[SubscribeServers]{Name: "subscribe.servers", Check: func(_ Source, _, n SubscribeServers) (SubscribeServers, error) {
 		for _, s := range n.Servers {
 			if s == nil {
-				return errors.New("节点不能为 nil")
+				return n, errors.New("节点不能为 nil")
 			}
 		}
-		return nil
+		return n, nil
 	}}
 	FilterSubscribeContent = Filter[SubscribeContent]{Name: "subscribe.content"}
-	FilterMailMessage      = Filter[MailMessage]{Name: "mail.message", Check: func(o, n MailMessage) error {
+	FilterMailMessage      = Filter[MailMessage]{Name: "mail.message", Check: func(_ Source, o, n MailMessage) (MailMessage, error) {
 		if n.To != o.To {
-			return errors.New("不能修改收件人")
+			return n, errors.New("不能修改收件人")
 		}
 		if n.Subject == "" || n.HTML == "" {
-			return errors.New("邮件标题与内容不能为空")
+			return n, errors.New("邮件标题与内容不能为空")
 		}
-		return nil
+		return n, nil
 	}}
 )
 
 // Filters 全部过滤器名称。
 func Filters() []string {
-	return []string{FilterOrderAmount.Name, FilterSubscribeServers.Name, FilterSubscribeContent.Name, FilterMailMessage.Name}
+	return []string{FilterOrderAmount.Name, FilterPlanBadges.Name, FilterSubscribeServers.Name, FilterSubscribeContent.Name, FilterMailMessage.Name}
 }

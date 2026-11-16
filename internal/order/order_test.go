@@ -170,6 +170,7 @@ func TestOrder(t *testing.T) {
 				"已取消订单补单":   testAdminRestore,
 				"HTTP":      testHTTP,
 				"插件事件与金额过滤": testHooks,
+				"结算试算与调整明细": testPreview,
 			} {
 				t.Run(name, func(t *testing.T) { fn(t, newEnv(t, driver)) })
 			}

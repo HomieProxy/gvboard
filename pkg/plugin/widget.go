@@ -49,9 +49,11 @@ type WidgetState struct {
 
 // WidgetAction 卡片按钮。点击后以 POST 请求本插件的用户路由 Path，
 // 成功时若返回的数据中有 message 字段则作为提示显示，之后刷新卡片。
+// Link 不为空时改为跳转到用户端页面（如 "/plans"），不请求 Path。
 type WidgetAction struct {
 	Label    string `json:"label"`
-	Path     string `json:"path"`
+	Path     string `json:"path,omitempty"`
+	Link     string `json:"link,omitempty"`
 	Disabled bool   `json:"disabled,omitempty"`
 	// Confirm 不为空时点击后先弹出确认框。
 	Confirm string `json:"confirm,omitempty"`

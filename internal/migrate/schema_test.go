@@ -39,7 +39,7 @@ func TestSchemaGeneratesForBothDialects(t *testing.T) {
 		"v2_server_trojan", "v2_server_vless", "v2_server_vmess", "v2_server_anytls", "v2_server_v2node",
 		"v2_stat", "v2_stat_server", "v2_stat_user", "v2_ticket", "v2_ticket_message", "v2_user",
 		"v2_subscription", "v2_settings", "v2_plugin", "v2_plugin_kv",
-		"v2_subscribe_rule", "v2_subscribe_log", "v2_user_telegram",
+		"v2_subscribe_rule", "v2_subscribe_log", "v2_user_telegram", "v2_order_adjustment",
 	}
 	for _, n := range required {
 		if !seen[n] {

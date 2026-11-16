@@ -16,6 +16,7 @@ import (
 	"gvboard/internal/server"
 	sdk "gvboard/pkg/plugin"
 	"gvboard/plugins/checkin"
+	"gvboard/plugins/firstorder"
 )
 
 func widgetPlugin(code string, ws ...sdk.Widget) *fake {
@@ -76,34 +77,74 @@ func TestWidgetRegister(t *testing.T) {
 	})
 }
 
+// widgetEnv 挂载插件路由，返回一个已登录用户与请求函数（返回状态码与 data）。
+func widgetEnv(t *testing.T, e *env, plugins ...sdk.Plugin) (*Manager, *model.User, string, func(method, path, tok string) (int, json.RawMessage)) {
+	t.Helper()
+	u, _, err := account.Create(e.db, account.NewUser{Email: "w@x.com", Password: "password123"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := e.auth.Issue(context.Background(), u.ID, "", "")
+	m := e.manager(t, plugins...)
+	cfg := &config.Config{Server: config.ServerConfig{Mode: config.ModeAll}, API: config.APIConfig{Prefix: "/api/t1"}}
+	r, err := server.NewRouter(cfg, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Mount(m)
+	return m, u, tok, func(method, path, tok string) (int, json.RawMessage) {
+		req := httptest.NewRequest(method, "/api/t1/"+path, nil)
+		if tok != "" {
+			req.Header.Set("Authorization", tok)
+		}
+		w := httptest.NewRecorder()
+		r.Engine.ServeHTTP(w, req)
+		var body struct {
+			Data json.RawMessage `json:"data"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &body)
+		return w.Code, body.Data
+	}
+}
+
+func TestWidgetFirstOrder(t *testing.T) {
+	eachDriver(t, func(t *testing.T, e *env) {
+		m, u, tok, do := widgetEnv(t, e, &firstorder.Plugin{})
+		mustEnable(t, m, "first_order")
+		var list []WidgetView
+		if code, data := do("GET", "user/plugin-widgets", tok); code != http.StatusOK || json.Unmarshal(data, &list) != nil ||
+			len(list) != 1 || list[0].Plugin != "first_order" || list[0].Icon != sdk.IconSparkles {
+			t.Fatalf("卡片列表错误：%d %s", code, data)
+		}
+		var st sdk.WidgetState
+		if code, data := do("GET", "plugin/first_order/widget", tok); code != http.StatusOK || json.Unmarshal(data, &st) != nil ||
+			st.Hidden || st.Value != "-20%" || len(st.Actions) != 1 || st.Actions[0].Link != "/plans" {
+			t.Fatalf("未购买时应显示首单卡片：%d %s", code, data)
+		}
+		// 充值与待支付订单不算购买过
+		for i, o := range []model.Order{{Type: 9, Status: 3}, {Type: 1, Status: 0}} {
+			o.UserID, o.TradeNo, o.Period = u.ID, "fo"+string(rune('a'+i)), "month_price"
+			if err := e.db.Create(&o).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, data := do("GET", "plugin/first_order/widget", tok); json.Unmarshal(data, &st) != nil || st.Hidden {
+			t.Fatalf("充值与待支付订单不应隐藏首单卡片：%s", data)
+		}
+		if err := e.db.Create(&model.Order{UserID: u.ID, PlanID: 1, Type: 1, Status: 3, TradeNo: "fo-done", Period: "month_price"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		st = sdk.WidgetState{}
+		if code, data := do("GET", "plugin/first_order/widget", tok); code != http.StatusOK || json.Unmarshal(data, &st) != nil || !st.Hidden {
+			t.Fatalf("购买过套餐后应隐藏首单卡片：%d %s", code, data)
+		}
+	})
+}
+
 func TestWidgetCheckin(t *testing.T) {
 	eachDriver(t, func(t *testing.T, e *env) {
 		ctx := context.Background()
-		u, _, err := account.Create(e.db, account.NewUser{Email: "w@x.com", Password: "password123"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		tok, _ := e.auth.Issue(ctx, u.ID, "", "")
-		m := e.manager(t, &checkin.Plugin{})
-		cfg := &config.Config{Server: config.ServerConfig{Mode: config.ModeAll}, API: config.APIConfig{Prefix: "/api/t1"}}
-		r, err := server.NewRouter(cfg, zap.NewNop())
-		if err != nil {
-			t.Fatal(err)
-		}
-		r.Mount(m)
-		do := func(method, path, tok string) (int, json.RawMessage) {
-			req := httptest.NewRequest(method, "/api/t1/"+path, nil)
-			if tok != "" {
-				req.Header.Set("Authorization", tok)
-			}
-			w := httptest.NewRecorder()
-			r.Engine.ServeHTTP(w, req)
-			var body struct {
-				Data json.RawMessage `json:"data"`
-			}
-			_ = json.Unmarshal(w.Body.Bytes(), &body)
-			return w.Code, body.Data
-		}
+		m, u, tok, do := widgetEnv(t, e, &checkin.Plugin{})
 
 		if code, _ := do("GET", "user/plugin-widgets", ""); code == http.StatusOK {
 			t.Fatal("未登录不应能获取卡片")

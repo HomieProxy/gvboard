@@ -477,7 +477,8 @@ plugin.onEnable(function () {
 plugin.onDisable(function () { kv.set('enabled', '0'); });
 plugin.on('user.registered', function (ev) { kv.set('reg:' + ev.data.user_id, ev.name, 60); });
 plugin.on('order.paid', function () { throw new Error('处理失败'); });
-plugin.filter('order.amount', 10, function (v) { v.amount = Math.floor(v.amount * plugin.config().rate / 100); v.user_id = 1; return v; });
+plugin.filter('order.amount', 10, function (v) { var old = v.amount; v.amount = Math.floor(v.amount * plugin.config().rate / 100); v.items.push({ label: '九折', amount: v.amount - old }); v.user_id = 1; return v; });
+plugin.filter('plan.badges', function (v) { v.plans.forEach(function (p) { p.badges.push('JS 标签'); }); return v; });
 plugin.filter('order.amount', 1, function (v) { if (v.user_id === 999) { while (true) {} } });
 plugin.filter('mail.message', function (m) { m.subject = '[' + meta.tag + '] ' + m.subject; return m; });
 plugin.filter('subscribe.content', function (c) { c.body = c.body + '\n#' + util.upper(c.client); c.headers.push(['x-demo', '1']); return c; });
@@ -538,7 +539,7 @@ func TestJSRuntime(t *testing.T) {
 		if v := install(t, m, demoPkg(t)); v.Status != StatusOK {
 			t.Fatalf("安装失败：%+v", v)
 		}
-		if v := statusOf(t, m, "jsdemo"); len(v.Features.Events) != 2 || len(v.Features.Filters) != 4 || len(v.Features.Routes) != 11 || len(v.Features.Jobs) != 1 {
+		if v := statusOf(t, m, "jsdemo"); len(v.Features.Events) != 2 || len(v.Features.Filters) != 5 || len(v.Features.Routes) != 11 || len(v.Features.Jobs) != 1 {
 			t.Fatalf("注册内容错误：%+v", v.Features)
 		}
 		if err := m.SaveConfig(ctx, "jsdemo", map[string]any{"token": "bad"}); err != nil {
@@ -557,8 +558,13 @@ func TestJSRuntime(t *testing.T) {
 
 		// 过滤器
 		in := hook.OrderAmount{UserID: 7, Amount: 1000}
-		if out := hook.Apply(m, ctx, hook.FilterOrderAmount, in); out.Amount != 900 || out.UserID != 7 {
-			t.Fatalf("订单金额过滤错误（只能修改金额）：%+v", out)
+		if out := hook.Apply(m, ctx, hook.FilterOrderAmount, in); out.Amount != 900 || out.UserID != 7 ||
+			len(out.Items) != 1 || out.Items[0].Label != "九折" || out.Items[0].Amount != -100 {
+			t.Fatalf("订单金额过滤错误（只能修改金额与追加明细）：%+v", out)
+		}
+		badges := hook.Apply(m, ctx, hook.FilterPlanBadges, hook.PlanBadges{UserID: 1, Plans: []hook.PlanBadge{{PlanID: 3}}})
+		if len(badges.Plans) != 1 || len(badges.Plans[0].Badges) != 1 || badges.Plans[0].Badges[0] != "JS 标签" {
+			t.Fatalf("套餐标签过滤错误：%+v", badges)
 		}
 		for i := 0; i < 2; i++ {
 			start := time.Now()

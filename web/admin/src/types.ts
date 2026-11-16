@@ -121,6 +121,7 @@ export interface Order {
 export interface OrderDetail extends Order {
   commission_log: { id: number; invite_user_id: number; get_amount: number; order_amount: number; created_at: number }[]
   surplus_orders: Order[]
+  adjustments?: { label: string; amount: number; plugin: string }[]
 }
 
 export interface Coupon {

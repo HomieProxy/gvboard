@@ -179,6 +179,8 @@ type OrderDetail struct {
 	GetAmount     *int64      `json:"get_amount,omitempty"`
 	TryOutPlanID  int64       `json:"try_out_plan_id"`
 	SurplusOrders []OrderView `json:"surplus_orders,omitempty"`
+	// Adjustments 插件调整明细，减免部分已计入 discount_amount
+	Adjustments []model.OrderAdjustment `json:"adjustments"`
 }
 
 // Detail 订单详情（对应原项目 user/order/detail）。
@@ -191,7 +193,11 @@ func (s *Service) Detail(ctx context.Context, userID int64, tradeNo string) (*Or
 	if o.PlanID == 0 {
 		bonus := DepositBonus(s.Settings.Strings("deposit_bounus"), o.TotalAmount)
 		get := o.TotalAmount + bonus
-		return &OrderDetail{OrderView: orderView(o, nil), Bonus: &bonus, GetAmount: &get}, nil
+		return &OrderDetail{OrderView: orderView(o, nil), Bonus: &bonus, GetAmount: &get, Adjustments: []model.OrderAdjustment{}}, nil
+	}
+	adj, err := adjustments(db, o.ID)
+	if err != nil {
+		return nil, err
 	}
 	var p model.Plan
 	if err := db.Take(&p, o.PlanID).Error; errors.Is(err, gorm.ErrRecordNotFound) {
@@ -203,6 +209,7 @@ func (s *Service) Detail(ctx context.Context, userID int64, tradeNo string) (*Or
 		OrderView:    orderView(o, map[int64]string{p.ID: p.Name}),
 		PlanDetail:   &p,
 		TryOutPlanID: s.Settings.Int("try_out_plan_id"),
+		Adjustments:  adj,
 	}
 	if len(o.SurplusOrderIDs) > 0 {
 		var orders []model.Order

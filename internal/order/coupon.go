@@ -100,8 +100,9 @@ func (s *Service) validCoupon(db *gorm.DB, code string, planID, userID int64, pe
 }
 
 // useCoupon 在下单事务 tx 中使用优惠券：计算优惠金额并扣减可用次数（原项目 CouponService::use）。
+// 试算时只计算优惠金额。
 func (s *Service) useCoupon(tx *gorm.DB, code string, d *draft, userID int64) (int64, error) {
-	c, err := s.validCoupon(tx, code, d.planID, userID, d.period, true)
+	c, err := s.validCoupon(tx, code, d.planID, userID, d.period, !d.preview)
 	if err != nil {
 		return 0, err
 	}
@@ -115,8 +116,8 @@ func (s *Service) useCoupon(tx *gorm.DB, code string, d *draft, userID int64) (i
 	if discount > d.total {
 		discount = d.total
 	}
-	d.discount = &discount
-	if c.LimitUse != nil {
+	d.discount, d.coupon = &discount, discount
+	if c.LimitUse != nil && !d.preview {
 		res := tx.Model(&model.Coupon{}).Where("id = ? AND limit_use > 0", c.ID).Update("limit_use", gorm.Expr("limit_use - 1"))
 		if res.Error != nil {
 			return 0, res.Error

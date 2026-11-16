@@ -397,16 +397,18 @@ func (s *Service) SetInviter(ctx context.Context, id int64, email string) error 
 	})
 }
 
-// deleteUsers 在事务中删除用户及其订阅、订单、邀请码、工单、Telegram 偏好，并清空被邀请人的邀请人
+// deleteUsers 在事务中删除用户及其订阅、订单（含插件调整明细）、邀请码、工单、Telegram 偏好，并清空被邀请人的邀请人
 // （与原项目 delUser 一致，另删除订阅与 Telegram 偏好）。佣金记录、流量统计保留。
 func deleteUsers(tx *gorm.DB, ids []int64) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	tickets := tx.Model(&model.Ticket{}).Select("id").Where("user_id IN ?", ids)
+	orders := tx.Model(&model.Order{}).Select("id").Where("user_id IN ?", ids)
 	steps := []func() error{
 		func() error { return tx.Where("ticket_id IN (?)", tickets).Delete(&model.TicketMessage{}).Error },
 		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.Ticket{}).Error },
+		func() error { return tx.Where("order_id IN (?)", orders).Delete(&model.OrderAdjustment{}).Error },
 		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.Order{}).Error },
 		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.InviteCode{}).Error },
 		func() error {

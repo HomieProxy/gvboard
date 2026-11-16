@@ -281,13 +281,13 @@ func TestBuyFlow(t *testing.T) {
 			t.Fatalf("应可选择新开或已有订阅：%v", rows)
 		}
 		text, rows = e.shown(t, 9201, "dr:"+pid+":"+sid+":month_price")
-		wantContains(t, text, "价格：¥10", "将优先使用账户余额 ¥2 抵扣")
+		wantContains(t, text, "价格：¥10", "余额抵扣：¥2", "应付：¥8")
 
 		// 优惠券：无效码提示，有效码显示优惠
 		e.shown(t, 9201, cbCoupon)
 		wantContains(t, e.send(9201, "zh", "NOPE"), "优惠券无效")
 		got := e.send(9201, "zh", " TG3 ")
-		wantContains(t, got, "优惠券：立减（-¥3）")
+		wantContains(t, got, "优惠券：立减（-¥3）", "余额抵扣：¥2", "应付：¥5")
 		// 其他用户不能使用这个草稿
 		if _, ans := e.click(9202, cbConfirm); !strings.Contains(alertOf(ans), "已过期") {
 			t.Fatalf("他人不能使用草稿：%v", ans.Params)

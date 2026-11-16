@@ -97,6 +97,9 @@ type (
 // 过滤器值类型。
 type (
 	OrderAmount      = hook.OrderAmount
+	AmountItem       = hook.AmountItem
+	PlanBadges       = hook.PlanBadges
+	PlanBadge        = hook.PlanBadge
 	SubscribeServers = hook.SubscribeServers
 	SubscribeContent = hook.SubscribeContent
 	MailMessage      = hook.MailMessage
@@ -105,6 +108,7 @@ type (
 // 过滤器（类型为 hook.Filter[T]，配合 AddFilter 使用）。
 var (
 	FilterOrderAmount      = hook.FilterOrderAmount
+	FilterPlanBadges       = hook.FilterPlanBadges
 	FilterSubscribeServers = hook.FilterSubscribeServers
 	FilterSubscribeContent = hook.FilterSubscribeContent
 	FilterMailMessage      = hook.FilterMailMessage
@@ -113,7 +117,9 @@ var (
 // AddFilter 注册带类型的过滤器：
 //
 //	plugin.AddFilter(h, plugin.FilterOrderAmount, 10, func(ctx context.Context, v plugin.OrderAmount) (plugin.OrderAmount, error) {
-//		v.Amount = v.Amount * 9 / 10
+//		off := v.Amount / 10
+//		v.Amount -= off
+//		v.Items = append(v.Items, plugin.AmountItem{Label: "九折活动", Amount: -off})
 //		return v, nil
 //	})
 func AddFilter[T any](h Host, f hook.Filter[T], priority int, fn func(ctx context.Context, v T) (T, error)) {

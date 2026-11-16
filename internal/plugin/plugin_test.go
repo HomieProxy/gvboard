@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -415,7 +416,7 @@ func TestEventsAndFilters(t *testing.T) {
 			}},
 		)
 		in := hook.OrderAmount{UserID: 1, Amount: 1000}
-		if out := hook.Apply(m, ctx, hook.FilterOrderAmount, in); out != in {
+		if out := hook.Apply(m, ctx, hook.FilterOrderAmount, in); out.Amount != in.Amount || len(out.Items) != 0 {
 			t.Fatalf("插件未启用时不应修改：%+v", out)
 		}
 		hook.Emit(m, ctx, hook.EventUserRegistered, hook.User{UserID: 7})
@@ -425,8 +426,12 @@ func TestEventsAndFilters(t *testing.T) {
 
 		mustEnable(t, m, "ev_b", "f_disc", "f_add", "f_err", "f_panic", "f_slow", "f_neg", "f_type")
 		start := time.Now()
-		if out := hook.Apply(m, ctx, hook.FilterOrderAmount, in); out.Amount != 990 || out.UserID != 1 {
+		out := hook.Apply(m, ctx, hook.FilterOrderAmount, in)
+		if out.Amount != 990 || out.UserID != 1 {
 			t.Fatalf("过滤结果应为 (1000+100)*0.9=990：%+v", out)
+		}
+		if want := []hook.AmountItem{{Label: "f_add", Amount: 100, Plugin: "f_add"}, {Label: "f_disc", Amount: -110, Plugin: "f_disc"}}; !slices.Equal(out.Items, want) {
+			t.Fatalf("未写明细的插件应以插件名称生成明细：%+v", out.Items)
 		}
 		if d := time.Since(start); d > 900*time.Millisecond {
 			t.Fatalf("超时的过滤器应被跳过：%s", d)

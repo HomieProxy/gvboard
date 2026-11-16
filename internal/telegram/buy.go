@@ -249,15 +249,17 @@ func (s *Service) cbDraft(ctx context.Context, c *Context) error {
 	return c.Show(ctx, text, kb)
 }
 
-// renderDraft 下单确认页。金额为预估值，实际金额（会员折扣、余额抵扣、补差价等）以订单为准。
+// renderDraft 下单确认页，金额明细来自结算试算（与下单的计算一致）。
 func (s *Service) renderDraft(ctx context.Context, c *Context, u *model.User, d *draft) (string, *InlineKeyboard, error) {
 	p, err := s.Orders.Plan(ctx, u.ID, d.PlanID)
 	if err != nil {
 		return "", nil, err
 	}
-	price := order.Price(p, d.Period)
-	if price == nil {
-		return "", nil, errInvalid
+	q, err := s.Orders.Preview(ctx, u.ID, order.CreateInput{
+		PlanID: d.PlanID, Period: d.Period, CouponCode: d.Coupon, SubscriptionID: d.SubID,
+	})
+	if err != nil {
+		return "", nil, err
 	}
 	target := c.T("New subscription", nil)
 	if d.SubID != 0 {
@@ -271,29 +273,32 @@ func (s *Service) renderDraft(ctx context.Context, c *Context, u *model.User, d 
 	b.WriteString("🧾 <b>" + esc(c.T("Confirm order", nil)) + "</b>\n" + separator + "\n")
 	b.WriteString(c.T("telegram.draft", i18n.Params{
 		"plan": "<code>" + esc(p.Name) + "</code>", "period": esc(periodLabel(c, d.Period)),
-		"target": "<code>" + esc(target) + "</code>", "price": s.price(*price),
+		"target": "<code>" + esc(target) + "</code>", "price": s.price(q.Price),
 	}))
 	if d.Coupon != "" {
 		cp, err := s.Orders.CheckCoupon(ctx, u.ID, order.CouponCheckInput{Code: d.Coupon, PlanID: d.PlanID, Period: d.Period})
 		if err != nil {
 			return "", nil, err
 		}
-		off := cp.Value
-		if cp.Type == order.CouponPercent {
-			off = *price * cp.Value / 100
+		b.WriteString("\n" + c.T("Coupon: :name (-:amount)", i18n.Params{"name": esc(cp.Name), "amount": s.price(q.Coupon)}))
+	}
+	if q.UserDiscount > 0 {
+		b.WriteString("\n" + c.T("Member discount: -:amount", i18n.Params{"amount": s.price(q.UserDiscount)}))
+	}
+	for _, it := range q.Items {
+		sign := "+"
+		if it.Amount < 0 {
+			sign = "-"
 		}
-		if off > *price {
-			off = *price
-		}
-		b.WriteString("\n" + c.T("Coupon: :name (-:amount)", i18n.Params{"name": esc(cp.Name), "amount": s.price(off)}))
+		b.WriteString("\n" + c.T(":label: :amount", i18n.Params{"label": esc(it.Label), "amount": sign + s.price(max(it.Amount, -it.Amount))}))
 	}
-	var bal int64
-	if err := s.DB.WithContext(ctx).Model(&model.User{}).Select("balance").Where("id = ?", u.ID).Scan(&bal).Error; err != nil {
-		return "", nil, err
+	if q.Surplus > 0 {
+		b.WriteString("\n" + c.T("Plan conversion: :amount", i18n.Params{"amount": s.price(q.Surplus)}))
 	}
-	if bal > 0 {
-		b.WriteString("\n" + esc(c.T("Your balance of :amount will be used first.", i18n.Params{"amount": s.Settings.String("currency_symbol") + money(bal)})))
+	if q.Balance > 0 {
+		b.WriteString("\n" + c.T("Balance used: :amount", i18n.Params{"amount": s.price(q.Balance)}))
 	}
+	b.WriteString("\n<b>" + c.T("Amount payable: :amount", i18n.Params{"amount": s.price(q.Total)}) + "</b>")
 	b.WriteString("\n\n" + esc(c.T("The final amount is shown on the order.", nil)))
 	kb := &InlineKeyboard{Rows: [][]InlineButton{row(btn("✅ "+c.T("Place order", nil), cbConfirm))}}
 	if d.Coupon == "" {
@@ -445,6 +450,13 @@ func (s *Service) cbOrder(ctx context.Context, c *Context) error {
 		if v.amt != nil && *v.amt != 0 {
 			b.WriteString("\n" + c.T(v.key, i18n.Params{"amount": s.price(*v.amt)}))
 		}
+	}
+	for _, a := range o.Adjustments {
+		sign := "+"
+		if a.Amount < 0 {
+			sign = "-"
+		}
+		b.WriteString("\n" + c.T(":label: :amount", i18n.Params{"label": esc(a.Label), "amount": sign + s.price(max(a.Amount, -a.Amount))}))
 	}
 	kb := &InlineKeyboard{}
 	if o.Status == model.OrderStatusPending {

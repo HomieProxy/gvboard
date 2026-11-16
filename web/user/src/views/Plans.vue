@@ -91,7 +91,8 @@ onMounted(async () => {
       >
         <CardHeader class="border-b py-4">
           <CardTitle class="text-base">{{ p.name }}</CardTitle>
-          <CardAction>
+          <CardAction class="flex flex-wrap justify-end gap-1.5">
+            <StatusBadge v-for="b in (p.badges || []).slice(0, 3)" :key="b" tone="primary">{{ b }}</StatusBadge>
             <StatusBadge v-if="soldOut(p)" tone="danger">{{ t('plan.soldOut') }}</StatusBadge>
             <StatusBadge v-else-if="soonSoldOut(p)" tone="warning">{{ t('plan.soonSoldOut') }}</StatusBadge>
           </CardAction>

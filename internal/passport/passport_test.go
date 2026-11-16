@@ -147,7 +147,7 @@ func (h *recHooks) Emit(_ context.Context, event string, data any) {
 	h.users = append(h.users, data.(hook.User))
 }
 
-func (h *recHooks) Filter(_ context.Context, _ string, v any, _ func(old, new any) error) any {
+func (h *recHooks) Filter(_ context.Context, _ string, v any, _ func(any) any, _ func(hook.Source, any, any) (any, error)) any {
 	return v
 }
 
