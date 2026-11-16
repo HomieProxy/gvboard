@@ -101,6 +101,7 @@ export default {
     goPay: '去支付',
     manage: '管理',
     shortcuts: '捷径',
+    activities: '活动',
     tutorial: '查看教程',
     tutorialDesc: '学习如何使用 {site}',
     oneClick: '一键订阅',

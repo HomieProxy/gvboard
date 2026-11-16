@@ -159,6 +159,7 @@ onMounted(load)
           <dt class="text-muted-foreground">定时任务</dt><dd>{{ join(detail.features.jobs) }}</dd>
           <dt class="text-muted-foreground">支付方式</dt><dd>{{ join(detail.features.payments) }}</dd>
           <dt class="text-muted-foreground">订阅格式</dt><dd>{{ join(detail.features.formats) }}</dd>
+          <dt class="text-muted-foreground">用户端卡片</dt><dd>{{ join(detail.features.widgets || []) }}</dd>
           <dt class="text-muted-foreground">路由</dt>
           <dd>
             <div v-for="r in detail.features.routes" :key="r.method + r.path" class="font-mono text-xs">{{ r.method }} {{ r.path }}（{{ r.scope }}）</div>

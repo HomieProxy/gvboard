@@ -40,6 +40,7 @@ type Features struct {
 	Jobs     []string    `json:"jobs"`
 	Payments []string    `json:"payments"`
 	Formats  []string    `json:"formats"`
+	Widgets  []string    `json:"widgets"`
 }
 
 // View 管理端插件信息。
@@ -71,7 +72,7 @@ func (m *Manager) view(e *entry, row *model.Plugin) View {
 		v.Status, v.Error = StatusError, e.err
 		v.Enabled = false
 	}
-	f := Features{Events: []string{}, Filters: []string{}, Jobs: []string{}, Payments: append([]string{}, e.pays...), Formats: []string{}}
+	f := Features{Events: []string{}, Filters: []string{}, Jobs: []string{}, Payments: append([]string{}, e.pays...), Formats: []string{}, Widgets: []string{}}
 	for name := range e.events {
 		f.Events = append(f.Events, name)
 	}
@@ -85,6 +86,9 @@ func (m *Manager) view(e *entry, row *model.Plugin) View {
 	}
 	for _, p := range e.formats {
 		f.Formats = append(f.Formats, p.Name)
+	}
+	for _, w := range e.widgets {
+		f.Widgets = append(f.Widgets, w.Title+" ("+w.Key+")")
 	}
 	f.Routes = e.routes()
 	v.Features = f
@@ -101,7 +105,7 @@ func missingView(row *model.Plugin) View {
 	return View{
 		Info: sdk.Info{Code: row.Code, Name: row.Code, Version: row.Version}, Type: row.Type, Status: StatusMissing,
 		Enabled: row.Enabled == 1, InstalledAt: row.CreatedAt, Fields: []sdk.Field{}, Config: cfg,
-		Features: Features{Events: []string{}, Filters: []string{}, Routes: []routeInfo{}, Jobs: []string{}, Payments: []string{}, Formats: []string{}},
+		Features: Features{Events: []string{}, Filters: []string{}, Routes: []routeInfo{}, Jobs: []string{}, Payments: []string{}, Formats: []string{}, Widgets: []string{}},
 	}
 }
 
@@ -312,6 +316,7 @@ func callTimeout(ctx context.Context, d time.Duration, fn func(ctx context.Conte
 //	                                                带预览返回的 sha256 时安装 / 更新
 func (m *Manager) Register(r *server.Router) {
 	r.API.Any("/plugin/:code/*path", m.serve(false))
+	r.API.GET("/user/plugin-widgets", m.Auth.RequireUser(), m.userWidgets)
 	a := m.Auth.AdminGroup(r.API, func() string { return m.Settings.String("secure_path") })
 	a.Any("/plugin/:code/*path", m.serve(true))
 	a.GET("/plugins", func(c *gin.Context) { reply[[]View](c)(m.List(c.Request.Context())) })

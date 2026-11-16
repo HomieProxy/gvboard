@@ -1,9 +1,9 @@
 {
   "code": "daily_bonus",
   "name": "每日签到送余额",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Gvboard",
-  "description": "用户每天可签到一次，获得管理员设置的余额奖励；连续签到天数达到设置值时额外奖励。JS 插件示例。",
+  "description": "用户每天可在仪表盘签到一次，获得管理员设置的余额奖励；连续签到天数达到设置值时额外奖励。JS 插件示例。",
   "main": "main.js",
   "http": [],
   "permissions": ["user.read", "user.balance"],

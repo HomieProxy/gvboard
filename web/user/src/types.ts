@@ -225,6 +225,24 @@ export interface Notice {
   created_at: number
 }
 
+/** 插件卡片（GET /user/plugin-widgets） */
+export interface PluginWidget {
+  plugin: string
+  key: string
+  slot: string
+  title: string
+  icon: string
+  state: string
+}
+
+/** 插件卡片状态（插件的 state 路由返回） */
+export interface PluginWidgetState {
+  hidden?: boolean
+  text?: string
+  value?: string
+  actions?: { label: string; path: string; disabled?: boolean; confirm?: string }[]
+}
+
 export interface KnowledgeCategory {
   category: string
   articles: { id: number; category: string; title: string; updated_at: number }[]

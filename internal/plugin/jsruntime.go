@@ -130,6 +130,9 @@ func (p *jsPlugin) Setup(h sdk.Host) error {
 	for i, j := range vm.jobMeta {
 		h.Job(j.name, j.spec, p.onJob(i))
 	}
+	for _, w := range vm.widgets {
+		h.Widget(w)
+	}
 	p.pool <- vm
 	return nil
 }
@@ -243,6 +246,7 @@ type jsVM struct {
 	routeMeta  []jsRouteMeta
 	jobs       []goja.Callable
 	jobMeta    []jsJobMeta
+	widgets    []sdk.Widget
 	onEnable   goja.Callable
 	onDisable  goja.Callable
 
@@ -261,7 +265,7 @@ func (vm *jsVM) shape() string {
 	for _, n := range names {
 		fmt.Fprintf(&b, "e:%s:%d;", n, len(vm.events[n]))
 	}
-	fmt.Fprintf(&b, "%v|%v|%v|%v|%v", vm.filterMeta, vm.routeMeta, vm.jobMeta, vm.onEnable != nil, vm.onDisable != nil)
+	fmt.Fprintf(&b, "%v|%v|%v|%v|%v|%v", vm.filterMeta, vm.routeMeta, vm.jobMeta, vm.widgets, vm.onEnable != nil, vm.onDisable != nil)
 	return b.String()
 }
 
@@ -582,6 +586,22 @@ func (vm *jsVM) install() error {
 		}
 		vm.jobs = append(vm.jobs, vm.fn(call.Argument(2), "定时任务函数"))
 		vm.jobMeta = append(vm.jobMeta, jsJobMeta{name: name, spec: spec})
+		return goja.Undefined()
+	})
+	vm.set(pl, "widget", func(call goja.FunctionCall) goja.Value {
+		vm.mustSetup("卡片")
+		var w sdk.Widget
+		b, err := vm.toJSON(call.Argument(0))
+		if err == nil {
+			err = json.Unmarshal(b, &w)
+		}
+		if err != nil || b == nil {
+			vm.throwf("卡片参数必须是对象")
+		}
+		if len(vm.widgets) >= maxWidgets {
+			vm.throwf("最多注册 %d 张卡片", maxWidgets)
+		}
+		vm.widgets = append(vm.widgets, w)
 		return goja.Undefined()
 	})
 	vm.set(pl, "onEnable", func(call goja.FunctionCall) goja.Value {

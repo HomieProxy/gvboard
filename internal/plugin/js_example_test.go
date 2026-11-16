@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"gvboard/internal/model"
+	sdk "gvboard/pkg/plugin"
 )
 
 func exampleFiles(t *testing.T, name string) map[string]string {
@@ -54,7 +55,7 @@ func TestJSExampleDailyBonus(t *testing.T) {
 		ctx := context.Background()
 		m := e.manager(t)
 		je := newJSEnv(t, e, m)
-		if v := install(t, m, makeZip(t, files)); v.Status != StatusOK || len(v.Features.Routes) != 2 {
+		if v := install(t, m, makeZip(t, files)); v.Status != StatusOK || len(v.Features.Routes) != 3 || len(v.Features.Widgets) != 1 {
 			t.Fatalf("示例插件安装失败：%+v", v)
 		}
 		if err := m.SaveConfig(ctx, "daily_bonus", map[string]any{"reward": 10, "streak_days": 1, "streak_reward": 5}); err != nil {
@@ -62,13 +63,34 @@ func TestJSExampleDailyBonus(t *testing.T) {
 		}
 		mustEnable(t, m, "daily_bonus")
 
+		var list struct {
+			Data []WidgetView `json:"data"`
+		}
+		w := je.do("GET", "user/plugin-widgets", "", nil, je.uTok)
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &list) != nil || len(list.Data) != 1 ||
+			list.Data[0].Plugin != "daily_bonus" || list.Data[0].State != "/widget" {
+			t.Fatalf("卡片列表错误：%d %s", w.Code, w.Body.String())
+		}
+		var st struct {
+			Data sdk.WidgetState `json:"data"`
+		}
+		w = je.do("GET", "plugin/daily_bonus/widget", "", nil, je.uTok)
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &st) != nil || len(st.Data.Actions) != 1 || st.Data.Actions[0].Path != "/checkin" {
+			t.Fatalf("签到前卡片状态错误：%d %s", w.Code, w.Body.String())
+		}
+
 		var res struct {
 			Data map[string]any `json:"data"`
 		}
-		w := je.do("POST", "plugin/daily_bonus/checkin", "", nil, je.uTok)
+		w = je.do("POST", "plugin/daily_bonus/checkin", "", nil, je.uTok)
 		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &res) != nil || res.Data["reward"] != float64(10) ||
-			res.Data["bonus"] != float64(5) || res.Data["streak"] != float64(1) {
+			res.Data["bonus"] != float64(5) || res.Data["streak"] != float64(1) || res.Data["message"] != "签到成功，余额 +0.15（含连续签到奖励）" {
 			t.Fatalf("签到失败：%d %s", w.Code, w.Body.String())
+		}
+		st.Data = sdk.WidgetState{}
+		w = je.do("GET", "plugin/daily_bonus/widget", "", nil, je.uTok)
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &st) != nil || len(st.Data.Actions) != 0 || st.Data.Value != "1 天" {
+			t.Fatalf("签到后卡片状态错误：%d %s", w.Code, w.Body.String())
 		}
 		if w := je.do("POST", "plugin/daily_bonus/checkin", "", nil, je.uTok); w.Code != 400 {
 			t.Fatalf("同一天重复签到应 400：%d %s", w.Code, w.Body.String())

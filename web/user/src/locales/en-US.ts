@@ -103,6 +103,7 @@ const m: Messages = {
     goPay: 'Pay now',
     manage: 'Manage',
     shortcuts: 'Shortcuts',
+    activities: 'Activities',
     tutorial: 'Tutorials',
     tutorialDesc: 'Learn how to use {site}',
     oneClick: 'One-click subscribe',

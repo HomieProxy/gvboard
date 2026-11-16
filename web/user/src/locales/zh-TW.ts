@@ -103,6 +103,7 @@ const m: Messages = {
     goPay: '去付款',
     manage: '管理',
     shortcuts: '捷徑',
+    activities: '活動',
     tutorial: '查看教程',
     tutorialDesc: '學習如何使用 {site}',
     oneClick: '一鍵訂閱',

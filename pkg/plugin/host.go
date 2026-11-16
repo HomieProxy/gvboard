@@ -48,6 +48,8 @@ type Host interface {
 	Payment(name string, g PaymentGateway)
 	// SubscribeFormat 新增客户端订阅格式，优先于内置格式匹配。插件停用时不参与匹配。
 	SubscribeFormat(f *SubscribeFormat)
+	// Widget 注册用户端卡片，每个插件最多 5 张。插件停用时不显示。
+	Widget(w Widget)
 }
 
 // Event 事件。Data 为事件数据的 JSON，使用 Decode 解析为对应的类型（如 OrderEvent）。

@@ -103,6 +103,7 @@ const m: Messages = {
     goPay: 'Thanh toán',
     manage: 'Quản lý',
     shortcuts: 'Lối tắt',
+    activities: 'Hoạt động',
     tutorial: 'Xem hướng dẫn',
     tutorialDesc: 'Tìm hiểu cách sử dụng {site}',
     oneClick: 'Đăng ký một chạm',

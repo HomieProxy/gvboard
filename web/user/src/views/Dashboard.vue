@@ -18,6 +18,7 @@ import SubCard from '../components/SubCard.vue'
 import ClientDownloads from '../components/ClientDownloads.vue'
 import NoticeDialog from '../components/NoticeDialog.vue'
 import NoticeCarousel from '../components/NoticeCarousel.vue'
+import PluginWidgets from '../components/PluginWidgets.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -107,6 +108,8 @@ onMounted(async () => {
     </div>
 
     <div class="space-y-6">
+        <PluginWidgets position="dashboard" />
+
         <section>
           <div class="mb-3 flex items-center justify-between">
             <h2 class="text-base font-semibold">{{ t('dashboard.mySubscriptions') }}</h2>

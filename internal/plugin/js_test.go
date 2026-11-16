@@ -800,6 +800,9 @@ func TestJSPermissionsAndLoadErrors(t *testing.T) {
 			"jsloop":  `while (true) {}`,
 			"jsstack": `function f() { return f() + 1; } f();`,
 			"jsmany":  `for (var i = 0; i < 100; i++) plugin.route('guest', 'GET', '/r' + i, function () {});`,
+			"jswidg":  `plugin.widget('x');`,
+			"jswidg2": `plugin.widget({ key: 'a', slot: 'dashboard', title: 't', state: '/../x' });`,
+			"jswidg3": `for (var i = 0; i < 6; i++) plugin.widget({ key: 'k' + i, slot: 'dashboard', title: 't', state: '/w' });`,
 		} {
 			v := install(t, m, makeZip(t, map[string]string{"plugin.json": simpleManifest(code, "1"), "main.js": main}))
 			if v.Status != StatusError || v.Error == "" {

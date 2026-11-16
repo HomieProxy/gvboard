@@ -1,12 +1,14 @@
 // Package checkin 示例插件：用户每日签到，随机奖励账户余额。
 //
 //	GET  {api}/plugin/checkin/status   今日是否已签到
+//	GET  {api}/plugin/checkin/widget   仪表盘卡片状态
 //	POST {api}/plugin/checkin/checkin  签到
 package checkin
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"net/http"
 	"strconv"
@@ -24,7 +26,7 @@ func init() { sdk.Register(&Plugin{}) }
 type Plugin struct{}
 
 func (Plugin) Info() sdk.Info {
-	return sdk.Info{Code: "checkin", Name: "每日签到", Version: "1.0.0", Author: "Gvboard", Description: "用户每日签到随机获得余额"}
+	return sdk.Info{Code: "checkin", Name: "每日签到", Version: "1.1.0", Author: "Gvboard", Description: "用户每日在仪表盘签到，随机获得余额"}
 }
 
 func (Plugin) Fields() []sdk.Field {
@@ -51,16 +53,55 @@ func dayKey(uid int64) string {
 	return "d:" + time.Now().Format("20060102") + ":" + strconv.FormatInt(uid, 10)
 }
 
+// yuan 分转换为元，如 5 → "0.05"。
+func yuan(cents int64) string {
+	return fmt.Sprintf("%d.%02d", cents/100, cents%100)
+}
+
+// todayReward 今日签到奖励（分），未签到时 ok 为 false。
+func todayReward(ctx context.Context, h sdk.Host, uid int64) (reward int64, ok bool, err error) {
+	v, err := h.KV().Get(ctx, dayKey(uid))
+	if errors.Is(err, sdk.ErrKVNotFound) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	reward, _ = strconv.ParseInt(v, 10, 64)
+	return reward, true, nil
+}
+
 func (Plugin) Setup(h sdk.Host) error {
+	h.Widget(sdk.Widget{Key: "checkin", Slot: sdk.SlotDashboard, Title: "每日签到", Icon: sdk.IconCalendarCheck, State: "/widget"})
 	r := h.UserRoutes()
 	r.GET("/status", func(c *gin.Context) {
-		u := sdk.CurrentUser(c)
-		_, err := h.KV().Get(c.Request.Context(), dayKey(u.ID))
-		if err != nil && !errors.Is(err, sdk.ErrKVNotFound) {
+		_, ok, err := todayReward(c.Request.Context(), h, sdk.CurrentUser(c).ID)
+		if err != nil {
 			sdk.Fail(c, http.StatusInternalServerError, "服务繁忙")
 			return
 		}
-		sdk.OK(c, gin.H{"checked": err == nil})
+		sdk.OK(c, gin.H{"checked": ok})
+	})
+	r.GET("/widget", func(c *gin.Context) {
+		reward, ok, err := todayReward(c.Request.Context(), h, sdk.CurrentUser(c).ID)
+		if err != nil {
+			sdk.Fail(c, http.StatusInternalServerError, "服务繁忙")
+			return
+		}
+		if ok {
+			sdk.OK(c, sdk.WidgetState{Text: "今日已签到，明天再来", Value: "+" + yuan(reward)})
+			return
+		}
+		lo, hi, err := bounds(h.Config())
+		if err != nil {
+			sdk.OK(c, sdk.WidgetState{Hidden: true})
+			return
+		}
+		text := "签到可获得 " + yuan(lo) + " 余额"
+		if hi > lo {
+			text = "签到可随机获得 " + yuan(lo) + " ~ " + yuan(hi) + " 余额"
+		}
+		sdk.OK(c, sdk.WidgetState{Text: text, Actions: []sdk.WidgetAction{{Label: "签到", Path: "/checkin"}}})
 	})
 	r.POST("/checkin", func(c *gin.Context) {
 		ctx, u := c.Request.Context(), sdk.CurrentUser(c)
@@ -86,7 +127,7 @@ func (Plugin) Setup(h sdk.Host) error {
 			sdk.Fail(c, http.StatusInternalServerError, "服务繁忙")
 			return
 		}
-		sdk.OK(c, gin.H{"reward": reward})
+		sdk.OK(c, gin.H{"reward": reward, "message": "签到成功，余额 +" + yuan(reward)})
 	})
 	return nil
 }

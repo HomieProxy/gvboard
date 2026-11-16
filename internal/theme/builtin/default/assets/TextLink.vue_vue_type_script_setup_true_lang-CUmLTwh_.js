@@ -1,1 +1,0 @@
-import{G as n,N as r,O as s,ao as a,L as i,M as c}from"./vendor-DDc-rk47.js";const p=n({__name:"TextLink",props:{to:{}},setup(e){return(o,l)=>{const t=a("RouterLink");return c(),r(t,{to:e.to,class:"font-medium text-primary underline-offset-4 hover:underline"},{default:s(()=>[i(o.$slots,"default")]),_:3},8,["to"])}}});export{p as _};
