@@ -255,8 +255,35 @@ func clip(s string, n int) string {
 	return string([]rune(s)[:n])
 }
 
-// Report 处理节点上报：写入审计日志、累计规则命中数；规则当前动作为封禁、且节点已按封禁处理时封禁账号。
-// 不存在的订阅、不存在或对该节点不生效的规则，记录直接丢弃。
+// dayStart 返回 ts 所在自然日（服务器本地时区）的零点 Unix 秒。
+func (s *Service) dayStart(ts int64) int64 {
+	loc := s.now().Location()
+	t := time.Unix(ts, 0).In(loc)
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc).Unix()
+}
+
+func actionRank(a string) int {
+	switch a {
+	case model.AuditActionBan:
+		return 3
+	case model.AuditActionBlock:
+		return 2
+	case model.AuditActionLog:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// banTrig 待封禁：账号 → 触发用的汇总日志与具体目标。
+type banTrig struct {
+	logID  int64
+	ruleID int64
+	target string
+}
+
+// Report 处理节点上报：按「订阅 + 规则 + 节点 + 自然日」合并写入汇总与细节，累计规则命中数；
+// 规则当前动作为封禁、且节点已按封禁处理时封禁账号。不存在的订阅、不存在或对该节点不生效的规则，记录直接丢弃。
 func (s *Service) Report(ctx context.Context, typ string, srv node.Server, records []Record) error {
 	if len(records) > maxRecords {
 		records = records[:maxRecords]
@@ -295,8 +322,7 @@ func (s *Service) Report(ctx context.Context, typ string, srv node.Server, recor
 		last int64
 	}
 	hits := map[int64]hit{}
-	bans := map[int64]int{} // 账号 → 触发封禁的日志下标
-	var logs []model.AuditLog
+	bans := map[int64]banTrig{} // 账号 → 触发封禁信息
 	for _, r := range records {
 		rule, uid := ruleByID[r.RuleID], owner[r.UserID]
 		if rule == nil || uid == 0 || !validAction(r.Action) {
@@ -307,26 +333,53 @@ func (s *Service) Report(ctx context.Context, typ string, srv node.Server, recor
 		if at <= 0 || at > now+300 {
 			at = now
 		}
-		logs = append(logs, model.AuditLog{
-			SubscriptionID: r.UserID, UserID: uid, ServerType: typ, ServerID: serverID, RuleID: rule.ID,
-			Action: r.Action, Target: clip(r.Target, 255), Network: clip(r.Network, 8), IP: clip(r.IP, 64),
-			Count: count, HitAt: at, CreatedAt: now,
-		})
+		target, network, ip := clip(r.Target, 255), clip(r.Network, 8), clip(r.IP, 64)
+		day := s.dayStart(at)
+		var sum model.AuditLog
+		err := db.Where("subscription_id = ? AND rule_id = ? AND server_type = ? AND server_id = ? AND day = ?",
+			r.UserID, rule.ID, typ, serverID, day).Order("id ASC").Take(&sum).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			sum = model.AuditLog{
+				SubscriptionID: r.UserID, UserID: uid, ServerType: typ, ServerID: serverID, RuleID: rule.ID,
+				Action: r.Action, Target: target, Network: network, IP: ip, Count: 0, DetailCount: 0,
+				Day: day, HitAt: at, CreatedAt: now,
+			}
+			if err := db.Create(&sum).Error; err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		}
+
+		var det model.AuditLogDetail
+		err = db.Where("log_id = ? AND target = ? AND network = ?", sum.ID, target, network).Take(&det).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			det = model.AuditLogDetail{LogID: sum.ID, Target: target, Network: network, IP: ip, Count: count, HitAt: at}
+			if err := db.Create(&det).Error; err != nil {
+				return err
+			}
+		} else if err != nil {
+			return err
+		} else {
+			det.Count += count
+			det.IP, det.HitAt = ip, max(det.HitAt, at)
+			if err := db.Model(&det).Updates(map[string]any{"count": det.Count, "ip": det.IP, "hit_at": det.HitAt}).Error; err != nil {
+				return err
+			}
+		}
+		if err := s.refreshLog(db, sum.ID, r.Action); err != nil {
+			return err
+		}
 		h := hits[rule.ID]
 		h.n += count
 		h.last = max(h.last, at)
 		hits[rule.ID] = h
 		if _, ok := bans[uid]; !ok && r.Action == model.AuditActionBan && rule.Action == model.AuditActionBan && rule.Enabled == 1 {
-			bans[uid] = len(logs) - 1
+			bans[uid] = banTrig{logID: sum.ID, ruleID: rule.ID, target: target}
 		}
 	}
-	if err := s.ban(ctx, srv, typ, logs, bans, ruleByID); err != nil {
+	if err := s.ban(ctx, srv, typ, bans, ruleByID); err != nil {
 		return err
-	}
-	if len(logs) > 0 {
-		if err := db.CreateInBatches(logs, 500).Error; err != nil {
-			return err
-		}
 	}
 	for id, h := range hits {
 		err := db.Model(&model.AuditRule{}).Where("id = ?", id).UpdateColumns(map[string]any{
@@ -340,8 +393,37 @@ func (s *Service) Report(ctx context.Context, typ string, srv node.Server, recor
 	return nil
 }
 
-// ban 封禁账号（管理员与已封禁的账号跳过），实际封禁的账号把触发封禁的日志标记为已封禁。
-func (s *Service) ban(ctx context.Context, srv node.Server, typ string, logs []model.AuditLog, bans map[int64]int,
+// refreshLog 按细节重算汇总的次数、目标、动作与细节数。
+func (s *Service) refreshLog(db *gorm.DB, logID int64, incomingAction string) error {
+	var details []model.AuditLogDetail
+	if err := db.Where("log_id = ?", logID).Find(&details).Error; err != nil {
+		return err
+	}
+	var sum model.AuditLog
+	if err := db.Take(&sum, logID).Error; err != nil {
+		return err
+	}
+	var total, hitAt int64
+	top := model.AuditLogDetail{}
+	for _, d := range details {
+		total += d.Count
+		hitAt = max(hitAt, d.HitAt)
+		if d.Count > top.Count || (d.Count == top.Count && d.HitAt >= top.HitAt) {
+			top = d
+		}
+	}
+	action := sum.Action
+	if actionRank(incomingAction) > actionRank(action) {
+		action = incomingAction
+	}
+	return db.Model(&sum).Updates(map[string]any{
+		"count": total, "detail_count": int64(len(details)), "action": action,
+		"target": top.Target, "network": top.Network, "ip": top.IP, "hit_at": hitAt,
+	}).Error
+}
+
+// ban 封禁账号（管理员与已封禁的账号跳过），实际封禁的账号把触发封禁的汇总日志标记为已封禁。
+func (s *Service) ban(ctx context.Context, srv node.Server, typ string, bans map[int64]banTrig,
 	rules map[int64]*model.AuditRule) error {
 	if len(bans) == 0 {
 		return nil
@@ -354,8 +436,8 @@ func (s *Service) ban(ctx context.Context, srv node.Server, typ string, logs []m
 	server := fmt.Sprintf("%s#%d %s", typ, srv.Common().ID, srv.Common().Name)
 	stamp := s.now().Format("2006-01-02 15:04")
 	for _, uid := range ids {
-		l := &logs[bans[uid]]
-		rule := rules[l.RuleID]
+		trig := bans[uid]
+		rule := rules[trig.ruleID]
 		var u model.User
 		done := false
 		err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -366,7 +448,7 @@ func (s *Service) ban(ctx context.Context, srv node.Server, typ string, logs []m
 			if err != nil || u.Banned != 0 || u.IsAdmin != 0 {
 				return err
 			}
-			note := fmt.Sprintf("[审计封禁 %s] 规则「%s」 目标 %s 节点 %s", stamp, rule.Name, l.Target, server)
+			note := fmt.Sprintf("[审计封禁 %s] 规则「%s」 目标 %s 节点 %s", stamp, rule.Name, trig.target, server)
 			if u.Remarks != nil && *u.Remarks != "" {
 				note = *u.Remarks + "\n" + note
 			}
@@ -379,15 +461,17 @@ func (s *Service) ban(ctx context.Context, srv node.Server, typ string, logs []m
 		if !done {
 			continue
 		}
-		l.Banned = 1
+		if err := s.DB.WithContext(ctx).Model(&model.AuditLog{}).Where("id = ?", trig.logID).Update("banned", 1).Error; err != nil {
+			return err
+		}
 		if s.RemoveSessions != nil {
 			if err := s.RemoveSessions(ctx, uid); err != nil {
 				s.log().Warn("审计封禁后删除登录会话失败", zap.Int64("user_id", uid), zap.Error(err))
 			}
 		}
-		s.log().Warn("审计规则封禁账号", zap.Int64("user_id", uid), zap.Int64("rule_id", rule.ID), zap.String("target", l.Target), zap.String("server", server))
+		s.log().Warn("审计规则封禁账号", zap.Int64("user_id", uid), zap.Int64("rule_id", rule.ID), zap.String("target", trig.target), zap.String("server", server))
 		if s.OnBan != nil {
-			s.OnBan(ctx, BanInfo{UserID: uid, Email: u.Email, RuleName: rule.Name, Target: l.Target, Server: server})
+			s.OnBan(ctx, BanInfo{UserID: uid, Email: u.Email, RuleName: rule.Name, Target: trig.target, Server: server})
 		}
 	}
 	return nil
@@ -448,10 +532,11 @@ func (s *Service) Logs(ctx context.Context, q LogQuery) (*LogPage, error) {
 		db = db.Where("server_type = ?", q.ServerType)
 	}
 	if q.IP != "" {
-		db = db.Where("ip = ?", q.IP)
+		db = db.Where("ip = ? OR EXISTS (SELECT 1 FROM v2_audit_log_detail d WHERE d.log_id = v2_audit_log.id AND d.ip = ?)", q.IP, q.IP)
 	}
 	if q.Target != "" {
-		db = db.Where("target LIKE ? ESCAPE '!'", "%"+likeEscaper.Replace(strings.ToLower(q.Target))+"%")
+		pat := "%" + likeEscaper.Replace(strings.ToLower(q.Target)) + "%"
+		db = db.Where("target LIKE ? ESCAPE '!' OR EXISTS (SELECT 1 FROM v2_audit_log_detail d WHERE d.log_id = v2_audit_log.id AND d.target LIKE ? ESCAPE '!')", pat, pat)
 	}
 	if q.Banned != nil {
 		db = db.Where("banned = ?", *q.Banned)
@@ -523,7 +608,24 @@ func (s *Service) Logs(ctx context.Context, q LogQuery) (*LogPage, error) {
 	return out, nil
 }
 
-// CleanLogs 删除超过保留天数的审计日志，分批删除，返回删除行数。
+// LogDetails 返回一条汇总日志下的全部细节，按最后命中时间倒序。
+func (s *Service) LogDetails(ctx context.Context, logID int64) ([]model.AuditLogDetail, error) {
+	if logID <= 0 {
+		return nil, errInvalid
+	}
+	var n int64
+	if err := s.DB.WithContext(ctx).Model(&model.AuditLog{}).Where("id = ?", logID).Count(&n).Error; err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, httpx.NotFoundErr("日志不存在")
+	}
+	out := []model.AuditLogDetail{}
+	err := s.DB.WithContext(ctx).Where("log_id = ?", logID).Order("hit_at DESC, id DESC").Find(&out).Error
+	return out, err
+}
+
+// CleanLogs 删除超过保留天数的审计日志（先删细节），分批删除，返回删除的汇总行数。
 func (s *Service) CleanLogs(ctx context.Context) (int64, error) {
 	days := s.Settings.Int("audit_log_retention_days")
 	if days <= 0 {
@@ -536,6 +638,9 @@ func (s *Service) CleanLogs(ctx context.Context) (int64, error) {
 		err := s.DB.WithContext(ctx).Model(&model.AuditLog{}).
 			Where("created_at < ?", before).Order("id ASC").Limit(cleanBatch).Pluck("id", &ids).Error
 		if err != nil || len(ids) == 0 {
+			return total, err
+		}
+		if err := s.DB.WithContext(ctx).Where("log_id IN ?", ids).Delete(&model.AuditLogDetail{}).Error; err != nil {
 			return total, err
 		}
 		res := s.DB.WithContext(ctx).Where("id IN ?", ids).Delete(&model.AuditLog{})

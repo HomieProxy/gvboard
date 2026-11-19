@@ -363,12 +363,24 @@ export interface AuditLog {
   network: string
   ip: string
   count: number
+  detail_count: number
+  day: number
   banned: 0 | 1
   hit_at: number
   created_at: number
   email: string
   rule_name: string
   server_name: string
+}
+
+export interface AuditLogDetail {
+  id: number
+  log_id: number
+  target: string
+  network: string
+  ip: string
+  count: number
+  hit_at: number
 }
 
 export interface SubscribeLog {

@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -39,7 +40,179 @@ func Steps() []Step {
 			Description: "删除 v2_subscription 的 idx_group（已由 idx_group_expired 取代）",
 			Run:         stepDropSubscriptionIdxGroup,
 		},
+		{
+			ID:          "2026111901_audit_log_day_merge",
+			Description: "审计日志按天回填 day、写入细节表并合并同日同键汇总",
+			Run:         stepAuditLogDayMerge,
+		},
 	}
+}
+
+// stepAuditLogDayMerge 为已有审计日志补 day / detail_count、写入细节，并把同日同键多行合成一条。
+func stepAuditLogDayMerge(ctx context.Context, m *Migrator) error {
+	db := m.db.WithContext(ctx)
+	type row struct {
+		ID             int64
+		SubscriptionID int64
+		UserID         int64
+		ServerType     string
+		ServerID       int64
+		RuleID         int64
+		Action         string
+		Target         string
+		Network        string
+		IP             string
+		Count          int64
+		Banned         int
+		HitAt          int64
+		CreatedAt      int64
+		Day            int64
+	}
+	var rows []row
+	if err := db.Table("v2_audit_log").Order("id ASC").Find(&rows).Error; err != nil {
+		return err
+	}
+	loc := time.Local
+	dayOf := func(ts int64) int64 {
+		t := time.Unix(ts, 0).In(loc)
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc).Unix()
+	}
+	actionRank := func(a string) int {
+		switch a {
+		case "ban":
+			return 3
+		case "block":
+			return 2
+		case "log":
+			return 1
+		default:
+			return 0
+		}
+	}
+	for i := range rows {
+		if rows[i].Day == 0 {
+			rows[i].Day = dayOf(rows[i].HitAt)
+			if err := db.Table("v2_audit_log").Where("id = ?", rows[i].ID).Update("day", rows[i].Day).Error; err != nil {
+				return err
+			}
+		}
+		var n int64
+		if err := db.Table("v2_audit_log_detail").Where("log_id = ?", rows[i].ID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n == 0 {
+			d := map[string]any{
+				"log_id": rows[i].ID, "target": rows[i].Target, "network": rows[i].Network,
+				"ip": rows[i].IP, "count": max(rows[i].Count, 1), "hit_at": rows[i].HitAt,
+			}
+			if err := db.Table("v2_audit_log_detail").Create(d).Error; err != nil {
+				return err
+			}
+		}
+	}
+	type key struct {
+		Sub, Rule, ServerID, Day int64
+		ServerType               string
+	}
+	groups := map[key][]row{}
+	for _, r := range rows {
+		k := key{r.SubscriptionID, r.RuleID, r.ServerID, r.Day, r.ServerType}
+		groups[k] = append(groups[k], r)
+	}
+	type det struct {
+		ID      int64
+		Target  string
+		Network string
+		IP      string
+		Count   int64
+		HitAt   int64
+	}
+	upsertDetail := func(logID int64, d det) error {
+		var cur det
+		err := db.Table("v2_audit_log_detail").
+			Where("log_id = ? AND target = ? AND network = ?", logID, d.Target, d.Network).
+			Take(&cur).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return db.Table("v2_audit_log_detail").Create(map[string]any{
+				"log_id": logID, "target": d.Target, "network": d.Network,
+				"ip": d.IP, "count": d.Count, "hit_at": d.HitAt,
+			}).Error
+		}
+		if err != nil {
+			return err
+		}
+		cur.Count += d.Count
+		if d.HitAt >= cur.HitAt {
+			cur.HitAt, cur.IP = d.HitAt, d.IP
+		}
+		return db.Table("v2_audit_log_detail").Where("id = ?", cur.ID).Updates(map[string]any{
+			"count": cur.Count, "ip": cur.IP, "hit_at": cur.HitAt,
+		}).Error
+	}
+	refresh := func(keep row, group []row) error {
+		var details []det
+		if err := db.Table("v2_audit_log_detail").Where("log_id = ?", keep.ID).Order("id ASC").Find(&details).Error; err != nil {
+			return err
+		}
+		var total, hitAt int64
+		top := det{}
+		banned, action := 0, keep.Action
+		for _, r := range group {
+			if r.Banned != 0 {
+				banned = 1
+			}
+			if actionRank(r.Action) > actionRank(action) {
+				action = r.Action
+			}
+			hitAt = max(hitAt, r.HitAt)
+		}
+		for _, d := range details {
+			total += d.Count
+			hitAt = max(hitAt, d.HitAt)
+			if d.Count > top.Count || (d.Count == top.Count && d.HitAt >= top.HitAt) {
+				top = d
+			}
+		}
+		return db.Table("v2_audit_log").Where("id = ?", keep.ID).Updates(map[string]any{
+			"count": total, "detail_count": int64(len(details)), "action": action, "banned": banned,
+			"target": top.Target, "network": top.Network, "ip": top.IP, "hit_at": hitAt, "day": keep.Day,
+		}).Error
+	}
+	merged := 0
+	for _, g := range groups {
+		keep := g[0]
+		if len(g) == 1 {
+			if err := refresh(keep, g); err != nil {
+				return err
+			}
+			continue
+		}
+		for _, r := range g[1:] {
+			var details []det
+			if err := db.Table("v2_audit_log_detail").Where("log_id = ?", r.ID).Find(&details).Error; err != nil {
+				return err
+			}
+			for _, d := range details {
+				if err := upsertDetail(keep.ID, d); err != nil {
+					return err
+				}
+			}
+			if err := db.Exec("DELETE FROM v2_audit_log_detail WHERE log_id = ?", r.ID).Error; err != nil {
+				return err
+			}
+			if err := db.Exec("DELETE FROM v2_audit_log WHERE id = ?", r.ID).Error; err != nil {
+				return err
+			}
+			merged++
+		}
+		if err := refresh(keep, g); err != nil {
+			return err
+		}
+	}
+	if merged > 0 {
+		m.report.Notices = append(m.report.Notices, fmt.Sprintf("已按天合并 %d 条审计日志", merged))
+	}
+	return nil
 }
 
 // stepDropSubscriptionIdxGroup 所有订阅同在一个权限组时，MySQL 仍会选 idx_group 逐行回表，百万订阅时拉取节点用户需数秒。

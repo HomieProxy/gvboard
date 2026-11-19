@@ -25,7 +25,7 @@ import { useList, usePaged } from '../paged'
 import { groupName, groupOptions, loadGroups } from '../refs'
 import { serverTypes, typeLabel } from '../serverSpec'
 import type { Tone, PageResult } from '../helpers'
-import type { AuditLog, AuditRule } from '../types'
+import type { AuditLog, AuditLogDetail, AuditRule } from '../types'
 
 const router = useRouter()
 
@@ -199,6 +199,25 @@ async function cleanLogs() {
   })
 }
 
+const detailShow = ref(false)
+const detailLoading = ref(false)
+const detailRow = ref<AuditLog | null>(null)
+const detailList = ref<AuditLogDetail[]>([])
+async function openDetails(row: AuditLog) {
+  detailRow.value = row
+  detailShow.value = true
+  detailLoading.value = true
+  detailList.value = []
+  try {
+    detailList.value = await admin.get<AuditLogDetail[]>(`/audit/logs/${row.id}/details`)
+  } catch {
+    message.error('加载访问细节失败')
+    detailShow.value = false
+  } finally {
+    detailLoading.value = false
+  }
+}
+
 const tab = ref('rules')
 function onTab(v: string | number) {
   if (v === 'logs' && !logs.rows.value.length) logs.load()
@@ -213,6 +232,9 @@ onMounted(() => {
 <template>
   <div>
     <PageHeader title="审计规则" description="节点按规则记录、阻断访问指定网站的连接，或直接封禁访问者的账号。" />
+    <p class="mb-4 text-sm text-amber-700 dark:text-amber-400">
+      必须搭配 gvboard 版 v2node，并在节点配置中开启 <code class="rounded bg-muted px-1 font-mono text-xs">AuditEnable</code> 才能使用。
+    </p>
 
     <Tabs v-model="tab" @update:model-value="onTab">
       <TabsList class="mb-4">
@@ -330,8 +352,14 @@ onMounted(() => {
             <button type="button" class="text-xs text-muted-foreground hover:text-primary" @click="filterLogs({ subscription_id: row.subscription_id })">订阅 #{{ row.subscription_id }}</button>
           </template>
           <template #cell-target="{ row }">
-            <span class="block max-w-xs truncate font-mono text-xs" :title="row.target">{{ row.target }}</span>
-            <span v-if="row.network" class="text-xs text-muted-foreground uppercase">{{ row.network }}</span>
+            <button type="button" class="block max-w-xs truncate text-left font-mono text-xs text-primary hover:underline" :title="row.target" @click="openDetails(row)">
+              {{ row.target }}
+            </button>
+            <button type="button" class="text-xs text-muted-foreground hover:text-primary" @click="openDetails(row)">
+              <span v-if="row.network" class="uppercase">{{ row.network }}</span>
+              <template v-if="(row.detail_count || 1) > 1"> · {{ row.detail_count }} 个目标</template>
+              <template v-else> · 查看细节</template>
+            </button>
           </template>
           <template #cell-rule_id="{ row }">{{ row.rule_name || `#${row.rule_id}（已删除）` }}</template>
           <template #cell-action="{ row }">
@@ -351,6 +379,45 @@ onMounted(() => {
         <Pager :pager="logs.pager" @page="logs.setPage" @size="logs.setPageSize" />
       </TabsContent>
     </Tabs>
+
+    <Dialog v-model:open="detailShow">
+      <DialogContent class="max-h-[92svh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>访问细节</DialogTitle>
+        </DialogHeader>
+        <p v-if="detailRow" class="text-sm text-muted-foreground">
+          {{ detailRow.email || `#${detailRow.user_id}` }} · {{ detailRow.rule_name || `规则 #${detailRow.rule_id}` }} · 合计 {{ detailRow.count }} 次
+        </p>
+        <div v-if="detailLoading" class="flex justify-center py-10"><Loader2Icon class="size-6 animate-spin text-muted-foreground" /></div>
+        <div v-else class="overflow-hidden rounded-lg border">
+          <table class="w-full text-sm">
+            <thead class="bg-muted/40 text-xs text-muted-foreground">
+              <tr>
+                <th class="px-3 py-2 text-left font-medium">访问目标</th>
+                <th class="px-3 py-2 text-left font-medium">来源 IP</th>
+                <th class="px-3 py-2 text-right font-medium">次数</th>
+                <th class="px-3 py-2 text-left font-medium">最后命中</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in detailList" :key="d.id" class="border-t">
+                <td class="px-3 py-2 font-mono text-xs">
+                  {{ d.target }}
+                  <span v-if="d.network" class="ml-1 text-muted-foreground uppercase">{{ d.network }}</span>
+                </td>
+                <td class="px-3 py-2 font-mono text-xs">{{ d.ip || '-' }}</td>
+                <td class="px-3 py-2 text-right tabular-nums">{{ d.count }}</td>
+                <td class="px-3 py-2 whitespace-nowrap text-xs">{{ formatTime(d.hit_at) }}</td>
+              </tr>
+              <tr v-if="!detailList.length"><td colspan="4" class="px-3 py-8 text-center text-muted-foreground">暂无细节</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" @click="detailShow = false">关闭</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
 
     <Dialog v-model:open="ruleShow">
       <DialogContent class="max-h-[92svh] overflow-y-auto sm:max-w-2xl">

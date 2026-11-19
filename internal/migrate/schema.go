@@ -514,6 +514,8 @@ func Schema() []Table {
 				def("network", "varchar(8)", "''"),
 				def("ip", "varchar(64)", "''"),
 				def("count", "int", "1"),
+				def("detail_count", "int", "1"),
+				def("day", "int", "0"),
 				def("banned", "tinyint", "0"),
 				col("hit_at", "int"),
 				col("created_at", "int"),
@@ -522,6 +524,23 @@ func Schema() []Table {
 				{Name: "idx_created", Cols: []string{"created_at"}, Ensure: true},
 				{Name: "idx_user_created", Cols: []string{"user_id", "created_at"}, Ensure: true},
 				{Name: "idx_rule_created", Cols: []string{"rule_id", "created_at"}, Ensure: true},
+				{Name: "idx_day_merge", Cols: []string{"subscription_id", "rule_id", "server_type", "server_id", "day"}, Ensure: true},
+			},
+		},
+		{
+			Name: "v2_audit_log_detail",
+			Columns: []Column{
+				pk(),
+				col("log_id", "int"),
+				col("target", "varchar(255)"),
+				def("network", "varchar(8)", "''"),
+				def("ip", "varchar(64)", "''"),
+				def("count", "int", "1"),
+				col("hit_at", "int"),
+			},
+			Indexes: []Index{
+				{Name: "uniq_log_target", Cols: []string{"log_id", "target", "network"}, Unique: true, Ensure: true},
+				{Name: "idx_log", Cols: []string{"log_id"}, Ensure: true},
 			},
 		},
 	}

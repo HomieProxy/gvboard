@@ -260,9 +260,9 @@ func testReport(t *testing.T, e *env) {
 	var logs []model.AuditLog
 	e.DB.Order("id").Find(&logs)
 	if len(logs) != 3 {
-		t.Fatalf("应写入 3 条日志，实际 %d", len(logs))
+		t.Fatalf("应写入 3 条汇总日志，实际 %d", len(logs))
 	}
-	if l := logs[0]; l.UserID != u1.ID || l.Banned != 1 || l.Count != 2 || l.HitAt != at || l.ServerID != 9 || l.ServerType != "v2node" {
+	if l := logs[0]; l.UserID != u1.ID || l.Banned != 1 || l.Count != 2 || l.HitAt != at || l.ServerID != 9 || l.ServerType != "v2node" || l.DetailCount != 1 || l.Day == 0 {
 		t.Fatalf("第一条日志不符: %+v", l)
 	}
 	if l := logs[1]; l.Banned != 0 || l.Count != 1 || l.HitAt != e.now.Unix() {
@@ -270,6 +270,11 @@ func testReport(t *testing.T, e *env) {
 	}
 	if l := logs[2]; l.UserID != adm.ID || l.Banned != 0 {
 		t.Fatalf("管理员不应被封禁: %+v", l)
+	}
+	var dets []model.AuditLogDetail
+	e.DB.Where("log_id = ?", logs[0].ID).Find(&dets)
+	if len(dets) != 1 || dets[0].Target != "bad.com:443" || dets[0].Count != 2 {
+		t.Fatalf("第一条细节不符: %+v", dets)
 	}
 
 	var u model.User
@@ -292,18 +297,47 @@ func testReport(t *testing.T, e *env) {
 		t.Fatalf("命中数不符: %+v", r)
 	}
 
-	// 已封禁的账号再次命中不重复封禁；规则改为记录后只写日志
-	e.Report(ctx, model.ServerTypeV2node, srv, []Record{{UserID: s1.ID, RuleID: ban.ID, Action: "ban", Target: "bad.com:443"}})
+	// 已封禁的账号再次命中不重复封禁（同日合并进原汇总）；规则改为记录后只写日志
+	e.Report(ctx, model.ServerTypeV2node, srv, []Record{{UserID: s1.ID, RuleID: ban.ID, Action: "ban", Target: "bad.com:443", Network: "tcp"}})
+	var merged model.AuditLog
+	e.DB.Take(&merged, logs[0].ID)
+	if merged.Count != 3 || merged.DetailCount != 1 {
+		t.Fatalf("同日同目标应合并次数: %+v", merged)
+	}
 	e.SaveRule(ctx, ban.ID, RuleInput{Name: "封禁", Pattern: "bad.com", Action: "log", Enabled: true})
-	e.Report(ctx, model.ServerTypeV2node, srv, []Record{{UserID: s3.ID, RuleID: ban.ID, Action: "ban", Target: "bad.com:443"}})
+	e.Report(ctx, model.ServerTypeV2node, srv, []Record{{UserID: s3.ID, RuleID: ban.ID, Action: "ban", Target: "bad.com:443", Network: "tcp"}})
 	if len(e.bans) != 1 {
 		t.Fatalf("不应再次封禁: %+v", e.bans)
 	}
 
-	// 查询
+	// 同日不同子域名合并为一条汇总，细节可查
+	logRule, _ := e.SaveRule(ctx, 0, RuleInput{Name: "记录", Pattern: "bing.com", Action: "log", Enabled: true})
+	err = e.Report(ctx, model.ServerTypeV2node, srv, []Record{
+		{UserID: s1.ID, RuleID: logRule.ID, Action: "log", Target: "www.bing.com:443", Network: "tcp", IP: "1.1.1.1", Count: 1, Time: at},
+		{UserID: s1.ID, RuleID: logRule.ID, Action: "log", Target: "th.bing.com:443", Network: "tcp", IP: "1.1.1.1", Count: 2, Time: at + 10},
+		{UserID: s1.ID, RuleID: logRule.ID, Action: "log", Target: "c.bing.com:443", Network: "tcp", IP: "1.1.1.1", Count: 1, Time: at + 20},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bing model.AuditLog
+	e.DB.Where("rule_id = ? AND subscription_id = ?", logRule.ID, s1.ID).Take(&bing)
+	if bing.Count != 4 || bing.DetailCount != 3 || bing.Target != "th.bing.com:443" {
+		t.Fatalf("按天合并不符: %+v", bing)
+	}
+	details, err := e.LogDetails(ctx, bing.ID)
+	if err != nil || len(details) != 3 || details[0].Target != "c.bing.com:443" || details[0].HitAt != at+20 {
+		t.Fatalf("细节查询不符: %+v %v", details, err)
+	}
+
+	// 查询（u1：封禁汇总、阻断、记录 bing 共 3 条；同日再次封禁已合并）
 	page, err := e.Logs(ctx, LogQuery{UserID: u1.ID})
 	if err != nil || page.Total != 3 || page.Data[0].Email != "u1@x.com" {
 		t.Fatalf("按用户查询不符: %+v %v", page, err)
+	}
+	page, _ = e.Logs(ctx, LogQuery{Target: "th.bing"})
+	if page.Total != 1 || page.Data[0].ID != bing.ID {
+		t.Fatalf("按细节目标查询应命中汇总: %+v", page)
 	}
 	one := 1
 	page, _ = e.Logs(ctx, LogQuery{Banned: &one})

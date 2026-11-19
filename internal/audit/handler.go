@@ -25,7 +25,8 @@ type Module struct {
 //	PUT    audit/rules/:id      修改规则
 //	DELETE audit/rules/:id      删除规则
 //	POST   audit/test           测试目标命中哪些规则，{"target":"example.com:443"}
-//	GET    audit/logs           审计日志，参数见 LogQuery
+//	GET    audit/logs           审计日志汇总，参数见 LogQuery
+//	GET    audit/logs/:id/details  一条汇总下的访问目标细节
 //	POST   audit/logs/clean     立即清理超过保留天数的审计日志
 func (m *Module) Register(r *server.Router) {
 	a := m.Auth.AdminGroup(r.API, func() string { return m.Svc.Settings.String("secure_path") })
@@ -35,6 +36,7 @@ func (m *Module) Register(r *server.Router) {
 	a.DELETE("/audit/rules/:id", m.deleteRule)
 	a.POST("/audit/test", m.test)
 	a.GET("/audit/logs", m.logs)
+	a.GET("/audit/logs/:id/details", m.logDetails)
 	a.POST("/audit/logs/clean", m.clean)
 }
 
@@ -116,6 +118,16 @@ func (m *Module) logs(c *gin.Context) {
 		return
 	}
 	v, err := m.Svc.Logs(c.Request.Context(), q)
+	respond(c, v, err)
+}
+
+func (m *Module) logDetails(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.Fail(c, errInvalid)
+		return
+	}
+	v, err := m.Svc.LogDetails(c.Request.Context(), id)
 	respond(c, v, err)
 }
 

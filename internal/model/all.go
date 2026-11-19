@@ -11,6 +11,6 @@ func All() []any {
 		&ServerShadowsocks{}, &ServerVmess{}, &ServerVless{}, &ServerTrojan{},
 		&ServerTuic{}, &ServerHysteria{}, &ServerAnytls{}, &ServerV2node{},
 		&Setting{}, &Plugin{}, &PluginKV{}, &PluginPackage{},
-		&SubscribeRule{}, &SubscribeLog{}, &UserTelegram{}, &AuditRule{}, &AuditLog{},
+		&SubscribeRule{}, &SubscribeLog{}, &UserTelegram{}, &AuditRule{}, &AuditLog{}, &AuditLogDetail{},
 	}
 }
