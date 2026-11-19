@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm"
 
 	"gvboard/internal/account"
+	"gvboard/internal/audit"
 	"gvboard/internal/auth"
 	"gvboard/internal/cache"
 	"gvboard/internal/config"
@@ -709,7 +710,7 @@ func testHTTP(t *testing.T, e *env) {
 	for _, p := range []string{
 		fmt.Sprintf("/api/v1/server/UniProxy/user?node_type=vless&node_id=%d", vless.ID),
 		fmt.Sprintf("/api/v1/server/UniProxy/user?token=wrong&node_type=vless&node_id=%d", vless.ID),
-		uni("user", "vless", 99999), uni("user", "socks", vless.ID), uni("nothing", "vless", vless.ID),
+		uni("user", "vless", 99999), uni("user", "socks", vless.ID), uni("nothing", "vless", vless.ID), uni("audit", "v2node", v2.ID),
 		"/api/v1/server/Unknown/user?token=" + token, "/api/v1/server/uniproxy/user?token=" + token + "&node_type=vless&node_id=1",
 		"/api/v2/server/config?token=wrong&node_id=1", "/api/v2/server/config?token=" + token + "&node_id=99999",
 		"/api/v1/server/Deepbwork/user?token=" + token + "&node_id=99999",
@@ -719,6 +720,45 @@ func testHTTP(t *testing.T, e *env) {
 		if w := get(p, nil); w.Code != http.StatusNotFound || w.Body.String() != notFound.Body.String() {
 			t.Errorf("%s 应返回统一 404，实际 %d %s", p, w.Code, w.Body)
 		}
+	}
+
+	// 审计规则：拉取（ETag）与上报。
+	auditSvc := &audit.Service{DB: e.DB, Settings: e.Settings}
+	rule, err := auditSvc.SaveRule(ctx, 0, audit.RuleInput{Name: "r", Pattern: "Bad.com\n:25", Action: "block", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ra, err := server.NewRouter(cfg, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ra.Mount(&Module{Svc: e.Service, Auth: e.auth, Audit: auditSvc})
+	auditDo := func(method, body string, h map[string]string) *httptest.ResponseRecorder {
+		hr := httptest.NewRequest(method, uni("audit", "v2node", v2.ID), strings.NewReader(body))
+		for k, v := range h {
+			hr.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		ra.Engine.ServeHTTP(w, hr)
+		return w
+	}
+	aw := auditDo("GET", "", nil)
+	if aw.Code != 200 || aw.Body.String() != fmt.Sprintf(`{"rules":[{"id":%d,"action":"block","match":["bad.com",":25"]}]}`, rule.ID) {
+		t.Fatalf("拉取审计规则不符: %d %s", aw.Code, aw.Body)
+	}
+	if w := auditDo("GET", "", map[string]string{"If-None-Match": aw.Header().Get("ETag")}); w.Code != http.StatusNotModified {
+		t.Fatalf("审计规则 ETag 相同应返回 304: %d", w.Code)
+	}
+	if w := auditDo("POST", "{", nil); w.Code != http.StatusBadRequest {
+		t.Fatalf("非法上报应返回 400: %d", w.Code)
+	}
+	body := fmt.Sprintf(`{"records":[{"user_id":%d,"rule_id":%d,"action":"block","target":"bad.com:443","network":"tcp","ip":"1.1.1.1","count":3}]}`, s1.ID, rule.ID)
+	if w := auditDo("POST", body, nil); w.Code != 200 || w.Body.String() != `{"data":true}` {
+		t.Fatalf("上报失败: %d %s", w.Code, w.Body)
+	}
+	var al model.AuditLog
+	if err := e.DB.Take(&al).Error; err != nil || al.UserID != u.ID || al.Count != 3 || al.ServerType != "v2node" || al.ServerID != v2.ID {
+		t.Fatalf("审计日志不符: %+v %v", al, err)
 	}
 
 	// 用户列表：JSON、ETag、msgpack、类型别名、方法名大小写。

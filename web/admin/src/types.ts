@@ -339,6 +339,38 @@ export interface SubscribeRule {
   last_hit_at: number | null
 }
 
+export interface AuditRule {
+  id: number
+  name: string
+  pattern: string
+  action: 'log' | 'block' | 'ban'
+  group_id: number[] | null
+  enabled: 0 | 1
+  sort: number
+  hit_count: number
+  last_hit_at: number | null
+}
+
+export interface AuditLog {
+  id: number
+  subscription_id: number
+  user_id: number
+  server_type: string
+  server_id: number
+  rule_id: number
+  action: 'log' | 'block' | 'ban'
+  target: string
+  network: string
+  ip: string
+  count: number
+  banned: 0 | 1
+  hit_at: number
+  created_at: number
+  email: string
+  rule_name: string
+  server_name: string
+}
+
 export interface SubscribeLog {
   id: number
   subscription_id: number

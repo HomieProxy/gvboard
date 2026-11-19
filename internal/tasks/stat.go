@@ -82,10 +82,11 @@ type CleanResult struct {
 	StatServer int64 `json:"stat_server"`
 	Log        int64 `json:"log"`
 	Subscribe  int64 `json:"subscribe_log"`
+	Audit      int64 `json:"audit_log"`
 }
 
 // CleanLogs 清理过期记录（原项目 reset:log）：节点 / 用户流量统计保留 2 个月，系统日志保留 1 个月；
-// 另清理超过保留天数的订阅请求日志（决策 D46）。
+// 另清理超过保留天数的订阅请求日志（决策 D46）与审计日志（决策 D81）。
 func (s *Service) CleanLogs(ctx context.Context) (*CleanResult, error) {
 	now := s.now()
 	statBefore := now.AddDate(0, -2, 0).Unix()
@@ -102,6 +103,11 @@ func (s *Service) CleanLogs(ctx context.Context) (*CleanResult, error) {
 	}
 	if s.CleanSubscribeLogs != nil {
 		if r.Subscribe, err = s.CleanSubscribeLogs(ctx); err != nil {
+			return r, err
+		}
+	}
+	if s.CleanAuditLogs != nil {
+		if r.Audit, err = s.CleanAuditLogs(ctx); err != nil {
 			return r, err
 		}
 	}

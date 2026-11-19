@@ -489,6 +489,41 @@ func Schema() []Table {
 				{Name: "idx_ip_created", Cols: []string{"ip", "created_at"}, Ensure: true},
 			},
 		},
+		// 审计规则（决策 D81）
+		table("v2_audit_rule", []Column{
+			def("name", "varchar(64)", "''"),
+			col("pattern", "text"),
+			col("action", "varchar(16)"),
+			null("group_id", "varchar(255)"),
+			def("enabled", "tinyint", "1"),
+			def("sort", "int", "0"),
+			def("hit_count", "bigint", "0"),
+			null("last_hit_at", "int"),
+		}),
+		{
+			Name: "v2_audit_log",
+			Columns: []Column{
+				pk(),
+				col("subscription_id", "int"),
+				col("user_id", "int"),
+				col("server_type", "varchar(16)"),
+				col("server_id", "int"),
+				col("rule_id", "int"),
+				col("action", "varchar(16)"),
+				col("target", "varchar(255)"),
+				def("network", "varchar(8)", "''"),
+				def("ip", "varchar(64)", "''"),
+				def("count", "int", "1"),
+				def("banned", "tinyint", "0"),
+				col("hit_at", "int"),
+				col("created_at", "int"),
+			},
+			Indexes: []Index{
+				{Name: "idx_created", Cols: []string{"created_at"}, Ensure: true},
+				{Name: "idx_user_created", Cols: []string{"user_id", "created_at"}, Ensure: true},
+				{Name: "idx_rule_created", Cols: []string{"rule_id", "created_at"}, Ensure: true},
+			},
+		},
 	}
 }
 

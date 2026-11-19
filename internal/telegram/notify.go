@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"gvboard/internal/audit"
 	"gvboard/internal/cache"
 	"gvboard/internal/i18n"
 	"gvboard/internal/model"
@@ -188,6 +189,18 @@ func (s *Service) OnCancelledPaid(ctx context.Context, o *model.Order, paymentNa
 		"amount": money(amount), "payment": esc(paymentName), "callback_no": "<code>" + esc(callbackNo) + "</code>",
 	}
 	s.NotifyAdmins(ctx, TopicAlert, false, func(locale string) string { return s.T(locale, "telegram.cancelled_paid", params) })
+}
+
+// OnAuditBan 审计规则封禁账号后通知管理员（决策 D81）。
+func (s *Service) OnAuditBan(ctx context.Context, b audit.BanInfo) {
+	if !s.Enabled() {
+		return
+	}
+	params := i18n.Params{
+		"email": "<code>" + esc(b.Email) + "</code>", "rule": esc(b.RuleName),
+		"target": "<code>" + esc(b.Target) + "</code>", "server": esc(b.Server),
+	}
+	s.NotifyAdmins(ctx, TopicAlert, false, func(locale string) string { return s.T(locale, "telegram.audit_ban", params) })
 }
 
 // TestTopic 向管理员话题群组的 topic 话题直接发送一条测试消息，返回 Telegram 的错误（管理端配置检查用）。

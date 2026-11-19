@@ -39,8 +39,10 @@ type Service struct {
 	Translate func(locale, key string, params map[string]any) string
 	// CleanSubscribeLogs 清理过期的订阅请求日志（subscribe.Service.CleanLogs），可为 nil。
 	CleanSubscribeLogs func(ctx context.Context) (int64, error)
-	Log                *zap.Logger
-	Now                func() time.Time // 测试注入，nil 时为 time.Now
+	// CleanAuditLogs 清理过期的审计日志（audit.Service.CleanLogs），可为 nil。
+	CleanAuditLogs func(ctx context.Context) (int64, error)
+	Log            *zap.Logger
+	Now            func() time.Time // 测试注入，nil 时为 time.Now
 }
 
 func (s *Service) now() time.Time {

@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"gvboard/internal/app"
+	"gvboard/internal/audit"
 	"gvboard/internal/geoip"
 	"gvboard/internal/httpx"
 	"gvboard/internal/invite"
@@ -33,6 +34,7 @@ type services struct {
 	tickets   *ticket.Service
 	bot       *telegram.Service
 	tasks     *tasks.Service
+	audit     *audit.Service
 	plugins   *plugin.Manager
 	geo       geoip.Locator
 }
@@ -83,9 +85,13 @@ func newServices(a *app.App) (*services, error) {
 	sv.pays.OnCancelledPaid = sv.bot.OnCancelledPaid
 	sv.tickets.OnEvent = sv.bot.OnTicket
 	sv.tickets.OnAdminReply = sv.bot.OnAdminReply
+	sv.audit = &audit.Service{
+		DB: a.DB, Settings: a.Settings, Log: a.Log.Named("audit"),
+		RemoveSessions: a.Auth.RemoveAll, OnBan: sv.bot.OnAuditBan,
+	}
 	sv.tasks = &tasks.Service{
 		DB: a.DB, Cache: a.Cache, Settings: a.Settings, Mail: a.Mail, Notify: sv.bot, Translate: translate,
-		CleanSubscribeLogs: sv.subscribe.CleanLogs, Log: a.Log.Named("tasks"),
+		CleanSubscribeLogs: sv.subscribe.CleanLogs, CleanAuditLogs: sv.audit.CleanLogs, Log: a.Log.Named("tasks"),
 	}
 	sv.plugins = &plugin.Manager{
 		DB: a.DB, Cache: a.Cache, Auth: a.Auth, Settings: a.Settings, Log: a.Log.Named("plugin"),

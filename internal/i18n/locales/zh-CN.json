@@ -166,6 +166,7 @@
     "telegram.server_offline": "节点掉线通知\n———————————————\n节点名称：:name\n节点地址：:host",
     "telegram.reset_failed": ":time 用户流量重置失败：:error",
     "telegram.cancelled_paid": "⚠️ 已取消的订单收到付款\n———————————————\n订单号：:trade_no\n用户：:email\n金额：:amount 元\n支付方式：:payment\n支付方单号：:callback_no\n订单未做任何处理。请核实到账后在管理后台「订单管理」中对该订单补单。",
+    "telegram.audit_ban": "🚫 审计规则封禁了账号\n———————————————\n用户：:email\n规则：:rule\n访问目标：:target\n节点：:server\n账号已封禁并已退出登录，详情见管理后台「审计规则」的审计日志。",
     "telegram.daily_report": "📊 :date 每日统计\n———————————————\n收款：:paid_count 笔 / :paid_total 元\n新订单：:order_count 笔 / :order_total 元\n新注册：:register 人（受邀 :invite 人）\n佣金：:commission_count 笔 / :commission_total 元\n已用流量：:traffic\n新工单：:tickets 个",
     "telegram.topic_test": "✅ 测试消息：「:topic」通知会发到这个话题。",
     "telegram.topic_order": "订单",

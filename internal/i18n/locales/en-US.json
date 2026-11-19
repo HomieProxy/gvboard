@@ -169,6 +169,7 @@
     "telegram.server_offline": "Node offline\n———————————————\nName: :name\nAddress: :host",
     "telegram.reset_failed": ":time Failed to reset user traffic: :error",
     "telegram.cancelled_paid": "⚠️ Payment received for a cancelled order\n———————————————\nOrder: :trade_no\nUser: :email\nAmount: :amount\nPayment method: :payment\nPayment reference: :callback_no\nThe order was not changed. Verify the payment, then restore the order in Orders of the admin panel.",
+    "telegram.audit_ban": "🚫 An account was banned by an audit rule\n———————————————\nUser: :email\nRule: :rule\nTarget: :target\nNode: :server\nThe account is banned and signed out. See the audit log under Audit rules in the admin panel.",
     "telegram.daily_report": "📊 Daily report for :date\n———————————————\nPayments: :paid_count / :paid_total\nNew orders: :order_count / :order_total\nRegistrations: :register (invited :invite)\nCommissions: :commission_count / :commission_total\nTraffic used: :traffic\nNew tickets: :tickets",
     "telegram.topic_test": "✅ Test message: :topic notifications will be sent to this topic.",
     "telegram.topic_order": "Orders",

@@ -2,6 +2,7 @@ package nodeapi
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/vmihailenco/msgpack/v5"
 
+	"gvboard/internal/audit"
 	"gvboard/internal/auth"
 	"gvboard/internal/httpx"
 	"gvboard/internal/model"
@@ -28,6 +30,8 @@ type Module struct {
 	Auth *auth.Service
 	// Allow 节点接口来源 IP 白名单，为空不限制。
 	Allow []netip.Prefix
+	// Audit 审计规则服务，为 nil 时审计接口返回 404。
+	Audit *audit.Service
 }
 
 // ParseWhitelist 解析配置 node.ip_whitelist（IP 或 CIDR）。
@@ -263,9 +267,46 @@ func (m *Module) uniProxy(c *gin.Context, action string) {
 			return
 		}
 		sendTagged(c, o, nil, false)
+	case "audit":
+		m.audit(c, typ, srv)
 	default:
 		httpx.NotFound(c)
 	}
+}
+
+// audit 审计规则：GET 拉取节点生效的规则 {"rules":[{"id","action","match"}]}（带 ETag），
+// POST 上报命中记录 {"records":[...]}。未启用审计模块时返回 404。
+func (m *Module) audit(c *gin.Context, typ string, srv node.Server) {
+	if m.Audit == nil {
+		httpx.NotFound(c)
+		return
+	}
+	ctx := c.Request.Context()
+	if c.Request.Method == http.MethodGet {
+		rules, err := m.Audit.NodeRules(ctx, srv)
+		if err != nil {
+			fail(c, err)
+			return
+		}
+		sendTagged(c, obj{{"rules", rules}}, nil, false)
+		return
+	}
+	b, ok := body(c)
+	if !ok {
+		return
+	}
+	var in struct {
+		Records []audit.Record `json:"records"`
+	}
+	if err := json.Unmarshal(b, &in); err != nil {
+		badData(c, fmt.Errorf("invalid audit data: %w", err))
+		return
+	}
+	if err := m.Audit.Report(ctx, typ, srv, in.Records); err != nil {
+		fail(c, err)
+		return
+	}
+	sendJSON(c, obj{{"data", true}})
 }
 
 func sendMsgpack(c *gin.Context, users []User) {

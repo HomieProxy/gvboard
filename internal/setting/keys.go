@@ -375,6 +375,8 @@ var defs = []Def{
 	{Key: "subscribe_share_ip_limit", Type: TypeInt, Default: 0, Group: GroupGvboard, Validate: intRange(0, 10000)},
 	{Key: "subscribe_share_window", Type: TypeInt, Default: 24, Group: GroupGvboard, Validate: intRange(1, 168)},
 	{Key: "subscribe_share_action", Type: TypeString, Default: "log", Group: GroupGvboard, Validate: oneOf("log", "empty", "deny")},
+	// 审计日志保留天数（决策 D81）。
+	{Key: "audit_log_retention_days", Type: TypeInt, Default: 30, Group: GroupGvboard, Validate: intRange(1, 365)},
 
 	// 自定义邮件模板，JSON：{"风格": {"模板名": "内容"}}，内置风格中的项覆盖内置内容（决策 D71）。
 	{Key: "email_templates_custom", Type: TypeString, Default: "", Group: GroupInternal},
