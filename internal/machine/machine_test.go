@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -226,6 +227,84 @@ func testMachine(t *testing.T, driver string) {
 	}
 	if getConfig(got.Token, nil).Code != http.StatusOK {
 		t.Fatal("重新接入后的凭据应可用")
+	}
+
+	// 远程更新：校验版本号与接入状态；下发后配置带更新指令；失败原因只记录当前指令的；运行目标版本后视为完成。
+	const target = "v0.4.9-gvboard.3"
+	if _, err := svc.RequestUpdate(ctx, []int64{a.Machine.ID}, "latest"); err != errVersion {
+		t.Fatalf("非法版本号应失败: %v", err)
+	}
+	if _, err := svc.RequestUpdate(ctx, []int64{b.Machine.ID}, target); err == nil {
+		t.Fatal("未接入的节点机不能更新")
+	}
+	if _, err := svc.RequestUpdate(ctx, []int64{a.Machine.ID}, "v0.4.9-gvboard.2"); err == nil {
+		t.Fatal("已是该版本时不应下发")
+	}
+	fetch := func(version string, rep url.Values) Config {
+		t.Helper()
+		q := url.Values{"version": {version}}
+		for k, v := range rep {
+			q[k] = v
+		}
+		w := do("GET", "/api/v2/server/machine/config?"+q.Encode(), "", map[string]string{"Authorization": "Bearer " + got.Token})
+		var cf Config
+		if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &cf) != nil {
+			t.Fatalf("获取配置失败: %d %s", w.Code, w.Body)
+		}
+		return cf
+	}
+	machineA := func() View {
+		t.Helper()
+		list, err := svc.List(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, v := range list {
+			if v.ID == a.Machine.ID {
+				return v
+			}
+		}
+		t.Fatal("找不到节点机 A")
+		return View{}
+	}
+	if cf := fetch("v0.4.9-gvboard.2", nil); cf.Update != nil {
+		t.Fatalf("没有更新时不应下发: %+v", cf.Update)
+	}
+	if n, err := svc.RequestUpdate(ctx, []int64{a.Machine.ID, b.Machine.ID, a.Machine.ID}, " "+target+" "); err != nil || n != 1 {
+		t.Fatalf("下发更新失败: %d %v", n, err)
+	}
+	cf = fetch("v0.4.9-gvboard.2", nil)
+	if cf.Update == nil || *cf.Update != (Update{Version: target, ID: 1}) {
+		t.Fatalf("更新指令不符: %+v", cf.Update)
+	}
+	fetch("v0.4.9-gvboard.2", url.Values{"update_id": {"0"}, "update_error": {"旧指令"}})
+	if v := machineA(); v.UpdateError != "" {
+		t.Fatalf("其他指令的失败原因不应记录: %q", v.UpdateError)
+	}
+	fetch("v0.4.9-gvboard.2", url.Values{"update_id": {"1"}, "update_error": {"下载失败"}})
+	if v := machineA(); v.UpdateVersion != target || v.UpdateError != "下载失败" {
+		t.Fatalf("失败原因未记录: %+v", v)
+	}
+	if _, err := svc.RequestUpdate(ctx, []int64{a.Machine.ID}, target); err != nil {
+		t.Fatal(err)
+	}
+	if v := machineA(); v.UpdateID != 2 || v.UpdateError != "" {
+		t.Fatalf("重新下发应生成新编号并清除失败原因: %+v", v)
+	}
+	if err := svc.CancelUpdate(ctx, a.Machine.ID); err != nil {
+		t.Fatal(err)
+	}
+	if cf := fetch("v0.4.9-gvboard.2", nil); cf.Update != nil {
+		t.Fatal("取消后不应再下发")
+	}
+	if _, err := svc.RequestUpdate(ctx, []int64{a.Machine.ID}, target); err != nil {
+		t.Fatal(err)
+	}
+	if cf := fetch(target, nil); cf.Update != nil {
+		t.Fatal("运行目标版本后不应再下发")
+	}
+	if v := machineA(); v.UpdateVersion != "" || v.Version != target || v.UpdateID != 3 {
+		t.Fatalf("更新完成后状态不符: %+v", v)
 	}
 	if err := svc.Revoke(ctx, a.Machine.ID); err != nil {
 		t.Fatal(err)

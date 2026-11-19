@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -51,6 +52,9 @@ type Service struct {
 	Log      *zap.Logger
 	// Now 为 nil 时使用 time.Now，测试可替换。
 	Now func() time.Time
+	// HTTP 与 ReleasesURL 用于查询可更新的 v2node 版本，为空时使用默认值，测试可替换。
+	HTTP        *http.Client
+	ReleasesURL string
 
 	mu    sync.Mutex
 	cache map[string]cached
@@ -409,10 +413,12 @@ type Config struct {
 	LogLevel     string       `json:"log_level"`
 	PullInterval int64        `json:"pull_interval"`
 	Nodes        []NodeConfig `json:"nodes"`
+	// Update 待执行的 v2node 更新，没有时省略。
+	Update *Update `json:"update,omitempty"`
 }
 
-// Config 节点机配置，只包含仍存在的 v2node 节点，并顺带更新最后连接信息。
-func (s *Service) Config(ctx context.Context, m *model.NodeMachine, ip, version string) (*Config, error) {
+// Config 节点机配置，只包含仍存在的 v2node 节点，并顺带更新最后连接信息与更新结果。
+func (s *Service) Config(ctx context.Context, m *model.NodeMachine, ip, version string, rep Report) (*Config, error) {
 	cfg := &Config{LogLevel: m.LogLevel, PullInterval: s.Settings.Int("server_pull_interval"), Nodes: []NodeConfig{}}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
@@ -427,6 +433,10 @@ func (s *Service) Config(ctx context.Context, m *model.NodeMachine, ip, version 
 		}
 	}
 	s.touch(ctx, m, ip, version)
+	s.trackUpdate(ctx, m, clip(version, 64), rep)
+	if m.UpdateVersion != "" {
+		cfg.Update = &Update{Version: m.UpdateVersion, ID: m.UpdateID}
+	}
 	return cfg, nil
 }
 

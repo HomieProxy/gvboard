@@ -39,14 +39,21 @@ type Module struct {
 //	POST   machines/:id/enroll   重新生成接入码（同时吊销现有凭据）
 //	POST   machines/:id/revoke   吊销凭据
 //	DELETE machines/:id          删除
+//	GET    machines/releases     查询可更新到的 v2node 版本（请求 GitHub）
+//	POST   machines/update       {"ids","version"} 下发 v2node 更新
+//	POST   machines/:id/update/cancel  取消待执行的更新
 //
 // 节点机（未开启节点机、来源 IP 不在白名单、接入码或凭据无效时统一 404）：
 //
 //	POST /api/v2/server/machine/enroll  {"code","hostname","version"} 换取凭据
-//	GET  /api/v2/server/machine/config  下发配置，凭据放在 Authorization: Bearer 或参数 token，支持 ETag
+//	GET  /api/v2/server/machine/config  下发配置，凭据放在 Authorization: Bearer 或参数 token，支持 ETag；
+//	                                    参数 update_id、update_error 上报上次更新失败的原因
 func (m *Module) Register(r *server.Router) {
 	a := m.Auth.AdminGroup(r.API, func() string { return m.Svc.Settings.String("secure_path") })
 	a.GET("/machines", m.list)
+	a.GET("/machines/releases", m.releases)
+	a.POST("/machines/update", m.requestUpdate)
+	a.POST("/machines/:id/update/cancel", m.cancelUpdate)
 	a.POST("/machines", m.create)
 	a.PUT("/machines/:id", m.update)
 	a.POST("/machines/:id/enroll", m.reenroll)
@@ -139,6 +146,30 @@ func (m *Module) remove(c *gin.Context) {
 	}
 }
 
+func (m *Module) releases(c *gin.Context) {
+	v, err := m.Svc.Releases(c.Request.Context())
+	respond(c, v, err)
+}
+
+func (m *Module) requestUpdate(c *gin.Context) {
+	var in struct {
+		IDs     []int64 `json:"ids"`
+		Version string  `json:"version"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, errInvalid)
+		return
+	}
+	n, err := m.Svc.RequestUpdate(c.Request.Context(), in.IDs, in.Version)
+	respond(c, n, err)
+}
+
+func (m *Module) cancelUpdate(c *gin.Context) {
+	if id, ok := pathID(c); ok {
+		respond(c, true, m.Svc.CancelUpdate(c.Request.Context(), id))
+	}
+}
+
 func (m *Module) enroll(c *gin.Context) {
 	var in struct {
 		Code     string `json:"code"`
@@ -175,7 +206,9 @@ func (m *Module) config(c *gin.Context) {
 		httpx.NotFound(c)
 		return
 	}
-	cfg, err := m.Svc.Config(c.Request.Context(), mc, c.ClientIP(), c.Query("version"))
+	rep := Report{Error: c.Query("update_error")}
+	rep.ID, _ = strconv.ParseInt(c.Query("update_id"), 10, 64)
+	cfg, err := m.Svc.Config(c.Request.Context(), mc, c.ClientIP(), c.Query("version"), rep)
 	if err != nil {
 		httpx.Fail(c, err)
 		return

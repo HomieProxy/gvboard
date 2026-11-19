@@ -557,6 +557,10 @@ func Schema() []Table {
 			def("version", "varchar(64)", "''"),
 			def("ip", "varchar(64)", "''"),
 			null("last_seen_at", "int"),
+			// 远程更新 v2node（决策 D84）
+			def("update_version", "varchar(64)", "''"),
+			def("update_id", "int", "0"),
+			def("update_error", "varchar(255)", "''"),
 		},
 			Index{Name: "uniq_token", Cols: []string{"token_hash"}, Unique: true, Ensure: true},
 			Index{Name: "uniq_enroll", Cols: []string{"enroll_hash"}, Unique: true, Ensure: true},

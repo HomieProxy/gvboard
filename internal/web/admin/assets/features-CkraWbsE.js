@@ -1,1 +1,0 @@
-import{a}from"./index-Bn7CGk8K.js";import{l as r}from"./vendor-DBYnGjcv.js";const o=r({});async function s(){try{const e=await a.get("/config",{group:"server"});o.value={node_machine:!!Number(e?.server?.node_machine_enable)}}catch{}}export{o as f,s as l};

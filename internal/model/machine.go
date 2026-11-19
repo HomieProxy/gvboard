@@ -19,8 +19,13 @@ type NodeMachine struct {
 	Version         string  `gorm:"column:version" json:"version"`
 	IP              string  `gorm:"column:ip" json:"ip"`
 	LastSeenAt      *int64  `gorm:"column:last_seen_at" json:"last_seen_at"`
-	CreatedAt       int64   `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt       int64   `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	// UpdateVersion 待更新到的 v2node 版本，为空表示没有待执行的更新（决策 D84）；
+	// UpdateID 更新指令编号，每次下发更新加 1，节点机同一编号只尝试一次；UpdateError 上次更新失败的原因。
+	UpdateVersion string `gorm:"column:update_version" json:"update_version"`
+	UpdateID      int64  `gorm:"column:update_id" json:"update_id"`
+	UpdateError   string `gorm:"column:update_error" json:"update_error"`
+	CreatedAt     int64  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt     int64  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 func (NodeMachine) TableName() string { return "v2_node_machine" }

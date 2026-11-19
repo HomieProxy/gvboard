@@ -395,9 +395,18 @@ export interface NodeMachine {
   version: string
   ip: string
   last_seen_at: number | null
+  update_version: string
+  update_id: number
+  update_error: string
   created_at: number
   enrolled: boolean
   online: boolean
+}
+
+export interface V2nodeRelease {
+  version: string
+  published_at: string
+  prerelease: boolean
 }
 
 export interface SubscribeLog {
