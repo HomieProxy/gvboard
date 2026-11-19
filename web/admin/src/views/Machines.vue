@@ -32,7 +32,7 @@ const cols: Column[] = [
   { key: 'server_ids', title: '运行的节点' },
   { key: 'host', title: '服务器' },
   { key: 'last_seen_at', title: '最后连接' },
-  { key: 'op', title: '操作', align: 'right', class: 'w-40' },
+  { key: 'op', title: '操作', align: 'right', class: 'w-36' },
 ]
 
 function status(m: NodeMachine): { label: string; tone: 'success' | 'warning' | 'danger' | 'default' | 'info' } {
@@ -163,7 +163,9 @@ onMounted(async () => {
       <template #cell-name="{ row }"><span class="font-medium">{{ row.name }}</span></template>
       <template #cell-status="{ row }">
         <StatusBadge :tone="status(row).tone">{{ status(row).label }}</StatusBadge>
-        <div v-if="status(row).label === '等待接入'" class="mt-0.5 text-xs text-muted-foreground">{{ formatTime(row.enroll_expires_at) }} 前有效</div>
+        <div v-if="status(row).label === '等待接入'" class="mt-0.5 text-xs whitespace-nowrap text-muted-foreground" :title="`${formatTime(row.enroll_expires_at)} 前有效`">
+          {{ formatTime(row.enroll_expires_at).slice(-5) }} 前有效
+        </div>
       </template>
       <template #cell-server_ids="{ row }">
         <div class="flex max-w-sm flex-wrap gap-1">
@@ -176,8 +178,9 @@ onMounted(async () => {
       </template>
       <template #cell-host="{ row }">
         <template v-if="row.enrolled_at">
-          <div class="text-xs">{{ row.hostname || '-' }}</div>
-          <div class="font-mono text-xs text-muted-foreground">{{ row.ip || '-' }}<template v-if="row.version"> · {{ row.version }}</template></div>
+          <div class="max-w-44 truncate text-xs" :title="row.hostname">{{ row.hostname || '-' }}</div>
+          <div class="font-mono text-xs text-muted-foreground">{{ row.ip || '-' }}</div>
+          <div v-if="row.version" class="max-w-44 truncate font-mono text-xs text-muted-foreground" :title="row.version">{{ row.version }}</div>
         </template>
         <span v-else class="text-xs text-muted-foreground">-</span>
       </template>
