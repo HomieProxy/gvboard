@@ -5,9 +5,11 @@ export interface MenuItem {
   path: string
   title: string
   group: string
+  // 对应 features 中的开关，关闭时不在菜单中显示
+  feature?: string
 }
 
-const pages: (RouteRecordRaw & { meta: { title: string; group: string } })[] = [
+const pages: (RouteRecordRaw & { meta: { title: string; group: string; feature?: string } })[] = [
   { path: '/dashboard', component: () => import('./views/Dashboard.vue'), meta: { title: '仪表盘', group: '' } },
   { path: '/config', component: () => import('./views/Config.vue'), meta: { title: '系统配置', group: '设置' } },
   { path: '/payments', component: () => import('./views/Payments.vue'), meta: { title: '支付配置', group: '设置' } },
@@ -17,6 +19,7 @@ const pages: (RouteRecordRaw & { meta: { title: string; group: string } })[] = [
   { path: '/groups', component: () => import('./views/Groups.vue'), meta: { title: '权限组管理', group: '服务器' } },
   { path: '/routes', component: () => import('./views/Routes.vue'), meta: { title: '路由管理', group: '服务器' } },
   { path: '/audit', component: () => import('./views/Audit.vue'), meta: { title: '审计规则', group: '服务器' } },
+  { path: '/machines', component: () => import('./views/Machines.vue'), meta: { title: '节点机', group: '服务器', feature: 'node_machine' } },
   { path: '/plans', component: () => import('./views/Plans.vue'), meta: { title: '订阅管理', group: '财务' } },
   { path: '/orders', component: () => import('./views/Orders.vue'), meta: { title: '订单管理', group: '财务' } },
   { path: '/coupons', component: () => import('./views/Coupons.vue'), meta: { title: '优惠券管理', group: '财务' } },
@@ -30,7 +33,7 @@ const pages: (RouteRecordRaw & { meta: { title: string; group: string } })[] = [
   { path: '/logs', component: () => import('./views/Logs.vue'), meta: { title: '系统日志', group: '指标' } },
 ]
 
-export const menu: MenuItem[] = pages.map((p) => ({ path: p.path, title: p.meta.title, group: p.meta.group }))
+export const menu: MenuItem[] = pages.map((p) => ({ path: p.path, title: p.meta.title, group: p.meta.group, feature: p.meta.feature }))
 
 export const router = createRouter({
   history: createWebHashHistory(),

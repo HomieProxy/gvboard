@@ -233,7 +233,7 @@ onMounted(() => {
   <div>
     <PageHeader title="审计规则" description="节点按规则记录、阻断访问指定网站的连接，或直接封禁访问者的账号。" />
     <p class="mb-4 text-sm text-amber-700 dark:text-amber-400">
-      必须搭配 gvboard 版 v2node，并在节点配置中开启 <code class="rounded bg-muted px-1 font-mono text-xs">AuditEnable</code> 才能使用。
+      必须搭配 gvboard 版 v2node，并在节点配置中开启 <code class="rounded bg-muted px-1 font-mono text-xs">AuditEnable</code>（节点机模式在“节点机”页面为节点开启审计）才能使用。
     </p>
 
     <Tabs v-model="tab" @update:model-value="onTab">

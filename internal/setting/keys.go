@@ -287,6 +287,8 @@ var defs = []Def{
 	{Key: "device_limit_mode", Type: TypeInt, Default: 0, Group: GroupServer},
 	// Gvboard 新增（决策 D55）：节点掉线自动检查并通知管理员
 	{Key: "server_offline_notify", Type: TypeBool, Default: 1, Group: GroupServer},
+	// 节点机一次性接入（决策 D83），存在已接入的节点机时不能关闭。
+	{Key: "node_machine_enable", Type: TypeBool, Default: 0, Group: GroupServer},
 
 	// 邮件
 	{Key: "email_template", Type: TypeString, Default: "default", Group: GroupEmail},

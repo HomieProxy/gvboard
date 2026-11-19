@@ -264,6 +264,12 @@ export const configGroups: ConfigGroup[] = [
       },
       { key: 'device_limit_mode', label: '全局设备数限制采用宽松模式', kind: 'switch', help: '开启后同一IP地址使用多个节点只统计为一个设备' },
       { key: 'server_offline_notify', label: '节点掉线通知', kind: 'switch', help: '开启后节点超过 30 分钟未上报时通过 Telegram 通知管理员。' },
+      {
+        key: 'node_machine_enable',
+        label: '节点机一次性接入',
+        kind: 'switch',
+        help: '开启后左侧“服务器”下出现“节点机”页面：生成一条安装命令，在服务器上执行即可接入，节点配置由面板下发，可随时吊销。需要 gvboard 版 v2node；存在已接入的节点机时不能关闭。',
+      },
     ],
   },
   {

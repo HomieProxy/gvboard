@@ -193,6 +193,20 @@ var saveRules = map[string]func(*Service, any) error{
 		}
 		return nil
 	},
+	// 节点机（决策 D83）：存在已接入的节点机时不能关闭，否则这些节点机会立即全部停止。
+	"node_machine_enable": func(s *Service, v any) error {
+		if n, _ := v.(int64); n != 0 {
+			return nil
+		}
+		var cnt int64
+		if err := s.DB.Model(&model.NodeMachine{}).Where("token_hash IS NOT NULL").Count(&cnt).Error; err != nil {
+			return err
+		}
+		if cnt > 0 {
+			return fmt.Errorf("还有 %d 台已接入的节点机，请先在“节点机”页面吊销或删除后再关闭", cnt)
+		}
+		return nil
+	},
 	"deposit_bounus": func(_ *Service, v any) error {
 		tiers, _ := v.([]string)
 		for _, tier := range tiers {

@@ -22,6 +22,7 @@ import TagsField from '../components/common/TagsField.vue'
 import ClientsField from '../components/common/ClientsField.vue'
 import StatusBadge from '../components/common/StatusBadge.vue'
 import { admin, cfg } from '../api'
+import { loadFeatures } from '../features'
 import { ask, errText, message, run } from '../ui'
 import { configGroups, type ConfigField, type ConfigGroup } from '../configSpec'
 import { loadPlans, planOptions } from '../refs'
@@ -126,6 +127,7 @@ async function save(keys = dirty.value) {
   saving.value = false
   if (!ok) return false
   for (const k of Object.keys(body)) origin.value[k] = JSON.parse(JSON.stringify(values.value[k]))
+  if ('node_machine_enable' in body) await loadFeatures()
   if ('secure_path' in body) await moveSecurePath(String(body.secure_path))
   if (Object.keys(body).some((k) => k.startsWith('subscribe_template_'))) {
     templates.value = (await admin.get<Template[]>('/subscribe-templates')) || templates.value

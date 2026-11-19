@@ -17,6 +17,7 @@ import (
 	"gvboard/internal/captcha"
 	"gvboard/internal/content"
 	"gvboard/internal/invite"
+	"gvboard/internal/machine"
 	"gvboard/internal/legacy"
 	"gvboard/internal/node"
 	"gvboard/internal/nodeapi"
@@ -83,6 +84,7 @@ func newServeCmd() *cobra.Command {
 			}
 			users := &usercenter.Service{DB: a.DB, Settings: a.Settings, Auth: a.Auth, Subscriptions: subs}
 			nodes := &node.Service{DB: a.DB, Cache: a.Cache, Settings: a.Settings, Log: a.Log.Named("node")}
+			machines := &machine.Service{DB: a.DB, Settings: a.Settings, Log: a.Log.Named("machine")}
 			adminUsers := &adminuser.Service{
 				DB: a.DB, Settings: a.Settings, Auth: a.Auth, Subscriptions: subs, Mail: a.Mail, Guard: subscribeSvc,
 			}
@@ -97,7 +99,8 @@ func newServeCmd() *cobra.Command {
 				&payment.Module{Svc: pays, Auth: a.Auth},
 				&invite.Module{Svc: invites, Auth: a.Auth},
 				&node.Module{Svc: nodes, Auth: a.Auth},
-				&nodeapi.Module{Svc: nodeAPI, Auth: a.Auth, Allow: nodeAllow, Audit: sv.audit},
+				&nodeapi.Module{Svc: nodeAPI, Auth: a.Auth, Allow: nodeAllow, Audit: sv.audit, Machines: machines},
+				&machine.Module{Svc: machines, Auth: a.Auth, Allow: nodeAllow},
 				&audit.Module{Svc: sv.audit, Auth: a.Auth},
 				&subscribe.Module{Svc: subscribeSvc, Auth: a.Auth},
 				&ticket.Module{Svc: tickets, Auth: a.Auth, Locale: a.I18n.Locale},

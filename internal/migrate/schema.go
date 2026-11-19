@@ -543,6 +543,24 @@ func Schema() []Table {
 				{Name: "idx_log", Cols: []string{"log_id"}, Ensure: true},
 			},
 		},
+		// 节点机（决策 D83）
+		table("v2_node_machine", []Column{
+			def("name", "varchar(64)", "''"),
+			null("server_ids", "text"),
+			null("audit_ids", "text"),
+			def("log_level", "varchar(16)", "'info'"),
+			null("token_hash", "char(64)"),
+			null("enroll_hash", "char(64)"),
+			null("enroll_expires_at", "int"),
+			null("enrolled_at", "int"),
+			def("hostname", "varchar(255)", "''"),
+			def("version", "varchar(64)", "''"),
+			def("ip", "varchar(64)", "''"),
+			null("last_seen_at", "int"),
+		},
+			Index{Name: "uniq_token", Cols: []string{"token_hash"}, Unique: true, Ensure: true},
+			Index{Name: "uniq_enroll", Cols: []string{"enroll_hash"}, Unique: true, Ensure: true},
+		),
 	}
 }
 

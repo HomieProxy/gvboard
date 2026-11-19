@@ -4,7 +4,7 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import {
   LayoutDashboardIcon, SettingsIcon, CreditCardIcon, PaletteIcon, PuzzleIcon, ServerIcon, UsersRoundIcon, RouteIcon,
   PackageIcon, ReceiptIcon, TicketPercentIcon, GiftIcon, UserIcon, MegaphoneIcon, MessageSquareIcon, BookOpenIcon,
-  ShieldIcon, ActivityIcon, ScrollTextIcon, LogOutIcon, MoonIcon, SunIcon, TagIcon, EyeIcon,
+  ShieldIcon, ActivityIcon, ScrollTextIcon, LogOutIcon, MoonIcon, SunIcon, TagIcon, EyeIcon, HardDriveIcon,
 } from '@lucide/vue'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
@@ -15,6 +15,7 @@ import { Button } from '@gv/shared/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@gv/shared/ui/tooltip'
 import { admin, cfg, setToken } from '../api'
 import { menu } from '../router'
+import { features, loadFeatures } from '../features'
 import { colorMode } from '../theme'
 
 const route = useRoute()
@@ -30,6 +31,7 @@ const icons: Record<string, Component> = {
   '/groups': UsersRoundIcon,
   '/routes': RouteIcon,
   '/audit': EyeIcon,
+  '/machines': HardDriveIcon,
   '/plans': PackageIcon,
   '/orders': ReceiptIcon,
   '/coupons': TicketPercentIcon,
@@ -46,6 +48,7 @@ const icons: Record<string, Component> = {
 const groups = computed(() => {
   const out: { name: string; items: typeof menu }[] = []
   for (const m of menu) {
+    if (m.feature && !features.value[m.feature]) continue
     let g = out.find((x) => x.name === m.group)
     if (!g) out.push((g = { name: m.group, items: [] }))
     g.items.push(m)
@@ -71,6 +74,7 @@ const versionTip = computed(() => {
   return `当前版本 ${v.version}${built}，点击查看版本发布`
 })
 onMounted(async () => {
+  loadFeatures()
   try {
     version.value = await admin.get('/system/version')
   } catch {

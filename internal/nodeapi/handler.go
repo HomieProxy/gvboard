@@ -2,6 +2,7 @@ package nodeapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +33,31 @@ type Module struct {
 	Allow []netip.Prefix
 	// Audit 审计规则服务，为 nil 时审计接口返回 404。
 	Audit *audit.Service
+	// Machines 节点机凭据校验（决策 D83），为 nil 时只接受 server_token。
+	Machines MachineAuth
+}
+
+// MachineAuth 校验节点机凭据，无效时返回 nil。
+type MachineAuth interface {
+	Auth(ctx context.Context, token string) *model.NodeMachine
+}
+
+// AllowIP 来源 IP 是否在白名单内，白名单为空时不限制。
+func AllowIP(allow []netip.Prefix, clientIP string) bool {
+	if len(allow) == 0 {
+		return true
+	}
+	ip, err := netip.ParseAddr(clientIP)
+	if err != nil {
+		return false
+	}
+	ip = ip.Unmap()
+	for _, p := range allow {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseWhitelist 解析配置 node.ip_whitelist（IP 或 CIDR）。
@@ -74,29 +100,36 @@ func (m *Module) Register(r *server.Router) {
 }
 
 func (m *Module) guard(c *gin.Context) {
-	if len(m.Allow) > 0 {
-		ip, err := netip.ParseAddr(c.ClientIP())
-		allowed := false
-		if err == nil {
-			ip = ip.Unmap()
-			for _, p := range m.Allow {
-				if p.Contains(ip) {
-					allowed = true
-					break
-				}
-			}
-		}
-		if !allowed {
-			httpx.NotFound(c)
-			return
-		}
+	if !AllowIP(m.Allow, c.ClientIP()) {
+		httpx.NotFound(c)
+		return
 	}
-	if !m.Svc.TokenOK(input(c, "token")) {
+	token := input(c, "token")
+	if !m.Svc.TokenOK(token) && !m.machineOK(c, token) {
 		httpx.NotFound(c)
 		return
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBody)
 	c.Next()
+}
+
+// machineOK 节点机凭据只能访问 v2node 类型的 UniProxy 与 v2 config 接口，且节点必须属于这台节点机。
+func (m *Module) machineOK(c *gin.Context, token string) bool {
+	if m.Machines == nil {
+		return false
+	}
+	switch {
+	case strings.HasSuffix(c.FullPath(), "/config"):
+	case strings.EqualFold(c.Param("class"), "UniProxy") && strings.EqualFold(input(c, "node_type"), model.ServerTypeV2node):
+	default:
+		return false
+	}
+	id, err := strconv.ParseInt(input(c, "node_id"), 10, 64)
+	if err != nil || id <= 0 {
+		return false
+	}
+	mc := m.Machines.Auth(c.Request.Context(), token)
+	return mc != nil && mc.ServerIDs.Contains(id)
 }
 
 // input 读取参数，查询串优先，其次表单（与原项目 $request->input 一致）。

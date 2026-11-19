@@ -383,6 +383,23 @@ export interface AuditLogDetail {
   hit_at: number
 }
 
+export interface NodeMachine {
+  id: number
+  name: string
+  server_ids: number[]
+  audit_ids: number[]
+  log_level: string
+  enroll_expires_at: number | null
+  enrolled_at: number | null
+  hostname: string
+  version: string
+  ip: string
+  last_seen_at: number | null
+  created_at: number
+  enrolled: boolean
+  online: boolean
+}
+
 export interface SubscribeLog {
   id: number
   subscription_id: number
