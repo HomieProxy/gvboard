@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"gvboard/internal/balance"
 	"gvboard/internal/database"
 	"gvboard/internal/httpx"
 	"gvboard/internal/mail"
@@ -249,6 +250,7 @@ type UpdateInput struct {
 	Email             *string                `json:"email"`
 	Password          *string                `json:"password"`
 	Balance           *int64                 `json:"balance"`
+	BalanceRemark     string                 `json:"balance_remark"` // 修改余额的原因，写入余额变动日志
 	CommissionBalance *int64                 `json:"commission_balance"`
 	CommissionType    *int                   `json:"commission_type"`
 	CommissionRate    httpx.Optional[int64]  `json:"commission_rate"`
@@ -284,6 +286,10 @@ func (s *Service) Update(ctx context.Context, actorID, id int64, in UpdateInput)
 	}
 	if in.Remarks.Value != nil && utf8.RuneCountInString(*in.Remarks.Value) > 65535/4 {
 		return errInvalid
+	}
+	in.BalanceRemark = strings.TrimSpace(in.BalanceRemark)
+	if utf8.RuneCountInString(in.BalanceRemark) > balance.RemarkMax {
+		return errBalanceRemark
 	}
 	if id == actorID && ((in.Banned != nil && *in.Banned == 1) || (in.IsAdmin != nil && *in.IsAdmin == 0)) {
 		return errSelf
@@ -342,7 +348,16 @@ func (s *Service) Update(ctx context.Context, actorID, id int64, in UpdateInput)
 		if len(values) == 0 {
 			return nil
 		}
-		return tx.Model(u).Updates(values).Error
+		before := u.Balance
+		if err := tx.Model(u).Updates(values).Error; err != nil {
+			return err
+		}
+		if in.Balance == nil {
+			return nil
+		}
+		return balance.Record(tx, balance.Change{
+			UserID: id, Amount: *in.Balance - before, Type: balance.TypeAdmin, OperatorID: actorID, Remark: in.BalanceRemark,
+		}, *in.Balance)
 	})
 	if err != nil {
 		return err
@@ -416,6 +431,7 @@ func deleteUsers(tx *gorm.DB, ids []int64) error {
 		},
 		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.Subscription{}).Error },
 		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.UserTelegram{}).Error },
+		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.BalanceLog{}).Error },
 		func() error { return tx.Where("id IN ?", ids).Delete(&model.User{}).Error },
 	}
 	for _, f := range steps {

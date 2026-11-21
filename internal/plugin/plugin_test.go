@@ -561,11 +561,25 @@ func TestRoutes(t *testing.T) {
 		if w := do("PUT", secure+"/plugins/rt/config", `{"config":{"n":3}}`, adminTok); w.Code != 200 {
 			t.Fatalf("保存配置失败：%d %s", w.Code, w.Body)
 		}
-		if w := do("POST", secure+"/plugins/rt/enable", "", adminTok); w.Code != 200 {
+		// 非内置 Go 插件第一次启用需要确认数据库访问警告
+		if w := do("GET", secure+"/plugins/rt", "", adminTok); !strings.Contains(w.Body.String(), `"db_warning":true`) {
+			t.Fatalf("未确认时应提示数据库访问警告：%s", w.Body)
+		}
+		if w := do("POST", secure+"/plugins/rt/enable", "", adminTok); w.Code != http.StatusConflict || m.Enabled("rt") {
+			t.Fatalf("未确认警告时应 409 且不启用：%d %s", w.Code, w.Body)
+		}
+		if w := do("POST", secure+"/plugins/rt/enable", `{"acknowledge":true}`, adminTok); w.Code != 200 {
 			t.Fatalf("启用失败：%d %s", w.Code, w.Body)
 		}
-		if w := do("GET", secure+"/plugins/rt", "", adminTok); w.Code != 200 || !strings.Contains(w.Body.String(), `"enabled":true`) {
+		if w := do("GET", secure+"/plugins/rt", "", adminTok); w.Code != 200 || !strings.Contains(w.Body.String(), `"enabled":true`) ||
+			!strings.Contains(w.Body.String(), `"db_warning":false`) {
 			t.Fatalf("插件详情错误：%d %s", w.Code, w.Body)
+		}
+		if w := do("POST", secure+"/plugins/rt/disable", "", adminTok); w.Code != 200 {
+			t.Fatalf("停用失败：%d %s", w.Code, w.Body)
+		}
+		if w := do("POST", secure+"/plugins/rt/enable", "", adminTok); w.Code != 200 {
+			t.Fatalf("确认过的插件再次启用不应再要求确认：%d %s", w.Code, w.Body)
 		}
 
 		if w := do("GET", "plugin/rt/ping", "", ""); w.Code != 200 || !strings.Contains(w.Body.String(), "pong") {

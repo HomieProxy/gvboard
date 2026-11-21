@@ -28,6 +28,7 @@ var (
 	errInviterNotExist = httpx.BadRequest("The inviter does not exist")
 	errInviterSelf     = httpx.BadRequest("The inviter cannot be the user or one of the users invited by the user")
 	errSelf            = httpx.BadRequest("You cannot ban, delete or remove the admin permission of your own account")
+	errBalanceRemark   = httpx.Validation("余额调整原因不能超过 255 个字")
 	errFilterRequired  = httpx.Validation("Please set at least one filter condition")
 	errSubNotExist     = httpx.NotFoundErr("The subscription does not exist")
 	errSubPrimary      = httpx.BadRequest("The primary subscription cannot be deleted")

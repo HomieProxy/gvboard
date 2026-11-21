@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"gvboard/internal/balance"
 	"gvboard/internal/hook"
 	"gvboard/internal/model"
 	"gvboard/internal/setting"
@@ -63,6 +64,7 @@ func (s *Service) log() *zap.Logger {
 // draft 下单过程中的金额。原项目金额以小数参与计算，这里同样保留小数，写入订单时再四舍五入到分。
 type draft struct {
 	preview      bool
+	tradeNo      string
 	planID       int64
 	period       string
 	subID        *int64
@@ -167,7 +169,7 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (str
 
 // createPlanOrder 计算套餐订单金额、扣减优惠券次数与余额并填入 o，返回插件的调整明细。
 func (s *Service) createPlanOrder(ctx context.Context, tx *gorm.DB, u *model.User, in CreateInput, o *model.Order) ([]hook.AmountItem, error) {
-	d := &draft{}
+	d := &draft{tradeNo: o.TradeNo}
 	if err := s.quotePlan(ctx, tx, u, in, d); err != nil {
 		return nil, err
 	}
@@ -286,12 +288,12 @@ func (s *Service) quotePlan(ctx context.Context, tx *gorm.DB, u *model.User, in 
 	if u.Balance > 0 && d.total > 0 {
 		use := min(u.Balance, int64(d.total))
 		if !d.preview {
-			res := tx.Model(&model.User{}).Where("id = ? AND balance >= ?", u.ID, use).Update("balance", gorm.Expr("balance - ?", use))
-			if res.Error != nil {
-				return res.Error
-			}
-			if res.RowsAffected != 1 {
+			_, err := balance.Apply(tx, balance.Change{UserID: u.ID, Amount: -use, Type: balance.TypeOrderPay, TradeNo: d.tradeNo})
+			if errors.Is(err, balance.ErrInsufficient) {
 				return errInsufficient
+			}
+			if err != nil {
+				return err
 			}
 		}
 		b := float64(use)
@@ -555,7 +557,7 @@ func (s *Service) cancel(ctx context.Context, o *model.Order) (bool, error) {
 			return res.Error
 		}
 		if b := val(o.BalanceAmount); b != 0 {
-			if err := tx.Model(&model.User{}).Where("id = ?", o.UserID).Update("balance", gorm.Expr("balance + ?", b)).Error; err != nil {
+			if _, err := balance.Apply(tx, balance.Change{UserID: o.UserID, Amount: b, Type: balance.TypeOrderCancel, TradeNo: o.TradeNo}); err != nil {
 				return err
 			}
 		}

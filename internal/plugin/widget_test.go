@@ -188,6 +188,11 @@ func TestWidgetCheckin(t *testing.T) {
 		if after.Balance != u.Balance+res.Reward {
 			t.Fatalf("余额错误：%d → %d，奖励 %d", u.Balance, after.Balance, res.Reward)
 		}
+		var logs []model.BalanceLog
+		e.db.Where("user_id = ?", u.ID).Find(&logs)
+		if len(logs) != 1 || logs[0].Plugin != "checkin" || logs[0].Amount != res.Reward || logs[0].Balance != after.Balance || logs[0].Remark != "每日签到" {
+			t.Fatalf("签到应记录一条余额变动日志：%+v", logs)
+		}
 
 		if err := m.Disable(ctx, "checkin"); err != nil {
 			t.Fatal(err)

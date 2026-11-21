@@ -257,18 +257,22 @@ func TestCleanLogs(t *testing.T) {
 		e.create(t, &model.StatServer{ServerID: 1, ServerType: "vmess", RecordType: "d", RecordAt: statLimit + 1})
 		e.create(t, &model.Log{Title: "old", CreatedAt: logLimit - 1})
 		e.create(t, &model.Log{Title: "new", CreatedAt: logLimit})
+		balanceLimit := e.at.Unix() - 365*86400 // 默认保留 365 天
+		e.create(t, &model.BalanceLog{UserID: 1, Amount: 1, Type: "admin", CreatedAt: balanceLimit - 1})
+		e.create(t, &model.BalanceLog{UserID: 1, Amount: 1, Type: "admin", CreatedAt: balanceLimit})
 		e.CleanSubscribeLogs = func(context.Context) (int64, error) { return 7, nil }
 
 		r, err := e.CleanLogs(context.Background())
-		if err != nil || *r != (CleanResult{StatUser: 3, StatServer: 1, Log: 1, Subscribe: 7}) {
+		if err != nil || *r != (CleanResult{StatUser: 3, StatServer: 1, Log: 1, Subscribe: 7, Balance: 1}) {
 			t.Fatalf("清理结果错误：%+v %v", r, err)
 		}
-		var su, ss, lg int64
+		var su, ss, lg, bl int64
 		e.DB.Model(&model.StatUser{}).Count(&su)
 		e.DB.Model(&model.StatServer{}).Count(&ss)
 		e.DB.Model(&model.Log{}).Count(&lg)
-		if su != 1 || ss != 1 || lg != 1 {
-			t.Fatalf("剩余记录错误：%d %d %d", su, ss, lg)
+		e.DB.Model(&model.BalanceLog{}).Count(&bl)
+		if su != 1 || ss != 1 || lg != 1 || bl != 1 {
+			t.Fatalf("剩余记录错误：%d %d %d %d", su, ss, lg, bl)
 		}
 	})
 }

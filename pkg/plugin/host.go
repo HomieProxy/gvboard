@@ -26,9 +26,13 @@ type Host interface {
 	// KV 插件专属的键值存储。
 	KV() KV
 	// DB 数据库连接（与面板共用，编译期插件可完全访问数据库，请谨慎操作）。
+	// 修改用户余额请使用 AddBalance，直接写 SQL 不会记录余额变动日志。
 	DB() *gorm.DB
 	// Log 插件日志。
 	Log() *zap.Logger
+	// AddBalance 调整用户余额（分，可为负数，余额不能小于 0），返回调整后的余额；
+	// 同时写入余额变动日志，remark 为日志备注（可为空）。
+	AddBalance(ctx context.Context, userID, amount int64, remark string) (int64, error)
 
 	// 以下方法只能在 Setup 中调用，参数错误时 Setup 失败。
 

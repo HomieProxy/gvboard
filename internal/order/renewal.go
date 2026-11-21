@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"gvboard/internal/balance"
 	"gvboard/internal/hook"
 	"gvboard/internal/model"
 	"gvboard/internal/scheduler"
@@ -111,7 +112,8 @@ func (s *Service) renewOne(ctx context.Context, subID int64) (*model.Order, erro
 		if u.Balance < *price {
 			return errors.New("not enough balance")
 		}
-		if err := tx.Model(&model.User{}).Where("id = ?", u.ID).Update("balance", gorm.Expr("balance - ?", *price)).Error; err != nil {
+		tradeNo := util.GenerateOrderNo()
+		if _, err := balance.Apply(tx, balance.Change{UserID: u.ID, Amount: -*price, Type: balance.TypeRenewal, TradeNo: tradeNo}); err != nil {
 			return err
 		}
 		if err := tx.Model(&sub).Update("expired_at", expireAfter(last.Period, sub.ExpiredAt, now)).Error; err != nil {
@@ -119,7 +121,7 @@ func (s *Service) renewOne(ctx context.Context, subID int64) (*model.Order, erro
 		}
 		subID := sub.ID
 		o := &model.Order{
-			UserID: u.ID, PlanID: plan.ID, Period: last.Period, TradeNo: util.GenerateOrderNo(), SubscriptionID: &subID,
+			UserID: u.ID, PlanID: plan.ID, Period: last.Period, TradeNo: tradeNo, SubscriptionID: &subID,
 			TotalAmount: 0, BalanceAmount: price, Type: model.OrderTypeRenew, Status: model.OrderStatusCompleted,
 		}
 		if err := tx.Create(o).Error; err != nil {

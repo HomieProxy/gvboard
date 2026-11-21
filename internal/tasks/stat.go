@@ -83,10 +83,11 @@ type CleanResult struct {
 	Log        int64 `json:"log"`
 	Subscribe  int64 `json:"subscribe_log"`
 	Audit      int64 `json:"audit_log"`
+	Balance    int64 `json:"balance_log"`
 }
 
 // CleanLogs 清理过期记录（原项目 reset:log）：节点 / 用户流量统计保留 2 个月，系统日志保留 1 个月；
-// 另清理超过保留天数的订阅请求日志（决策 D46）与审计日志（决策 D81）。
+// 另清理超过保留天数的订阅请求日志（决策 D46）、审计日志（决策 D81）与余额变动日志（决策 D86）。
 func (s *Service) CleanLogs(ctx context.Context) (*CleanResult, error) {
 	now := s.now()
 	statBefore := now.AddDate(0, -2, 0).Unix()
@@ -110,6 +111,13 @@ func (s *Service) CleanLogs(ctx context.Context) (*CleanResult, error) {
 		if r.Audit, err = s.CleanAuditLogs(ctx); err != nil {
 			return r, err
 		}
+	}
+	days := s.Settings.Int("balance_log_retention_days")
+	if days <= 0 {
+		days = 365
+	}
+	if r.Balance, err = s.deleteBefore(ctx, &model.BalanceLog{}, "created_at", now.Unix()-days*86400); err != nil {
+		return r, err
 	}
 	return r, nil
 }

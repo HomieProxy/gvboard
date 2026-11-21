@@ -764,7 +764,11 @@ func (vm *jsVM) install() error {
 			return result(d.UserByEmail(vm.context(), call.Argument(0).String()))
 		},
 		"addBalance": func(call goja.FunctionCall) goja.Value {
-			return result(d.AddBalance(vm.context(), call.Argument(0).ToInteger(), vm.integer(call.Argument(1))))
+			remark := ""
+			if a := call.Argument(2); !goja.IsUndefined(a) && !goja.IsNull(a) {
+				remark = a.String()
+			}
+			return result(d.AddBalance(vm.context(), call.Argument(0).ToInteger(), vm.integer(call.Argument(1)), remark))
 		},
 	}); err != nil {
 		return err

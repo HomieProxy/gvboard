@@ -17,6 +17,7 @@ import (
 
 	"gvboard/internal/account"
 	"gvboard/internal/auth"
+	"gvboard/internal/balance"
 	"gvboard/internal/cache"
 	"gvboard/internal/config"
 	"gvboard/internal/httpx"
@@ -255,6 +256,32 @@ func TestDetailUpdateInviter(t *testing.T) {
 		// 修改为自己原来的邮箱（大小写不同）不算重复
 		if err := e.Update(ctx, admin.ID, u.ID, UpdateInput{Email: ptr("new@X.com")}); err != nil {
 			t.Fatal(err)
+		}
+
+		// 修改余额：记录变动金额、操作管理员与原因；余额不变时不记录；原因超长报错且不修改
+		wantErr(t, e.Update(ctx, admin.ID, u.ID, UpdateInput{Balance: ptr(int64(1)), BalanceRemark: strings.Repeat("a", 256)}), errBalanceRemark)
+		if err := e.Update(ctx, admin.ID, u.ID, UpdateInput{Balance: ptr(int64(380)), BalanceRemark: " 补偿 "}); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.Update(ctx, admin.ID, u.ID, UpdateInput{Balance: ptr(int64(380))}); err != nil {
+			t.Fatal(err)
+		}
+		page, err := e.BalanceLogs(ctx, u.ID, BalanceLogQuery{})
+		if err != nil || page.Total != 1 || len(page.Data) != 1 {
+			t.Fatalf("余额变动日志条数错误：%+v %v", page, err)
+		}
+		if l := page.Data[0]; l.Type != balance.TypeAdmin || l.Amount != -120 || l.Balance != 380 || l.Remark != "补偿" ||
+			l.OperatorID == nil || *l.OperatorID != admin.ID || l.OperatorEmail != "admin@x.com" {
+			t.Fatalf("余额变动日志错误：%+v", l)
+		}
+		if page, _ := e.BalanceLogs(ctx, u.ID, BalanceLogQuery{Type: balance.TypeGiftcard}); page == nil || page.Total != 0 {
+			t.Fatal("按类型筛选错误")
+		}
+		if _, err := e.BalanceLogs(ctx, u.ID, BalanceLogQuery{Type: "bad"}); !errors.Is(err, errInvalid) {
+			t.Fatal("未知类型应报错")
+		}
+		if _, err := e.BalanceLogs(ctx, 99999, BalanceLogQuery{}); !errors.Is(err, errUserNotExist) {
+			t.Fatal("不存在的用户应报错")
 		}
 
 		// 封禁时删除会话

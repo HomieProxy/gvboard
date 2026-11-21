@@ -565,6 +565,26 @@ func Schema() []Table {
 			Index{Name: "uniq_token", Cols: []string{"token_hash"}, Unique: true, Ensure: true},
 			Index{Name: "uniq_enroll", Cols: []string{"enroll_hash"}, Unique: true, Ensure: true},
 		),
+		// 余额变动日志（决策 D86）
+		{
+			Name: "v2_balance_log",
+			Columns: []Column{
+				pk(),
+				col("user_id", "int"),
+				col("amount", "int"),
+				col("balance", "int"),
+				col("type", "varchar(32)"),
+				def("trade_no", "varchar(64)", "''"),
+				null("operator_id", "int"),
+				def("plugin", "varchar(64)", "''"),
+				def("remark", "varchar(255)", "''"),
+				col("created_at", "int"),
+			},
+			Indexes: []Index{
+				{Name: "idx_created", Cols: []string{"created_at"}, Ensure: true},
+				{Name: "idx_user_created", Cols: []string{"user_id", "created_at"}, Ensure: true},
+			},
+		},
 	}
 }
 

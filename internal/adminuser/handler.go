@@ -30,6 +30,7 @@ type Module struct {
 //	PUT    users/:id                          修改账号字段
 //	DELETE users/:id                          删除用户
 //	POST   users/:id/inviter                  设置 / 清除邀请人
+//	GET    users/:id/balance-logs             余额变动日志（type、current、page_size）
 //	POST   users/:id/subscriptions            新开订阅
 //	PUT    subscriptions/:id                  修改订阅
 //	DELETE subscriptions/:id                  删除订阅
@@ -47,6 +48,7 @@ func (m *Module) Register(r *server.Router) {
 	a.PUT("/users/:id", m.update)
 	a.DELETE("/users/:id", m.delete)
 	a.POST("/users/:id/inviter", m.inviter)
+	a.GET("/users/:id/balance-logs", m.balanceLogs)
 	a.POST("/users/:id/subscriptions", m.createSub)
 	a.PUT("/subscriptions/:id", m.updateSub)
 	a.DELETE("/subscriptions/:id", m.deleteSub)
@@ -200,6 +202,20 @@ func (m *Module) inviter(c *gin.Context) {
 		return
 	}
 	respond(c, true, m.Svc.SetInviter(c.Request.Context(), id, in.InviteUserEmail))
+}
+
+func (m *Module) balanceLogs(c *gin.Context) {
+	id, ok := idParam(c)
+	if !ok {
+		return
+	}
+	var q BalanceLogQuery
+	if c.ShouldBindQuery(&q) != nil {
+		httpx.Fail(c, errInvalid)
+		return
+	}
+	v, err := m.Svc.BalanceLogs(c.Request.Context(), id, q)
+	respond(c, v, err)
 }
 
 func (m *Module) createSub(c *gin.Context) {

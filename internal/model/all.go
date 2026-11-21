@@ -12,5 +12,6 @@ func All() []any {
 		&ServerTuic{}, &ServerHysteria{}, &ServerAnytls{}, &ServerV2node{},
 		&Setting{}, &Plugin{}, &PluginKV{}, &PluginPackage{},
 		&SubscribeRule{}, &SubscribeLog{}, &UserTelegram{}, &AuditRule{}, &AuditLog{}, &AuditLogDetail{}, &NodeMachine{},
+		&BalanceLog{},
 	}
 }

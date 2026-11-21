@@ -13,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	"gvboard/internal/auth"
+	"gvboard/internal/balance"
 	"gvboard/internal/httpx"
 	"gvboard/internal/model"
 	"gvboard/internal/setting"
@@ -187,19 +188,21 @@ func (s *Service) TransferCommission(ctx context.Context, userID, amount int64) 
 		return errTransferAmount
 	}
 	return s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&model.User{}).Where("id = ? AND commission_balance >= ?", userID, amount).Updates(map[string]any{
-			"commission_balance": gorm.Expr("commission_balance - ?", amount),
-			"balance":            gorm.Expr("balance + ?", amount),
-		})
+		res := tx.Model(&model.User{}).Where("id = ? AND commission_balance >= ?", userID, amount).
+			Update("commission_balance", gorm.Expr("commission_balance - ?", amount))
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected != 1 {
 			return errInsufficient
 		}
+		tradeNo := util.GenerateOrderNo()
+		if _, err := balance.Apply(tx, balance.Change{UserID: userID, Amount: amount, Type: balance.TypeTransfer, TradeNo: tradeNo}); err != nil {
+			return err
+		}
 		callback := "佣金划转 Commission transfer"
 		return tx.Create(&model.Order{
-			UserID: userID, Period: "deposit", TradeNo: util.GenerateOrderNo(),
+			UserID: userID, Period: "deposit", TradeNo: tradeNo,
 			Type: 9, Status: 3, TotalAmount: 0, SurplusAmount: &amount, CallbackNo: &callback,
 		}).Error
 	})

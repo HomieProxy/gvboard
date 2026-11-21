@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"gvboard/internal/balance"
 	"gvboard/internal/httpx"
 	"gvboard/internal/model"
 	"gvboard/internal/subscription"
@@ -80,7 +81,7 @@ func (s *Service) RedeemGiftcard(ctx context.Context, userID int64, in RedeemInp
 		res = &RedeemResult{Type: gc.Type, Value: value}
 		switch gc.Type {
 		case GiftcardBalance:
-			if err := tx.Model(&u).Update("balance", gorm.Expr("balance + ?", value)).Error; err != nil {
+			if _, err := balance.Apply(tx, balance.Change{UserID: userID, Amount: value, Type: balance.TypeGiftcard, Remark: gc.Code}); err != nil {
 				return err
 			}
 		case GiftcardDuration, GiftcardTraffic, GiftcardResetTraffic, GiftcardPlan:

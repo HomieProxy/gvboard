@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"gvboard/internal/balance"
 	"gvboard/internal/hook"
 	"gvboard/internal/model"
 	"gvboard/internal/queue"
@@ -58,8 +59,12 @@ func (s *Service) open(ctx context.Context, orderID int64) error {
 			return err
 		}
 		if o.Type == model.OrderTypeDeposit {
-			add := o.TotalAmount + DepositBonus(s.Settings.Strings("deposit_bounus"), o.TotalAmount)
-			if err := tx.Model(&model.User{}).Where("id = ?", o.UserID).Update("balance", gorm.Expr("balance + ?", add)).Error; err != nil {
+			bonus := DepositBonus(s.Settings.Strings("deposit_bounus"), o.TotalAmount)
+			c := balance.Change{UserID: o.UserID, Amount: o.TotalAmount + bonus, Type: balance.TypeDeposit, TradeNo: o.TradeNo}
+			if bonus != 0 {
+				c.Remark = fmt.Sprintf("含充值赠送 %d.%02d", bonus/100, bonus%100)
+			}
+			if _, err := balance.Apply(tx, c); err != nil {
 				return err
 			}
 			if err := tx.Model(&o).Update("status", model.OrderStatusCompleted).Error; err != nil {
@@ -79,7 +84,7 @@ func (s *Service) open(ctx context.Context, orderID int64) error {
 			return err
 		}
 		if r := val(o.RefundAmount); r != 0 {
-			if err := tx.Model(&model.User{}).Where("id = ?", o.UserID).Update("balance", gorm.Expr("balance + ?", r)).Error; err != nil {
+			if _, err := balance.Apply(tx, balance.Change{UserID: o.UserID, Amount: r, Type: balance.TypePlanRefund, TradeNo: o.TradeNo}); err != nil {
 				return err
 			}
 		}

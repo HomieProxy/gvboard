@@ -505,7 +505,7 @@ plugin.route('admin', 'POST', '/data', function (req) {
   r.user = users.get(b.uid);
   r.byEmail = users.findByEmail(' N@X.com ').id;
   r.none = users.get(999999);
-  r.balance = users.addBalance(b.uid, 500);
+  r.balance = users.addBalance(b.uid, 500, '活动奖励');
   try { users.addBalance(b.uid, -100000); } catch (e) { r.neg = e.message; }
   try { users.addBalance(b.uid, 1.5); } catch (e) { r.frac = e.message; }
   r.subs = subscriptions.list(b.uid);
@@ -706,6 +706,11 @@ func TestJSRuntime(t *testing.T) {
 		e.db.Select("balance").Where("id = ?", je.normal.ID).Take(&u)
 		if u.Balance != 500 {
 			t.Fatalf("余额应为 500：%d", u.Balance)
+		}
+		var logs []model.BalanceLog
+		e.db.Where("user_id = ?", je.normal.ID).Find(&logs)
+		if len(logs) != 1 || logs[0].Type != "plugin" || logs[0].Plugin != "jsdemo" || logs[0].Amount != 500 || logs[0].Remark != "活动奖励" {
+			t.Fatalf("插件调整余额应只记录成功的一次：%+v", logs)
 		}
 
 		// 并发：运行时池

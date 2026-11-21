@@ -142,6 +142,9 @@ func (h *host) Config() sdk.Config { return h.m.config(h.e.code) }
 func (h *host) KV() sdk.KV         { return &kv{m: h.m, code: h.e.code} }
 func (h *host) DB() *gorm.DB       { return h.m.DB }
 func (h *host) Log() *zap.Logger   { return h.log }
+func (h *host) AddBalance(ctx context.Context, userID, amount int64, remark string) (int64, error) {
+	return h.m.addBalance(ctx, h.e.code, userID, amount, remark)
+}
 func (h *host) fail(format string, a ...any) {
 	h.errs = append(h.errs, fmt.Errorf(format, a...))
 }

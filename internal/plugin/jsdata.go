@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"gvboard/internal/balance"
 	"gvboard/internal/hook"
 	"gvboard/internal/model"
 )
@@ -76,31 +77,33 @@ func (d *jsData) UserByEmail(ctx context.Context, email string) (map[string]any,
 	})
 }
 
-// AddBalance 调整余额（分，可为负数，余额不能小于 0），返回调整后的余额。
-func (d *jsData) AddBalance(ctx context.Context, id, amount int64) (int64, error) {
+// AddBalance 调整余额（分，可为负数，余额不能小于 0），返回调整后的余额。remark 写入余额变动日志。
+func (d *jsData) AddBalance(ctx context.Context, id, amount int64, remark string) (int64, error) {
 	if err := d.need(PermUserBalance); err != nil {
 		return 0, err
 	}
+	return d.m.addBalance(ctx, d.code, id, amount, remark)
+}
+
+// addBalance 插件调整用户余额并记录余额变动日志（决策 D86），JS 插件与编译期插件共用。
+func (m *Manager) addBalance(ctx context.Context, code string, id, amount int64, remark string) (int64, error) {
 	if amount == 0 || amount > maxBalanceDelta || amount < -maxBalanceDelta {
 		return 0, fmt.Errorf("调整金额必须为非零整数，且绝对值不超过 %d 分", maxBalanceDelta)
 	}
-	var balance int64
-	err := d.db(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&model.User{}).Where("id = ? AND balance + ? >= 0", id, amount).
-			Update("balance", gorm.Expr("balance + ?", amount))
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
+	var after int64
+	err := m.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		after, err = balance.Apply(tx, balance.Change{UserID: id, Amount: amount, Type: balance.TypePlugin, Plugin: code, Remark: remark})
+		if errors.Is(err, balance.ErrInsufficient) || errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("用户不存在或余额不足")
 		}
-		return tx.Model(&model.User{}).Where("id = ?", id).Pluck("balance", &balance).Error
+		return err
 	})
 	if err != nil {
 		return 0, err
 	}
-	d.m.log().Info("插件调整用户余额", zap.String("plugin", d.code), zap.Int64("user_id", id), zap.Int64("amount", amount))
-	return balance, nil
+	m.log().Info("插件调整用户余额", zap.String("plugin", code), zap.Int64("user_id", id), zap.Int64("amount", amount))
+	return after, nil
 }
 
 func subscriptionView(s *model.Subscription) map[string]any {

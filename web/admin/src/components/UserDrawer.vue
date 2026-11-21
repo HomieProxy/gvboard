@@ -4,7 +4,7 @@ import {
   Loader2Icon, PlusIcon, MoreHorizontalIcon, PencilIcon, CopyIcon, StarIcon, RotateCcwIcon, Trash2Icon, ChevronDownIcon,
   ActivityIcon, MonitorSmartphoneIcon,
 } from '@lucide/vue'
-import { copyText, formatBytes, formatTime, nowUnix, daysLeft } from '@gv/shared'
+import { copyText, formatBytes, formatMoney, formatTime, nowUnix, daysLeft } from '@gv/shared'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@gv/shared/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@gv/shared/ui/tabs'
 import { Button } from '@gv/shared/ui/button'
@@ -56,6 +56,8 @@ const acc = ref<Account | null>(null)
 let accOrigin: Account | null = null
 const inviter = ref('')
 const savingAcc = ref(false)
+const balanceRemark = ref('')
+const balanceChanged = computed(() => !!acc.value && !!accOrigin && acc.value.balance !== accOrigin.balance)
 
 async function load() {
   if (!props.userId) return
@@ -78,6 +80,7 @@ async function load() {
       remarks: u.remarks || '',
     }
     accOrigin = { ...acc.value }
+    balanceRemark.value = ''
     inviter.value = u.invite_user?.email || ''
   } catch (e) {
     message.error(errText(e))
@@ -93,10 +96,15 @@ watch(show, (v) => {
     trafficSub.value = 0
     load()
     if (props.tab === 'traffic') traffic.reload()
+    if (props.tab === 'balance') {
+      balanceType.value = ''
+      balanceLogs.reload()
+    }
   }
 })
 watch(tab, (t) => {
   if (t === 'traffic' && show.value) traffic.reload()
+  if (t === 'balance' && show.value) balanceLogs.reload()
 })
 
 async function saveAccount() {
@@ -106,7 +114,10 @@ async function saveAccount() {
   const body: Record<string, unknown> = {}
   if (a.email !== o.email) body.email = a.email
   if (a.password) body.password = a.password
-  if (a.balance !== o.balance) body.balance = toCents(a.balance) ?? 0
+  if (a.balance !== o.balance) {
+    body.balance = toCents(a.balance) ?? 0
+    if (balanceRemark.value.trim()) body.balance_remark = balanceRemark.value.trim()
+  }
   if (a.commission_balance !== o.commission_balance) body.commission_balance = toCents(a.commission_balance) ?? 0
   if (a.commission_type !== o.commission_type) body.commission_type = a.commission_type
   if (a.commission_rate !== o.commission_rate) body.commission_rate = a.commission_rate
@@ -212,6 +223,56 @@ const trafficCols = [
   { key: 'total', title: '合计', align: 'right' as const },
 ]
 
+// ---------- 余额明细 ----------
+interface BalanceLogRow {
+  id: number
+  amount: number
+  balance: number
+  type: string
+  trade_no: string
+  operator_id: number | null
+  operator_email: string
+  plugin: string
+  remark: string
+  created_at: number
+}
+const balanceTypeNames: Record<string, string> = {
+  order_pay: '下单抵扣',
+  order_cancel: '取消订单退回',
+  order_restore: '补单扣回',
+  renewal: '自动续费',
+  deposit: '充值到账',
+  plan_refund: '换套餐差额退回',
+  giftcard: '礼品卡',
+  commission: '邀请佣金',
+  transfer: '佣金转余额',
+  admin: '管理员修改',
+  plugin: '插件',
+}
+const balanceTypeOptions = [{ label: '全部类型', value: '' }, ...Object.entries(balanceTypeNames).map(([value, label]) => ({ label, value }))]
+const balanceType = ref('')
+const balanceLogs = usePaged<BalanceLogRow>(async (current, page_size) => {
+  if (!props.userId) return { rows: [], total: 0 }
+  const q = { current, page_size, type: balanceType.value || undefined }
+  const r = await admin.get<PageResult<BalanceLogRow>>(`/users/${props.userId}/balance-logs`, q)
+  return { rows: r.data || [], total: r.total }
+}, 20)
+const balanceCols = [
+  { key: 'created_at', title: '时间' },
+  { key: 'type', title: '类型' },
+  { key: 'amount', title: '变动', align: 'right' as const },
+  { key: 'balance', title: '变动后余额', align: 'right' as const },
+  { key: 'trade_no', title: '关联订单' },
+  { key: 'remark', title: '说明' },
+]
+function balanceNote(r: BalanceLogRow) {
+  const parts: string[] = []
+  if (r.operator_id) parts.push(`管理员 ${r.operator_email || `#${r.operator_id}`}`)
+  if (r.plugin) parts.push(`插件 ${r.plugin}`)
+  if (r.remark) parts.push(r.remark)
+  return parts.join(' · ') || '-'
+}
+
 const commissionTypes = [
   { label: '跟随系统设置', value: 0 },
   { label: '循环返利', value: 1 },
@@ -246,6 +307,7 @@ const commissionTypes = [
           <TabsTrigger value="subs">订阅（{{ user.subscriptions.length }}）</TabsTrigger>
           <TabsTrigger value="account">账号资料</TabsTrigger>
           <TabsTrigger value="traffic">流量记录</TabsTrigger>
+          <TabsTrigger value="balance">余额明细</TabsTrigger>
         </TabsList>
 
         <TabsContent value="subs" class="mt-4 grid gap-3">
@@ -324,6 +386,9 @@ const commissionTypes = [
             <FormItem label="邮箱"><Input v-model="acc.email" /></FormItem>
             <FormItem label="密码"><Input v-model="acc.password" type="password" autocomplete="new-password" placeholder="如需修改密码请输入" /></FormItem>
             <FormItem label="余额"><NumInput v-model="acc.balance" :step="0.01" suffix="元" /></FormItem>
+            <FormItem v-if="balanceChanged" label="余额调整原因" help="选填，记录在余额明细中" class="sm:col-span-2">
+              <Input v-model="balanceRemark" maxlength="255" placeholder="如：补偿节点故障" />
+            </FormItem>
             <FormItem label="推广佣金"><NumInput v-model="acc.commission_balance" :step="0.01" suffix="元" /></FormItem>
             <FormItem label="佣金类型"><SelectBox :model-value="acc.commission_type" :options="commissionTypes" @update:model-value="(v) => (acc!.commission_type = Number(v))" /></FormItem>
             <FormItem label="推荐返利比例"><NumInput v-model="acc.commission_rate" :min="0" :max="100" suffix="%" placeholder="跟随系统设置" /></FormItem>
@@ -379,6 +444,24 @@ const commissionTypes = [
             <template #cell-total="{ row }">{{ formatBytes((row.u + row.d) * row.server_rate) }}</template>
           </DataTable>
           <Pager :pager="traffic.pager" @page="traffic.setPage" @size="traffic.setPageSize" />
+        </TabsContent>
+
+        <TabsContent value="balance" class="mt-4">
+          <div class="mb-3 flex items-center gap-2">
+            <SelectBox class="w-48" :model-value="balanceType" :options="balanceTypeOptions" @update:model-value="(v) => { balanceType = String(v); balanceLogs.reload() }" />
+            <span class="text-xs text-muted-foreground">当前余额 {{ formatMoney(user.balance) }} 元，超过保留天数的记录会自动清理</span>
+          </div>
+          <DataTable :columns="balanceCols" :rows="balanceLogs.rows.value" :loading="balanceLogs.loading.value" empty="暂无余额变动记录">
+            <template #cell-created_at="{ row }">{{ formatTime(row.created_at) }}</template>
+            <template #cell-type="{ row }">{{ balanceTypeNames[row.type] || row.type }}</template>
+            <template #cell-amount="{ row }">
+              <span :class="['tabular-nums', row.amount > 0 ? 'text-emerald-600' : 'text-destructive']">{{ row.amount > 0 ? '+' : '' }}{{ formatMoney(row.amount) }}</span>
+            </template>
+            <template #cell-balance="{ row }"><span class="tabular-nums">{{ formatMoney(row.balance) }}</span></template>
+            <template #cell-trade_no="{ row }"><span class="font-mono text-xs">{{ row.trade_no || '-' }}</span></template>
+            <template #cell-remark="{ row }"><span class="break-all text-xs">{{ balanceNote(row) }}</span></template>
+          </DataTable>
+          <Pager :pager="balanceLogs.pager" @page="balanceLogs.setPage" @size="balanceLogs.setPageSize" />
         </TabsContent>
       </Tabs>
     </SheetContent>

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"time"
 
@@ -56,10 +57,48 @@ type View struct {
 	Features    Features       `json:"features"`
 	// Package JS 插件的安装包信息（可访问的域名、权限）。
 	Package *PackageInfo `json:"package,omitempty"`
+	// DBWarning 启用前需要管理员确认数据库访问警告（非内置 Go 插件且尚未确认过）。
+	DBWarning bool `json:"db_warning"`
+}
+
+// builtinGo 随程序提供的 Go 插件，启用时不提示数据库访问警告。
+var builtinGo = map[string]bool{"checkin": true, "firstorder": true, "webhook": true}
+
+// errDBWarning 启用非内置 Go 插件前需要确认数据库访问警告。
+var errDBWarning = httpx.Conflict("该插件可直接访问数据库，若直接修改用户余额将不会记录余额明细，请确认后再启用")
+
+// needsDBAck 启用前是否需要确认数据库访问警告。
+func (m *Manager) needsDBAck(e *entry) bool {
+	return e.kind == model.PluginTypeGo && !builtinGo[e.code] && !slices.Contains(m.Settings.Strings("plugin_db_warning_ack"), e.code)
+}
+
+// ackDB 记录管理员已确认该插件的数据库访问警告。
+func (m *Manager) ackDB(ctx context.Context, code string) error {
+	acked := m.Settings.Strings("plugin_db_warning_ack")
+	if slices.Contains(acked, code) {
+		return nil
+	}
+	return m.Settings.Set(ctx, map[string]any{"plugin_db_warning_ack": append(slices.Clone(acked), code)})
+}
+
+// enableAcked 启用插件；需要确认数据库访问警告时 ack 必须为 true，启用成功后记录确认。
+func (m *Manager) enableAcked(ctx context.Context, code string, ack bool) error {
+	e := m.entry(code)
+	need := e != nil && m.needsDBAck(e)
+	if need && !ack {
+		return errDBWarning
+	}
+	if err := m.Enable(ctx, code); err != nil {
+		return err
+	}
+	if need {
+		return m.ackDB(ctx, code)
+	}
+	return nil
 }
 
 func (m *Manager) view(e *entry, row *model.Plugin) View {
-	v := View{Info: e.info, Type: e.kind, Status: StatusOK, Fields: e.fields, Config: m.config(e.code), Package: e.pkg}
+	v := View{Info: e.info, Type: e.kind, Status: StatusOK, Fields: e.fields, Config: m.config(e.code), Package: e.pkg, DBWarning: m.needsDBAck(e)}
 	if v.Fields == nil {
 		v.Fields = []sdk.Field{}
 	}
@@ -308,7 +347,7 @@ func callTimeout(ctx context.Context, d time.Duration, fn func(ctx context.Conte
 //	ANY {api}/{secure_path}/plugin/{code}/*         插件管理端路由
 //	GET    {api}/{secure_path}/plugins              插件列表
 //	GET    {api}/{secure_path}/plugins/{code}       插件详情
-//	POST   {api}/{secure_path}/plugins/{code}/enable  启用
+//	POST   {api}/{secure_path}/plugins/{code}/enable  启用 {"acknowledge": true}（首次启用非内置 Go 插件时必填，否则 409）
 //	POST   {api}/{secure_path}/plugins/{code}/disable 停用
 //	PUT    {api}/{secure_path}/plugins/{code}/config  保存配置 {"config": {...}}
 //	DELETE {api}/{secure_path}/plugins/{code}       删除 JS 插件或已移除插件的记录
@@ -321,7 +360,16 @@ func (m *Manager) Register(r *server.Router) {
 	a.Any("/plugin/:code/*path", m.serve(true))
 	a.GET("/plugins", func(c *gin.Context) { reply[[]View](c)(m.List(c.Request.Context())) })
 	a.GET("/plugins/:code", func(c *gin.Context) { reply[*View](c)(m.Get(c.Request.Context(), c.Param("code"))) })
-	a.POST("/plugins/:code/enable", func(c *gin.Context) { done(c, m.Enable(c.Request.Context(), c.Param("code"))) })
+	a.POST("/plugins/:code/enable", func(c *gin.Context) {
+		var in struct {
+			Acknowledge bool `json:"acknowledge"`
+		}
+		if err := c.ShouldBindJSON(&in); err != nil && !errors.Is(err, io.EOF) {
+			httpx.Fail(c, errInvalid)
+			return
+		}
+		done(c, m.enableAcked(c.Request.Context(), c.Param("code"), in.Acknowledge))
+	})
 	a.POST("/plugins/:code/disable", func(c *gin.Context) { done(c, m.Disable(c.Request.Context(), c.Param("code"))) })
 	a.PUT("/plugins/:code/config", func(c *gin.Context) {
 		var in struct {

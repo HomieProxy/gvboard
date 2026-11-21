@@ -379,9 +379,13 @@ var defs = []Def{
 	{Key: "subscribe_share_action", Type: TypeString, Default: "log", Group: GroupGvboard, Validate: oneOf("log", "empty", "deny")},
 	// 审计日志保留天数（决策 D81）。
 	{Key: "audit_log_retention_days", Type: TypeInt, Default: 30, Group: GroupGvboard, Validate: intRange(1, 365)},
+	// 余额变动日志保留天数（决策 D86）。
+	{Key: "balance_log_retention_days", Type: TypeInt, Default: 365, Group: GroupGvboard, Validate: intRange(1, 3650)},
 
 	// 自定义邮件模板，JSON：{"风格": {"模板名": "内容"}}，内置风格中的项覆盖内置内容（决策 D71）。
 	{Key: "email_templates_custom", Type: TypeString, Default: "", Group: GroupInternal},
+	// 管理员已确认过数据库访问警告的 Go 插件标识（决策 D86）。
+	{Key: "plugin_db_warning_ack", Type: TypeStrings, Default: []string{}, Group: GroupInternal},
 
 	// 原项目遗留项
 	{Key: "stripe_pk_live", Type: TypeString, Default: "", Group: GroupLegacy},

@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 
 	sdk "gvboard/pkg/plugin"
 )
@@ -26,7 +25,7 @@ func init() { sdk.Register(&Plugin{}) }
 type Plugin struct{}
 
 func (Plugin) Info() sdk.Info {
-	return sdk.Info{Code: "checkin", Name: "每日签到", Version: "1.1.0", Author: "Gvboard", Description: "用户每日在仪表盘签到，随机获得余额"}
+	return sdk.Info{Code: "checkin", Name: "每日签到", Version: "1.2.0", Author: "Gvboard", Description: "用户每日在仪表盘签到，随机获得余额"}
 }
 
 func (Plugin) Fields() []sdk.Field {
@@ -121,11 +120,12 @@ func (Plugin) Setup(h sdk.Host) error {
 			sdk.Fail(c, http.StatusBadRequest, "今天已经签到过了")
 			return
 		}
-		if err := h.DB().WithContext(ctx).Table("v2_user").Where("id = ?", u.ID).
-			Update("balance", gorm.Expr("balance + ?", reward)).Error; err != nil {
-			_ = h.KV().Delete(context.WithoutCancel(ctx), key)
-			sdk.Fail(c, http.StatusInternalServerError, "服务繁忙")
-			return
+		if reward > 0 {
+			if _, err := h.AddBalance(ctx, u.ID, reward, "每日签到"); err != nil {
+				_ = h.KV().Delete(context.WithoutCancel(ctx), key)
+				sdk.Fail(c, http.StatusInternalServerError, "服务繁忙")
+				return
+			}
 		}
 		sdk.OK(c, gin.H{"reward": reward, "message": "签到成功，余额 +" + yuan(reward)})
 	})

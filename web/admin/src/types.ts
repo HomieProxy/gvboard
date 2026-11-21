@@ -276,6 +276,7 @@ export interface PluginView {
   error?: string
   enabled: boolean
   installed_at: number
+  db_warning: boolean
   fields: PluginField[]
   config: Record<string, unknown>
   features: {

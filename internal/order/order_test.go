@@ -16,6 +16,7 @@ import (
 
 	"gvboard/internal/account"
 	"gvboard/internal/auth"
+	"gvboard/internal/balance"
 	"gvboard/internal/config"
 	"gvboard/internal/httpx"
 	"gvboard/internal/model"
@@ -115,6 +116,16 @@ func (e *env) balance(t *testing.T, uid int64) int64 {
 	var u model.User
 	e.DB.Select("balance").Take(&u, uid)
 	return u.Balance
+}
+
+// balanceLogs 用户的余额变动日志（按 id 顺序）。
+func (e *env) balanceLogs(t *testing.T, uid int64) []model.BalanceLog {
+	t.Helper()
+	var rows []model.BalanceLog
+	if err := e.DB.Where("user_id = ?", uid).Order("id").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	return rows
 }
 
 // buy 下单、结算并开通，返回订单。应付金额必须为 0（余额足够）。
@@ -221,6 +232,10 @@ func testDeposit(t *testing.T, e *env) {
 	}
 	if b := e.balance(t, u.ID); b != 1100 {
 		t.Errorf("充值 10 元赠送 1 元后余额应为 1100，实际 %d", b)
+	}
+	if logs := e.balanceLogs(t, u.ID); len(logs) != 1 || logs[0].Type != balance.TypeDeposit || logs[0].Amount != 1100 ||
+		logs[0].Balance != 1100 || logs[0].TradeNo != no || logs[0].Remark != "含充值赠送 1.00" {
+		t.Errorf("充值的余额变动日志不正确: %+v", logs)
 	}
 	if list, _ := e.List(ctx, u.ID, nil); len(list) != 1 || list[0].TradeNo != no {
 		t.Errorf("订单列表不正确: %+v", list)
@@ -892,19 +907,19 @@ func testAdminRestore(t *testing.T, e *env) {
 	if o := e.order(t, no); val(o.BalanceAmount) != 300 || o.TotalAmount != 700 {
 		t.Fatalf("订单金额不正确: %+v", o)
 	}
-	wantErr(t, e.AdminRestore(ctx, no, ""), errAdminOnlyCancelled)
+	wantErr(t, e.AdminRestore(ctx, 1, no, ""), errAdminOnlyCancelled)
 	if err := e.Cancel(ctx, u.ID, no); err != nil {
 		t.Fatal(err)
 	}
 	// 取消时退回的余额已被用掉：不能补单，订单保持已取消
 	e.DB.Model(u).Update("balance", 100)
-	wantErr(t, e.AdminRestore(ctx, no, ""), errAdminRestoreBalance)
+	wantErr(t, e.AdminRestore(ctx, 1, no, ""), errAdminRestoreBalance)
 	if o := e.order(t, no); o.Status != model.OrderStatusCancelled || e.balance(t, u.ID) != 100 {
 		t.Fatal("余额不足时不应修改订单与余额")
 	}
 	e.DB.Model(u).Update("balance", 500)
 	e.dispatched = nil
-	if err := e.AdminRestore(ctx, no, " PAY123 "); err != nil {
+	if err := e.AdminRestore(ctx, 1, no, " PAY123 "); err != nil {
 		t.Fatal(err)
 	}
 	o := e.order(t, no)
@@ -912,7 +927,24 @@ func testAdminRestore(t *testing.T, e *env) {
 		len(e.dispatched) != 1 || e.dispatched[0] != no {
 		t.Fatalf("补单后状态、余额或开通任务不正确: %+v balance=%d", o, e.balance(t, u.ID))
 	}
-	wantErr(t, e.AdminRestore(ctx, no, ""), errAdminOnlyCancelled)
+	wantErr(t, e.AdminRestore(ctx, 1, no, ""), errAdminOnlyCancelled)
+	// 下单抵扣、取消退回、补单扣回各一条；余额不足的补单没有记录
+	logs := e.balanceLogs(t, u.ID)
+	want := []struct {
+		typ            string
+		amount, after  int64
+		operatorAdmin1 bool
+	}{{balance.TypeOrderPay, -300, 0, false}, {balance.TypeOrderCancel, 300, 300, false}, {balance.TypeOrderRestore, -300, 200, true}}
+	if len(logs) != len(want) {
+		t.Fatalf("余额变动日志条数不正确: %+v", logs)
+	}
+	for i, w := range want {
+		l := logs[i]
+		if l.Type != w.typ || l.Amount != w.amount || l.Balance != w.after || l.TradeNo != no || (l.OperatorID != nil) != w.operatorAdmin1 ||
+			(w.operatorAdmin1 && *l.OperatorID != 1) {
+			t.Errorf("第 %d 条余额变动日志不正确: %+v", i+1, l)
+		}
+	}
 	if err := e.Handle(ctx, no); err != nil {
 		t.Fatal(err)
 	}
@@ -932,10 +964,10 @@ func testAdminRestore(t *testing.T, e *env) {
 	e.DB.Model(u).Update("balance", 0)
 	no2, _ := e.Create(ctx, u.ID, CreateInput{PlanID: p.ID, Period: PeriodMonth})
 	e.DB.Model(&model.Order{}).Where("trade_no = ?", no2).Update("status", model.OrderStatusCancelled)
-	if err := e.AdminRestore(ctx, no2, ""); err != nil || *e.order(t, no2).CallbackNo != "manual_restore" {
+	if err := e.AdminRestore(ctx, 1, no2, ""); err != nil || *e.order(t, no2).CallbackNo != "manual_restore" {
 		t.Fatalf("补单失败: %v", err)
 	}
-	wantErr(t, e.AdminRestore(ctx, "none", ""), errAdminOrderNone)
+	wantErr(t, e.AdminRestore(ctx, 1, "none", ""), errAdminOrderNone)
 }
 
 func testHTTP(t *testing.T, e *env) {

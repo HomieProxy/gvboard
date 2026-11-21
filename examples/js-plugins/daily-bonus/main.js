@@ -56,7 +56,7 @@ plugin.route('user', 'POST', '/checkin', function (req) {
   var bonus = 0;
   var need = intConfig('streak_days');
   if (need > 0 && s.days % need === 0) bonus = intConfig('streak_reward');
-  var balance = users.addBalance(uid, reward + bonus);
+  var balance = users.addBalance(uid, reward + bonus, '每日签到，连续 ' + s.days + ' 天');
   log.info('用户 ' + uid + ' 签到，连续 ' + s.days + ' 天，奖励 ' + (reward + bonus) + ' 分');
   var message = '签到成功，余额 +' + yuan(reward + bonus) + (bonus > 0 ? '（含连续签到奖励）' : '');
   return { reward: reward, bonus: bonus, streak: s.days, balance: balance, message: message };

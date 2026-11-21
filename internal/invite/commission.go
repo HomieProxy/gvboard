@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"gvboard/internal/balance"
 	"gvboard/internal/model"
 	"gvboard/internal/scheduler"
 )
@@ -105,10 +106,6 @@ func (s *Service) payOrder(ctx context.Context, id int64) error {
 		if o.ActualCommissionBalance != nil {
 			actual = float64(*o.ActualCommissionBalance)
 		}
-		col := "commission_balance"
-		if toBalance {
-			col = "balance"
-		}
 		inviterID := *o.InviteUserID
 		for l := 0; l < len(shares); l++ {
 			var inviter model.User
@@ -121,8 +118,12 @@ func (s *Service) payOrder(ctx context.Context, id int64) error {
 			}
 			if amount := float64(o.CommissionBalance) * (float64(shares[l]) / 100); amount != 0 {
 				get := int64(math.Round(amount))
-				if err := tx.Model(&model.User{}).Where("id = ?", inviter.ID).
-					Update(col, gorm.Expr(col+" + ?", get)).Error; err != nil {
+				if toBalance {
+					if _, err := balance.Apply(tx, balance.Change{UserID: inviter.ID, Amount: get, Type: balance.TypeCommission, TradeNo: o.TradeNo}); err != nil {
+						return err
+					}
+				} else if err := tx.Model(&model.User{}).Where("id = ?", inviter.ID).
+					Update("commission_balance", gorm.Expr("commission_balance + ?", get)).Error; err != nil {
 					return err
 				}
 				if err := tx.Create(&model.CommissionLog{

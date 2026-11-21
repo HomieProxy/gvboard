@@ -183,6 +183,7 @@ export const configGroups: ConfigGroup[] = [
         help: '充值一定金额可以获得的奖励。每项格式为 充值金额:奖励金额，如 50:18、100:38、200:88',
         placeholder: '如 50:18，回车添加',
       },
+      { key: 'balance_log_retention_days', label: '余额明细保留天数', kind: 'int', help: '1-3650，超过天数的余额变动记录每天自动清理', suffix: '天' },
     ],
   },
   {

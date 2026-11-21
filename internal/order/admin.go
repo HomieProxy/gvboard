@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"gvboard/internal/balance"
 	"gvboard/internal/database"
 	"gvboard/internal/hook"
 	"gvboard/internal/model"
@@ -612,8 +613,8 @@ func (s *Service) AdminPaid(ctx context.Context, tradeNo string) error {
 }
 
 // AdminRestore 补单：把已取消的订单改为已支付并开通（支付平台掉单时由管理员处理，决策 D72）。
-// 取消时退回的余额抵扣重新扣回，余额不足时不能补单。callbackNo 为空时记为 manual_restore。
-func (s *Service) AdminRestore(ctx context.Context, tradeNo, callbackNo string) error {
+// 取消时退回的余额抵扣重新扣回，余额不足时不能补单。callbackNo 为空时记为 manual_restore。operatorID 为当前管理员。
+func (s *Service) AdminRestore(ctx context.Context, operatorID int64, tradeNo, callbackNo string) error {
 	db := s.DB.WithContext(ctx)
 	o, err := s.adminOrder(db, tradeNo)
 	if err != nil {
@@ -630,13 +631,12 @@ func (s *Service) AdminRestore(ctx context.Context, tradeNo, callbackNo string) 
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if b := val(o.BalanceAmount); b > 0 {
-			res := tx.Model(&model.User{}).Where("id = ? AND balance >= ?", o.UserID, b).
-				Update("balance", gorm.Expr("balance - ?", b))
-			if res.Error != nil {
-				return res.Error
-			}
-			if res.RowsAffected != 1 {
+			_, err := balance.Apply(tx, balance.Change{UserID: o.UserID, Amount: -b, Type: balance.TypeOrderRestore, TradeNo: o.TradeNo, OperatorID: operatorID})
+			if errors.Is(err, balance.ErrInsufficient) {
 				return errAdminRestoreBalance
+			}
+			if err != nil {
+				return err
 			}
 		}
 		res := tx.Model(&model.Order{}).Where("id = ? AND status = ?", o.ID, model.OrderStatusCancelled).

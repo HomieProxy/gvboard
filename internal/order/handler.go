@@ -338,7 +338,7 @@ func (m *Module) adminRestore(c *gin.Context) {
 	if !bind(c, &in) {
 		return
 	}
-	respond(c, true, m.Svc.AdminRestore(c.Request.Context(), c.Param("trade_no"), in.CallbackNo))
+	respond(c, true, m.Svc.AdminRestore(c.Request.Context(), uid(c), c.Param("trade_no"), in.CallbackNo))
 }
 
 func (m *Module) adminPaid(c *gin.Context) {
