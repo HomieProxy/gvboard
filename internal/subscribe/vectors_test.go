@@ -87,6 +87,106 @@ func normHeaders(h [][2]string) []string {
 	return out
 }
 
+// 设置 UPDATE_VECTORS=1 时，用当前 Go 输出覆盖 expected.json 中指定格式的用例（用于原项目尚未支持的增强）。
+func TestUpdateVectors(t *testing.T) {
+	names := strings.Split(os.Getenv("UPDATE_VECTORS"), ",")
+	if len(names) == 0 || names[0] == "" {
+		t.Skip("设置 UPDATE_VECTORS=Surge,QuantumultX 可更新期望")
+	}
+	want := map[string]bool{}
+	for _, n := range names {
+		want[strings.TrimSpace(n)] = true
+	}
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Local
+	time.Local = loc
+	defer func() { time.Local = old }()
+
+	inV, err := phpx.JSONDecode(readJSON(t, "testdata/vectors/input.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := inV.(*phpx.Arr)
+	var expected struct {
+		Cases []vectorCase `json:"cases"`
+	}
+	if err := json.Unmarshal(readJSON(t, "testdata/vectors/expected.json"), &expected); err != nil {
+		t.Fatal(err)
+	}
+	cfg := map[string]any{}
+	in.Arr("config").Each(func(k, v any) { cfg[phpx.Str(k)] = v })
+	newSvc := func(extra map[string]any) *Service {
+		vals := map[string]any{}
+		for k, v := range cfg {
+			vals[k] = v
+		}
+		for k, v := range extra {
+			vals[k] = v
+		}
+		st := setting.NewStatic(vals)
+		return &Service{Settings: st, Linker: &subscription.Linker{Settings: st}}
+	}
+	svcDefault := newSvc(nil)
+	svcCustom := newSvc(map[string]any{SettingKey(tplClash): in.Str("custom_clash")})
+	users := in.Arr("users").Values()
+	host := in.Str("host")
+	updated := 0
+	for i, tc := range expected.Cases {
+		parts := strings.Split(tc.Name, "|")
+		if !want[parts[0]] {
+			continue
+		}
+		h, ok := vectorHandlers[parts[0]]
+		if !ok {
+			t.Fatalf("未知格式 %s", parts[0])
+		}
+		ui := phpx.Int(parts[1])
+		sub := vectorSub(users[ui].(*phpx.Arr))
+		var servers []*phpx.Arr
+		for _, s := range in.Arr("servers").Values() {
+			servers = append(servers, s.(*phpx.Arr).Clone())
+		}
+		svc := svcDefault
+		switch parts[2] {
+		case "info":
+			day := 12
+			servers = addInfoServers(servers, sub, &day)
+		case "custom":
+			svc = svcCustom
+		}
+		if h.remoteCert {
+			markRemoteCert(servers)
+		}
+		resp, err := h.handle(&Ctx{
+			Context: context.Background(), svc: svc, Sub: sub, Servers: servers,
+			AppName: cfg["app_name"].(string), AppURL: cfg["app_url"].(string),
+			Host: host, BaseURL: "https://" + host,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.Name, err)
+		}
+		expected.Cases[i].Body = base64.StdEncoding.EncodeToString(resp.Body)
+		gotH := resp.Headers
+		if resp.ContentType != htmlType {
+			gotH = append(append([][2]string(nil), gotH...), [2]string{"content-type", resp.ContentType})
+		}
+		expected.Cases[i].Headers = gotH
+		updated++
+	}
+	out, err := json.MarshalIndent(expected, "", "    ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out = append(out, '\n')
+	if err := os.WriteFile("testdata/vectors/expected.json", out, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("已更新 %d 条期望", updated)
+}
+
 func TestProtocolsMatchPHP(t *testing.T) {
 	loc, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {

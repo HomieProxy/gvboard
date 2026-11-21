@@ -17,12 +17,19 @@ func surge(c *Ctx) (*Response, error) {
 			line = surgeSS(c.Sub.UUID, s)
 		case "vmess":
 			line = surgeVmess(c.Sub.UUID, s)
+		case "vless":
+			line = surgeVless(c.Sub.UUID, s)
+			if line == "" {
+				continue
+			}
 		case "trojan":
 			line = surgeTrojan(c.Sub.UUID, s, false)
 		case "hysteria":
 			if s.Get("version") != int64(2) {
 				continue
 			}
+			line = surgeHysteria2(c.Sub.UUID, s)
+		case "hysteria2":
 			line = surgeHysteria2(c.Sub.UUID, s)
 		case "anytls":
 			line = surgeAnyTLS(c.Sub.UUID, s, false)
@@ -181,16 +188,105 @@ func surgeTrojan(password string, s *phpx.Arr, surfboard bool) string {
 }
 
 func surgeHysteria2(password string, s *phpx.Arr) string {
+	ts := arr(s.Get("tls_settings"))
 	sni := ""
-	if phpx.Truthy(s.Get("server_name")) {
-		sni = "sni=" + s.Str("server_name")
+	if v := phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), ""); phpx.Truthy(v) {
+		sni = "sni=" + phpx.Str(v)
 	}
-	cfg := []string{s.Str("name") + "=hysteria2", s.Str("host"), phpx.FirstPort(s.Get("port")), "password=" + password,
-		"download-bandwidth=" + s.Str("up_mbps"), sni, "udp-relay=true"}
-	if !phpx.Empty(s.Get("insecure")) {
+	cfg := []string{s.Str("name") + "=hysteria2", s.Str("host"), phpx.FirstPort(s.Get("port")), "password=" + password}
+	if !phpx.Empty(s.Get("up_mbps")) {
+		cfg = append(cfg, "download-bandwidth="+s.Str("up_mbps"))
+	}
+	if sni != "" {
+		cfg = append(cfg, sni)
+	}
+	cfg = append(cfg, "udp-relay=true")
+	if phpx.Truthy(phpx.Coalesce(s.Get("insecure"), ts.Get("allow_insecure"), int64(0))) {
 		cfg = append(cfg, "skip-cert-verify=true")
 	}
 	return joinFilter(",", cfg) + "\r\n"
+}
+
+// surgeVless Surge iOS 6.0.0+ / Mac 6.12.0+ 的 VLESS（原项目尚未支持）。
+// 按官方手册：RAW/WS/HTTPUpgrade/gRPC/XHTTP，TLS / REALITY / Vision / Encryption；不支持 mKCP。
+func surgeVless(uuid string, s *phpx.Arr) string {
+	network := phpx.Str(phpx.Coalesce(s.Get("network"), "tcp"))
+	if network == "kcp" {
+		return ""
+	}
+	cfg := []string{s.Str("name") + "=vless", s.Str("host"), s.Str("port"), "username=" + uuid}
+	ts := arr(s.Get("tls_settings"))
+	ns := arr(s.Get("network_settings"))
+	if !phpx.Empty(s.Get("encryption")) && !phpx.Empty(s.Get("encryption_settings")) {
+		es := s.Get("encryption_settings")
+		e := s.Str("encryption")
+		e += "." + phpx.Str(phpx.Coalesce(phpx.Get(es, "mode"), "native"))
+		e += "." + phpx.Str(phpx.Coalesce(phpx.Get(es, "rtt"), "1rtt"))
+		if !phpx.Empty(phpx.Get(es, "client_padding")) {
+			e += "." + phpx.Str(phpx.Get(es, "client_padding"))
+		}
+		e += "." + phpx.Str(phpx.Coalesce(phpx.Get(es, "password"), ""))
+		cfg = append(cfg, "encryption="+e)
+	}
+	isReality := phpx.LooseEq(s.Get("tls"), int64(2))
+	if isReality {
+		if v := ts.Get("public_key"); !phpx.Empty(v) {
+			cfg = append(cfg, "reality-public-key="+phpx.Str(v))
+		}
+		if v := ts.Get("short_id"); !phpx.Empty(v) {
+			cfg = append(cfg, "reality-short-id="+phpx.Str(v))
+		}
+	} else if !phpx.Empty(s.Get("tls")) {
+		cfg = append(cfg, "tls=true")
+		if phpx.Truthy(ts.Get("allow_insecure")) {
+			cfg = append(cfg, "skip-cert-verify=true")
+		}
+	}
+	if sni := ts.Get("server_name"); phpx.Truthy(sni) {
+		cfg = append(cfg, "sni="+phpx.Str(sni))
+	}
+	if fp := ts.Get("fingerprint"); !phpx.Empty(fp) {
+		cfg = append(cfg, "client-fingerprint="+phpx.Str(fp))
+	}
+	// Vision 不能与 gRPC 同用；有 Encryption 时可配 WS / XHTTP。
+	if flow := s.Str("flow"); flow != "" && network != "grpc" {
+		cfg = append(cfg, "flow="+flow)
+	}
+	switch network {
+	case "ws":
+		cfg = append(cfg, "ws=true")
+		if p := ns.Get("path"); !phpx.Empty(p) {
+			cfg = append(cfg, "ws-path="+phpx.Str(p))
+		}
+		if h := ns.Get("headers", "Host"); !phpx.Empty(h) {
+			cfg = append(cfg, "ws-headers=Host:"+phpx.Str(h))
+		}
+	case "httpupgrade":
+		cfg = append(cfg, "ws=true", "ws-http-upgrade=true")
+		if p := ns.Get("path"); !phpx.Empty(p) {
+			cfg = append(cfg, "ws-path="+phpx.Str(p))
+		}
+		if h := phpx.Coalesce(ns.Get("host"), ns.Get("headers", "Host"), ""); !phpx.Empty(h) {
+			cfg = append(cfg, "ws-headers=Host:"+phpx.Str(h))
+		}
+	case "grpc":
+		cfg = append(cfg, "grpc=true")
+		if sn := ns.Get("serviceName"); !phpx.Empty(sn) {
+			cfg = append(cfg, "grpc-service-name="+phpx.Str(sn))
+		}
+	case "xhttp":
+		cfg = append(cfg, "xhttp=true")
+		if p := ns.Get("path"); !phpx.Empty(p) {
+			cfg = append(cfg, "xhttp-path="+phpx.Str(p))
+		}
+		if h := ns.Get("host"); !phpx.Empty(h) {
+			cfg = append(cfg, "xhttp-host="+phpx.Str(h))
+		}
+		if m := ns.Get("mode"); !phpx.Empty(m) {
+			cfg = append(cfg, "xhttp-mode="+phpx.Str(m))
+		}
+	}
+	return strings.Join(cfg, ",") + "\r\n"
 }
 
 // surgeAnyTLS surfboard 为 true 时不带 tfo、追加 reuse=false。

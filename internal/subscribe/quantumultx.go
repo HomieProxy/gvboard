@@ -23,6 +23,12 @@ func quantumultX(c *Ctx) (*Response, error) {
 			b.WriteString(qxVless(c.Sub.UUID, s))
 		case "trojan":
 			b.WriteString(qxTrojan(c.Sub.UUID, s))
+		case "hysteria":
+			if s.Get("version") == int64(2) {
+				b.WriteString(qxHysteria2(c.Sub.UUID, s))
+			}
+		case "hysteria2":
+			b.WriteString(qxHysteria2(c.Sub.UUID, s))
 		case "anytls":
 			b.WriteString(qxAnyTLS(c.Sub.UUID, s))
 		}
@@ -237,5 +243,30 @@ func qxAnyTLS(password string, s *phpx.Arr) string {
 			cfg = append(cfg, "tls-verification=true")
 		}
 	}
+	return joinFilter(",", cfg) + "\r\n"
+}
+
+// qxHysteria2 Quantumult X 1.9.0+ 的 Hysteria2（原项目尚未支持）。
+// 旧表 hysteria version=2 与 v2node protocol=hysteria2 共用；字段参考官方样例与 Sub-Store 输出。
+func qxHysteria2(password string, s *phpx.Arr) string {
+	port := phpx.FirstPort(s.Get("port"))
+	cfg := []string{"hysteria2=" + s.Str("host") + ":" + port, "password=" + password}
+	if phpx.MultiPort(s.Get("port")) {
+		cfg = append(cfg, "port-hopping="+s.Str("port"))
+	}
+	if s.Isset("obfs") && !phpx.Empty(s.Get("obfs_password")) {
+		cfg = append(cfg, "salamander-password="+s.Str("obfs_password"))
+	}
+	ts := arr(s.Get("tls_settings"))
+	if sni := phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), ""); phpx.Truthy(sni) {
+		cfg = append(cfg, "tls-host="+phpx.Str(sni))
+	}
+	if phpx.Truthy(phpx.Coalesce(s.Get("insecure"), ts.Get("allow_insecure"), int64(0))) {
+		cfg = append(cfg, "tls-verification=false")
+	}
+	if !phpx.Empty(s.Get("up_mbps")) {
+		cfg = append(cfg, "download-bandwidth="+s.Str("up_mbps"))
+	}
+	cfg = append(cfg, "udp-relay=true", "tag="+s.Str("name"))
 	return joinFilter(",", cfg) + "\r\n"
 }
