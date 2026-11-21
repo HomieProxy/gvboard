@@ -149,7 +149,9 @@ func (s *Service) applyToSubscription(ctx context.Context, tx *gorm.DB, gc *mode
 	case GiftcardTraffic:
 		values["transfer_enable"] = sub.TransferEnable + value*1073741824
 	case GiftcardResetTraffic:
+		subscription.ResetTraffic(sub)
 		values["u"], values["d"] = 0, 0
+		values["transfer_enable"], values["bonus_traffic"] = sub.TransferEnable, 0
 	case GiftcardPlan:
 		// 只能作用于没有套餐或已到期的订阅（与原项目一致）
 		if sub.PlanID != nil && (sub.ExpiredAt == nil || *sub.ExpiredAt >= now) {
@@ -161,7 +163,7 @@ func (s *Service) applyToSubscription(ctx context.Context, tx *gorm.DB, gc *mode
 		}
 		subscription.ApplyPlan(sub, plan)
 		values["plan_id"], values["group_id"] = sub.PlanID, sub.GroupID
-		values["transfer_enable"], values["u"], values["d"] = sub.TransferEnable, 0, 0
+		values["transfer_enable"], values["u"], values["d"], values["bonus_traffic"] = sub.TransferEnable, 0, 0, 0
 		values["device_limit"], values["speed_limit"] = sub.DeviceLimit, sub.SpeedLimit
 		values["expired_at"] = planExpire(value, now)
 	}

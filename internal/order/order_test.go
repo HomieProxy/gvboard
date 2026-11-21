@@ -449,10 +449,13 @@ func testResetAndOnetime(t *testing.T, e *env) {
 	wantErr(t, err, errResetUnavailable)
 	first := e.buy(t, u.ID, CreateInput{PlanID: a.ID, Period: PeriodMonth})
 	subID := *first.SubscriptionID
-	e.DB.Model(&model.Subscription{}).Where("id = ?", subID).Updates(map[string]any{"u": 100, "d": 200})
+	// 本周期奖励流量 5 GB（决策 D87）：购买重置包时收回
+	e.DB.Model(&model.Subscription{}).Where("id = ?", subID).Updates(map[string]any{"u": 100, "d": 200,
+		"transfer_enable": gorm.Expr("transfer_enable + ?", 5*gb), "bonus_traffic": 5 * gb})
 	before := e.sub(t, subID)
 	o := e.buy(t, u.ID, CreateInput{PlanID: a.ID, Period: PeriodReset, SubscriptionID: subID})
-	if s := e.sub(t, subID); o.Type != model.OrderTypeReset || s.U != 0 || s.D != 0 || *s.ExpiredAt != *before.ExpiredAt {
+	if s := e.sub(t, subID); o.Type != model.OrderTypeReset || s.U != 0 || s.D != 0 || *s.ExpiredAt != *before.ExpiredAt ||
+		s.TransferEnable != before.TransferEnable-5*gb || s.BonusTraffic != 0 {
 		t.Errorf("流量重置包结果不正确: type=%d %+v", o.Type, s)
 	}
 	_, err = e.Create(ctx, u.ID, CreateInput{PlanID: ot.ID, Period: PeriodMonth})
@@ -464,10 +467,11 @@ func testResetAndOnetime(t *testing.T, e *env) {
 	if s.ExpiredAt != nil || s.TransferEnable != 50*gb {
 		t.Fatalf("一次性套餐开通不正确: %+v", s)
 	}
-	e.DB.Model(&s).Updates(map[string]any{"u": 10 * gb, "d": 0})
+	// 奖励流量 20 GB 不计入剩余流量
+	e.DB.Model(&s).Updates(map[string]any{"u": 10 * gb, "d": 0, "transfer_enable": 70 * gb, "bonus_traffic": 20 * gb})
 	o2 := e.buy(t, u.ID, CreateInput{PlanID: ot.ID, Period: PeriodOnetime, SubscriptionID: s.ID})
 	s = e.sub(t, s.ID)
-	if o2.Type != model.OrderTypeNew || s.TransferEnable != 90*gb || s.U != 0 {
+	if o2.Type != model.OrderTypeNew || s.TransferEnable != 90*gb || s.U != 0 || s.BonusTraffic != 0 {
 		t.Errorf("再次购买一次性套餐应叠加剩余流量: type=%d transfer=%d", o2.Type, s.TransferEnable/gb)
 	}
 	// 一次性套餐升级为周期套餐：按剩余流量折抵最近一次一次性订单

@@ -269,11 +269,13 @@ func testGiftcard(t *testing.T, s *Service) {
 	if sub(primary.ID).TransferEnable != 2*1073741824 {
 		t.Error("流量礼品卡应增加 2GB")
 	}
-	s.DB.Model(&model.Subscription{}).Where("id = ?", primary.ID).Updates(map[string]any{"u": 10, "d": 20})
+	// 本周期奖励流量 1GB（决策 D87）：重置时收回，流量礼品卡增加的流量保留
+	s.DB.Model(&model.Subscription{}).Where("id = ?", primary.ID).Updates(map[string]any{"u": 10, "d": 20,
+		"transfer_enable": 3 * 1073741824, "bonus_traffic": 1073741824})
 	card("RESET", 4, 0, nil)
 	redeem("RESET", primary.ID)
-	if x := sub(primary.ID); x.U != 0 || x.D != 0 {
-		t.Error("重置流量礼品卡应清零已用流量")
+	if x := sub(primary.ID); x.U != 0 || x.D != 0 || x.TransferEnable != 2*1073741824 || x.BonusTraffic != 0 {
+		t.Errorf("重置流量礼品卡应清零已用流量并收回奖励流量：%+v", x)
 	}
 
 	// 不能作用于其他用户的订阅

@@ -13,6 +13,7 @@ import (
 	"gvboard/internal/cache"
 	"gvboard/internal/database"
 	"gvboard/internal/model"
+	"gvboard/internal/subscription"
 	"gvboard/internal/telegram"
 )
 
@@ -126,7 +127,10 @@ func (s *Service) resetWhere(ctx context.Context, scope func(tx *gorm.DB) *gorm.
 	for attempt := 1; ; attempt++ {
 		var n int64
 		err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			res := scope(tx).UpdateColumns(map[string]any{"u": 0, "d": 0})
+			if err := scope(tx).Where("bonus_traffic > 0").UpdateColumn("transfer_enable", subscription.RevokeBonusExpr()).Error; err != nil {
+				return err
+			}
+			res := scope(tx).UpdateColumns(map[string]any{"u": 0, "d": 0, "bonus_traffic": 0})
 			n = res.RowsAffected
 			return res.Error
 		})

@@ -267,6 +267,47 @@ export interface PluginWidgetState {
   actions?: { label: string; path?: string; link?: string; disabled?: boolean; confirm?: string }[]
 }
 
+export type WheelPrizeType = 'balance' | 'days' | 'traffic' | 'none'
+
+/** 幸运大转盘奖品：value 为分 / 天 / MB */
+export interface WheelPrize {
+  name: string
+  type: WheelPrizeType
+  value: number
+}
+
+/** 幸运大转盘信息（插件 lucky_wheel）：traffic_cost 为 MB，paid_left 为 -1 表示不限 */
+export interface WheelInfo {
+  prizes: WheelPrize[]
+  free_daily: number
+  free_left: number
+  balance_enable: boolean
+  balance_cost: number
+  traffic_enable: boolean
+  traffic_cost: number
+  paid_daily: number
+  paid_left: number
+}
+
+export interface WheelResult {
+  index: number
+  prize: WheelPrize
+  cost_type: 'free' | 'balance' | 'traffic'
+  cost: number
+}
+
+/** 抽奖记录：流量奖品与流量消耗的数值为字节 */
+export interface WheelRecord {
+  id: number
+  subscription_id: number
+  prize_name: string
+  prize_type: WheelPrizeType
+  prize_value: number
+  cost_type: 'free' | 'balance' | 'traffic'
+  cost: number
+  created_at: number
+}
+
 export interface KnowledgeCategory {
   category: string
   articles: { id: number; category: string; title: string; updated_at: number }[]

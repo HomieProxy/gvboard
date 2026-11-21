@@ -115,7 +115,7 @@ func (s *Service) SavePlan(ctx context.Context, in PlanInput) error {
 		}
 		if in.ForceUpdate {
 			err := tx.Model(&model.Subscription{}).Where("plan_id = ?", in.ID).Updates(map[string]any{
-				"group_id": p.GroupID, "transfer_enable": p.TransferEnable * gb,
+				"group_id": p.GroupID, "transfer_enable": p.TransferEnable * gb, "bonus_traffic": 0,
 				"device_limit": p.DeviceLimit, "speed_limit": p.SpeedLimit,
 			}).Error
 			if err != nil {

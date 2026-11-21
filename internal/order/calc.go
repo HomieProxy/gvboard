@@ -149,10 +149,12 @@ func surplusByPeriod(sub *model.Subscription, orders []model.Order, now int64) (
 	}
 	surplusSecond := *sub.ExpiredAt - now
 	rangeSecond := expiredByOrder - *lastValidateAt
-	if sub.TransferEnable == 0 {
+	// 本周期奖励流量不参与折抵（决策 D87）
+	paid := sub.TransferEnable - sub.BonusTraffic
+	if paid <= 0 {
 		return nil, ids
 	}
-	trafficRatio := float64(sub.TransferEnable-(sub.U+sub.D)) / float64(sub.TransferEnable)
+	trafficRatio := float64(paid-(sub.U+sub.D)) / float64(paid)
 	avg := amountSum / float64(rangeSecond)
 	var amount float64
 	if rangeSecond <= 31*86400 {
@@ -173,8 +175,8 @@ func surplusByOneTime(sub *model.Subscription, last *model.Order) *float64 {
 	if last == nil {
 		return nil
 	}
-	total := float64(sub.TransferEnable) / gb
-	if total == 0 {
+	total := float64(sub.TransferEnable-sub.BonusTraffic) / gb
+	if total <= 0 {
 		return nil
 	}
 	paid := float64(last.TotalAmount + val(last.BalanceAmount))

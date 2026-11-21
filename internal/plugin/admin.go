@@ -62,7 +62,7 @@ type View struct {
 }
 
 // builtinGo 随程序提供的 Go 插件，启用时不提示数据库访问警告。
-var builtinGo = map[string]bool{"checkin": true, "firstorder": true, "webhook": true}
+var builtinGo = map[string]bool{"checkin": true, "first_order": true, "webhook": true, "lucky_wheel": true}
 
 // errDBWarning 启用非内置 Go 插件前需要确认数据库访问警告。
 var errDBWarning = httpx.Conflict("该插件可直接访问数据库，若直接修改用户余额将不会记录余额明细，请确认后再启用")

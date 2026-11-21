@@ -67,8 +67,10 @@ type Subscription struct {
 	RemindExpire  int    `gorm:"column:remind_expire" json:"remind_expire"`
 	RemindTraffic int    `gorm:"column:remind_traffic" json:"remind_traffic"`
 	Banned        int    `gorm:"column:banned" json:"banned"`
-	CreatedAt     int64  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt     int64  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	// BonusTraffic 本周期奖励流量（已计入 TransferEnable），流量重置时从 TransferEnable 中扣回（决策 D87）。
+	BonusTraffic int64 `gorm:"column:bonus_traffic" json:"bonus_traffic"`
+	CreatedAt    int64 `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt    int64 `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 func (Subscription) TableName() string { return "v2_subscription" }

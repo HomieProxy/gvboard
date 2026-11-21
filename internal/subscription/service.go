@@ -406,13 +406,26 @@ func Available(sub *model.Subscription, now int64) bool {
 	return sub.Banned == 0 && sub.TransferEnable != 0 && (sub.ExpiredAt == nil || *sub.ExpiredAt > now)
 }
 
-// ApplyPlan 把套餐的权限组、流量、设备数、限速应用到订阅，并清零已用流量。
+// ApplyPlan 把套餐的权限组、流量、设备数、限速应用到订阅，并清零已用流量与本周期奖励流量。
 func ApplyPlan(sub *model.Subscription, p *model.Plan) {
 	planID, groupID := p.ID, p.GroupID
 	sub.PlanID, sub.GroupID = &planID, &groupID
 	sub.TransferEnable = p.TransferEnable * 1073741824
 	sub.DeviceLimit, sub.SpeedLimit = p.DeviceLimit, p.SpeedLimit
+	sub.U, sub.D, sub.BonusTraffic = 0, 0, 0
+}
+
+// ResetTraffic 清零已用流量，并从流量上限中收回本周期奖励流量（决策 D87）。
+func ResetTraffic(sub *model.Subscription) {
 	sub.U, sub.D = 0, 0
+	sub.TransferEnable = max(sub.TransferEnable-sub.BonusTraffic, 0)
+	sub.BonusTraffic = 0
+}
+
+// RevokeBonusExpr 收回本周期奖励流量后的流量上限（SQL，不低于 0），用于批量重置。
+// 与 bonus_traffic = 0 放在同一条 UPDATE 中时 MySQL 会按赋值顺序使用新值，需分两条语句执行。
+func RevokeBonusExpr() clause.Expr {
+	return gorm.Expr("CASE WHEN transfer_enable > bonus_traffic THEN transfer_enable - bonus_traffic ELSE 0 END")
 }
 
 func deref(p *int64) int64 {

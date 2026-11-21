@@ -432,6 +432,7 @@ func deleteUsers(tx *gorm.DB, ids []int64) error {
 		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.Subscription{}).Error },
 		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.UserTelegram{}).Error },
 		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.BalanceLog{}).Error },
+		func() error { return tx.Where("user_id IN ?", ids).Delete(&model.LuckyWheelLog{}).Error },
 		func() error { return tx.Where("id IN ?", ids).Delete(&model.User{}).Error },
 	}
 	for _, f := range steps {

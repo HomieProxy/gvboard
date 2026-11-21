@@ -15,6 +15,7 @@ import NumInput from '../components/common/NumInput.vue'
 import { admin } from '../api'
 import { confirm, errText, message, run } from '../ui'
 import { useList } from '../paged'
+import { loadFeatures } from '../features'
 import type { PluginField, PluginPreview, PluginView } from '../types'
 
 const { rows, loading, load } = useList(() => admin.get<PluginView[]>('/plugins'))
@@ -32,9 +33,13 @@ async function toggle(p: PluginView, v: boolean) {
     const tip = `「${p.name}」是编译进程序的 Go 插件，可以直接访问数据库。若它直接写 SQL 修改用户余额，将不会记录余额明细，管理员无法追溯余额来源。请确认插件来源可信后再启用（本插件只提示这一次）。`
     await confirm(tip, () => admin.post(`/plugins/${p.code}/enable`, { acknowledge: true }), '已启用')
     load()
+    loadFeatures()
     return
   }
-  if (await run(() => admin.post(`/plugins/${p.code}/${v ? 'enable' : 'disable'}`), v ? '已启用' : '已停用')) load()
+  if (await run(() => admin.post(`/plugins/${p.code}/${v ? 'enable' : 'disable'}`), v ? '已启用' : '已停用')) {
+    load()
+    loadFeatures()
+  }
 }
 async function remove(p: PluginView) {
   if (await confirm(`删除插件「${p.name}」后，它保存的数据也会一并删除，确定吗？`, () => admin.del(`/plugins/${p.code}`), '删除成功')) load()

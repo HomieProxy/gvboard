@@ -77,6 +77,9 @@ func (in *SubInput) values(tx *gorm.DB) (map[string]any, error) {
 			values[col] = *v
 		}
 	}
+	if in.TransferEnable != nil {
+		values["bonus_traffic"] = 0
+	}
 	for col, o := range map[string]httpx.Optional[int64]{"device_limit": in.DeviceLimit, "speed_limit": in.SpeedLimit, "expired_at": in.ExpiredAt} {
 		if o.Set {
 			values[col] = o.Value

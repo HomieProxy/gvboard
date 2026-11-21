@@ -544,6 +544,20 @@ func TestSubscriptionAdmin(t *testing.T) {
 			got.TransferEnable != 5*gb || got.Name != "第二" {
 			t.Fatalf("修改订阅错误：%+v", got)
 		}
+		// 修改流量上限时清零本周期奖励流量（决策 D87），只改其它字段时保留
+		e.DB.Model(&got).Update("bonus_traffic", gb)
+		if err := e.UpdateSub(ctx, sub.ID, SubInput{U: ptr(int64(2))}); err != nil {
+			t.Fatal(err)
+		}
+		if e.reload(t, &got, sub.ID); got.BonusTraffic != gb {
+			t.Fatalf("未修改流量上限时应保留奖励流量：%+v", got)
+		}
+		if err := e.UpdateSub(ctx, sub.ID, SubInput{TransferEnable: ptr(int64(6 * gb))}); err != nil {
+			t.Fatal(err)
+		}
+		if e.reload(t, &got, sub.ID); got.TransferEnable != 6*gb || got.BonusTraffic != 0 {
+			t.Fatalf("修改流量上限应清零奖励流量：%+v", got)
+		}
 		for _, in := range []SubInput{{U: ptr(int64(-1))}, {ExpiredAt: httpx.Some(int64(-1))}, {Banned: ptr(5)}, {Name: ptr(strings.Repeat("长", 65))}} {
 			wantErr(t, e.UpdateSub(ctx, sub.ID, in), errInvalid)
 		}

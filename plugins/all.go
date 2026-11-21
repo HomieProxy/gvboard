@@ -5,5 +5,6 @@ package plugins
 import (
 	_ "gvboard/plugins/checkin"
 	_ "gvboard/plugins/firstorder"
+	_ "gvboard/plugins/luckywheel"
 	_ "gvboard/plugins/webhook"
 )

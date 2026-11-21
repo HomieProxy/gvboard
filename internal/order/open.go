@@ -112,7 +112,7 @@ func (s *Service) open(ctx context.Context, orderID int64) error {
 		}
 		sub.SpeedLimit = plan.SpeedLimit
 
-		err = tx.Model(sub).Select("plan_id", "group_id", "transfer_enable", "u", "d", "device_limit", "speed_limit", "expired_at").
+		err = tx.Model(sub).Select("plan_id", "group_id", "transfer_enable", "u", "d", "bonus_traffic", "device_limit", "speed_limit", "expired_at").
 			Updates(sub).Error
 		if err != nil {
 			return err
@@ -148,7 +148,7 @@ func (s *Service) targetSubscription(tx *gorm.DB, o *model.Order) (*model.Subscr
 	return &sub, nil
 }
 
-func resetTraffic(sub *model.Subscription) { sub.U, sub.D = 0, 0 }
+func resetTraffic(sub *model.Subscription) { subscription.ResetTraffic(sub) }
 
 // buyByPeriod 周期套餐开通（原项目 buyByPeriod）。global 为系统设置的流量重置方式。
 func buyByPeriod(sub *model.Subscription, o *model.Order, p *model.Plan, now time.Time, global int64) {
@@ -162,7 +162,7 @@ func buyByPeriod(sub *model.Subscription, o *model.Order, p *model.Plan, now tim
 		ts := now.Unix()
 		sub.ExpiredAt = &ts
 	}
-	sub.TransferEnable = p.TransferEnable * gb
+	sub.TransferEnable, sub.BonusTraffic = p.TransferEnable*gb, 0
 	sub.DeviceLimit = p.DeviceLimit
 	// 从一次性套餐转为周期套餐、新购：清零已用流量
 	if sub.ExpiredAt == nil || o.Type == model.OrderTypeNew {
@@ -188,7 +188,7 @@ func buyByPeriod(sub *model.Subscription, o *model.Order, p *model.Plan, now tim
 func buyByOneTime(sub *model.Subscription, o *model.Order, p *model.Plan) {
 	transfer := float64(p.TransferEnable)
 	if len(o.SurplusOrderIDs) == 0 {
-		notUsed := float64(sub.TransferEnable-(sub.U+sub.D)) / gb
+		notUsed := float64(sub.TransferEnable-sub.BonusTraffic-(sub.U+sub.D)) / gb
 		if notUsed > 0 && sub.ExpiredAt == nil {
 			transfer += notUsed
 		}

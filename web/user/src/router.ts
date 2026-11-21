@@ -45,6 +45,8 @@ const pages: RouteRecordRaw[] = [
   { path: '/notices', component: () => import('./views/Notices.vue'), meta: { nav: 'notices' } },
   { path: '/traffic', component: () => import('./views/Traffic.vue'), meta: { nav: 'traffic' } },
   { path: '/profile', component: () => import('./views/Profile.vue'), meta: { nav: 'profile' } },
+  // 内置插件「幸运大转盘」，入口为仪表盘卡片
+  { path: '/lucky-wheel', component: () => import('./views/LuckyWheel.vue'), meta: { nav: 'dashboard' } },
 ]
 
 export const router = createRouter({

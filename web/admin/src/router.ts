@@ -29,6 +29,7 @@ const pages: (RouteRecordRaw & { meta: { title: string; group: string; feature?:
   { path: '/tickets', component: () => import('./views/Tickets.vue'), meta: { title: '工单管理', group: '用户' } },
   { path: '/knowledge', component: () => import('./views/Knowledge.vue'), meta: { title: '知识库管理', group: '用户' } },
   { path: '/guard', component: () => import('./views/Guard.vue'), meta: { title: '订阅风控', group: '用户' } },
+  { path: '/lucky-wheel', component: () => import('./views/LuckyWheel.vue'), meta: { title: '幸运转盘', group: '用户', feature: 'lucky_wheel' } },
   { path: '/system', component: () => import('./views/System.vue'), meta: { title: '队列监控', group: '指标' } },
   { path: '/logs', component: () => import('./views/Logs.vue'), meta: { title: '系统日志', group: '指标' } },
 ]

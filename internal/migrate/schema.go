@@ -407,6 +407,7 @@ func Schema() []Table {
 			def("remind_expire", "tinyint", "1"),
 			def("remind_traffic", "tinyint", "1"),
 			def("banned", "tinyint", "0"),
+			def("bonus_traffic", "bigint", "0"),
 		},
 			Index{Name: "uniq_token", Cols: []string{"token"}, Unique: true, Ensure: true},
 			Index{Name: "uniq_uuid", Cols: []string{"uuid"}, Unique: true, Ensure: true},
@@ -578,6 +579,25 @@ func Schema() []Table {
 				null("operator_id", "int"),
 				def("plugin", "varchar(64)", "''"),
 				def("remark", "varchar(255)", "''"),
+				col("created_at", "int"),
+			},
+			Indexes: []Index{
+				{Name: "idx_created", Cols: []string{"created_at"}, Ensure: true},
+				{Name: "idx_user_created", Cols: []string{"user_id", "created_at"}, Ensure: true},
+			},
+		},
+		// 内置插件「幸运大转盘」抽奖记录（决策 D87）
+		{
+			Name: "v2_lucky_wheel_log",
+			Columns: []Column{
+				pk(),
+				col("user_id", "int"),
+				col("subscription_id", "int"),
+				col("prize_name", "varchar(64)"),
+				col("prize_type", "varchar(16)"),
+				def("prize_value", "bigint", "0"),
+				col("cost_type", "varchar(16)"),
+				def("cost", "bigint", "0"),
 				col("created_at", "int"),
 			},
 			Indexes: []Index{

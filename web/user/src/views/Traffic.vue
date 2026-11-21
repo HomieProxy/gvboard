@@ -18,13 +18,27 @@ const loading = ref(true)
 const sub = ref<number | null>(null)
 const subChoices = computed(() => [{ label: t('traffic.allSubs'), value: null }, ...subOptions()])
 
+// 其它扣除：内置插件「幸运大转盘」本月消耗流量抽奖的记录（插件未启用时接口 404，不显示）
+interface OtherCost {
+  id: number
+  subscription_id: number
+  bytes: number
+  created_at: number
+}
+const others = ref<OtherCost[]>([])
+
 const charged = (r: TrafficLog) => (r.u + r.d) * Number(r.server_rate)
-const sum = computed(() => rows.value.reduce((n, r) => n + charged(r), 0))
+const sum = computed(() => rows.value.reduce((n, r) => n + charged(r), 0) + others.value.reduce((n, o) => n + o.bytes, 0))
 
 async function load() {
   loading.value = true
+  const q = { subscription_id: sub.value || undefined }
+  http
+    .get<OtherCost[]>('/plugin/lucky_wheel/traffic-costs', q)
+    .then((r) => (others.value = r || []))
+    .catch(() => (others.value = []))
   try {
-    rows.value = (await http.get<TrafficLog[]>('/user/traffic-log', { subscription_id: sub.value || undefined })) || []
+    rows.value = (await http.get<TrafficLog[]>('/user/traffic-log', q)) || []
   } catch (e) {
     toast('error', errText(e))
   } finally {
@@ -32,10 +46,17 @@ async function load() {
   }
 }
 
-function subLabel(r: TrafficLog) {
+function subLabel(r: { subscription_id: number | null }) {
   const s = subs.value.find((x) => x.id === r.subscription_id)
   return s ? subName(s) : r.subscription_id ? `#${r.subscription_id}` : '-'
 }
+
+const otherColumns = computed(() => [
+  { key: 'created_at', title: t('traffic.date') },
+  { key: 'subscription_id', title: t('traffic.subscription') },
+  { key: 'source', title: t('traffic.source') },
+  { key: 'bytes', title: t('traffic.total'), align: 'right' as const },
+])
 
 const columns = computed(() => [
   { key: 'record_at', title: t('traffic.date') },
@@ -80,5 +101,16 @@ onMounted(() => {
         <template #cell-total="{ row }"><span class="font-medium tabular-nums">{{ formatBytes(charged(row)) }}</span></template>
       </DataTable>
     </div>
+    <template v-if="others.length">
+      <h2 class="mt-6 mb-3 text-base font-semibold">{{ t('traffic.other') }}</h2>
+      <div class="overflow-x-auto">
+        <DataTable :columns="otherColumns" :rows="others" :loading="false" :row-key="(r) => r.id" class="min-w-[560px]">
+          <template #cell-created_at="{ row }">{{ formatTime(row.created_at) }}</template>
+          <template #cell-subscription_id="{ row }">{{ subLabel(row) }}</template>
+          <template #cell-source>{{ t('traffic.wheel') }}</template>
+          <template #cell-bytes="{ row }"><span class="font-medium tabular-nums">{{ formatBytes(row.bytes) }}</span></template>
+        </DataTable>
+      </div>
+    </template>
   </div>
 </template>

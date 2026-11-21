@@ -366,6 +366,21 @@ func TestResetTraffic(t *testing.T) {
 		// 1 月 1 日
 		run(time.Date(2027, 1, 1, 0, 0, 0, 0, time.Local), ResetNever)
 		check("01-01", map[*model.Subscription]bool{yf: true, nv: false, gYear: false})
+
+		// 本周期奖励流量（决策 D87）：重置时从流量上限中扣回（不低于 0）并清零，未重置的订阅保留
+		bonus := map[*model.Subscription][2]int64{gOther: {150, 50}, gYear: {30, 50}, nv: {140, 40}}
+		for s, v := range bonus {
+			e.DB.Model(s).Updates(map[string]any{"transfer_enable": v[0], "bonus_traffic": v[1]})
+		}
+		run(time.Date(2027, 2, 1, 0, 0, 0, 0, time.Local), ResetMonthFirstDay)
+		check("02-01", map[*model.Subscription]bool{gOther: true, gYear: true, nv: false})
+		for s, want := range map[*model.Subscription][2]int64{gOther: {100, 0}, gYear: {0, 0}, nv: {140, 40}} {
+			var got model.Subscription
+			e.DB.Take(&got, s.ID)
+			if got.TransferEnable != want[0] || got.BonusTraffic != want[1] {
+				t.Errorf("订阅 %d 奖励流量收回错误：流量 %d 奖励 %d，期望 %v", s.ID, got.TransferEnable, got.BonusTraffic, want)
+			}
+		}
 	})
 }
 

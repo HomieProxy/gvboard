@@ -13,5 +13,6 @@ func All() []any {
 		&Setting{}, &Plugin{}, &PluginKV{}, &PluginPackage{},
 		&SubscribeRule{}, &SubscribeLog{}, &UserTelegram{}, &AuditRule{}, &AuditLog{}, &AuditLogDetail{}, &NodeMachine{},
 		&BalanceLog{},
+		&LuckyWheelLog{},
 	}
 }
