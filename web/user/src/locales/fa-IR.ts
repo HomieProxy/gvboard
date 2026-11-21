@@ -42,7 +42,7 @@ const m: Messages = {
     admin: 'پنل مدیریت',
   },
   nav: {
-    groups: { main: '', subscribe: 'اشتراک', finance: 'مالی', user: 'کاربر' } as Record<string, string>,
+    groups: { main: '', subscribe: 'اشتراک', finance: 'مالی', more: 'بیشتر', user: 'کاربر' } as Record<string, string>,
     dashboard: 'داشبورد',
     subscriptions: 'اشتراک‌های من',
     plans: 'خرید اشتراک',
@@ -373,7 +373,13 @@ const m: Messages = {
     source: 'منبع',
     wheel: 'چرخش گردونه شانس',
   },
+  pluginPage: {
+    notFound: 'این صفحه وجود ندارد یا غیرفعال شده است',
+    show: 'نمایش',
+    hide: 'پنهان',
+  },
   wheel: {
+    start: 'شروع',
     title: 'گردونه شانس',
     unavailable: 'این رویداد در حال حاضر فعال نیست',
     noSub: 'برای شرکت در قرعه‌کشی به یک اشتراک فعال نیاز دارید',

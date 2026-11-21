@@ -42,7 +42,7 @@ const m: Messages = {
     admin: 'Trang quản trị',
   },
   nav: {
-    groups: { main: '', subscribe: 'Đăng ký', finance: 'Tài chính', user: 'Người dùng' } as Record<string, string>,
+    groups: { main: '', subscribe: 'Đăng ký', finance: 'Tài chính', more: 'Khác', user: 'Người dùng' } as Record<string, string>,
     dashboard: 'Tổng quan',
     subscriptions: 'Gói đăng ký',
     plans: 'Mua gói',
@@ -373,7 +373,13 @@ const m: Messages = {
     source: 'Nguồn',
     wheel: 'Quay vòng quay may mắn',
   },
+  pluginPage: {
+    notFound: 'Trang không tồn tại hoặc đã bị tắt',
+    show: 'Hiện',
+    hide: 'Ẩn',
+  },
   wheel: {
+    start: 'Quay',
     title: 'Vòng quay may mắn',
     unavailable: 'Sự kiện hiện chưa mở',
     noSub: 'Bạn cần có gói đăng ký còn hiệu lực để tham gia quay thưởng',

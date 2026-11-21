@@ -4,7 +4,7 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import {
   LayoutDashboardIcon, SettingsIcon, CreditCardIcon, PaletteIcon, PuzzleIcon, ServerIcon, UsersRoundIcon, RouteIcon,
   PackageIcon, ReceiptIcon, TicketPercentIcon, GiftIcon, UserIcon, MegaphoneIcon, MessageSquareIcon, BookOpenIcon,
-  ShieldIcon, ActivityIcon, ScrollTextIcon, LogOutIcon, MoonIcon, SunIcon, TagIcon, EyeIcon, HardDriveIcon,
+  ShieldIcon, ActivityIcon, ScrollTextIcon, LogOutIcon, MoonIcon, SunIcon, TagIcon, EyeIcon, HardDriveIcon, FerrisWheelIcon, WalletIcon,
 } from '@lucide/vue'
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader,
@@ -34,6 +34,7 @@ const icons: Record<string, Component> = {
   '/machines': HardDriveIcon,
   '/plans': PackageIcon,
   '/orders': ReceiptIcon,
+  '/balance-logs': WalletIcon,
   '/coupons': TicketPercentIcon,
   '/giftcards': GiftIcon,
   '/users': UserIcon,
@@ -41,6 +42,7 @@ const icons: Record<string, Component> = {
   '/tickets': MessageSquareIcon,
   '/knowledge': BookOpenIcon,
   '/guard': ShieldIcon,
+  '/lucky-wheel': FerrisWheelIcon,
   '/system': ActivityIcon,
   '/logs': ScrollTextIcon,
 }

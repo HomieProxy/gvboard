@@ -237,7 +237,7 @@ onMounted(() => {
   const uid = route.query.id
   if (uid) {
     filter.value = [{ key: 'id', condition: '=', value: String(uid) }]
-    open(Number(uid))
+    open(Number(uid), typeof route.query.tab === 'string' ? route.query.tab : 'subs')
   }
   const inviter = route.query.invite_user_id
   if (inviter) filter.value = [{ key: 'invite_user_id', condition: '=', value: String(inviter) }]

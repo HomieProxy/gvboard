@@ -267,6 +267,31 @@ export interface PluginWidgetState {
   actions?: { label: string; path?: string; link?: string; disabled?: boolean; confirm?: string }[]
 }
 
+export type PluginAction = NonNullable<PluginWidgetState['actions']>[number]
+
+/** 插件页面（GET /user/plugin-pages），地址为 /plugin/{plugin}/{key} */
+export interface PluginPage {
+  plugin: string
+  key: string
+  title: string
+  titles?: Record<string, string>
+  icon: string
+  group: 'subscribe' | 'finance' | 'more' | 'user'
+  content: string
+}
+
+/** 插件页面区块（插件的 content 路由返回 { blocks }） */
+export interface PluginBlock {
+  type: 'markdown' | 'alert' | 'fields' | 'table' | 'actions'
+  title?: string
+  text?: string
+  tone?: 'info' | 'success' | 'warning' | 'danger'
+  fields?: { label: string; value: string; copy?: boolean; secret?: boolean }[]
+  columns?: string[]
+  rows?: string[][]
+  actions?: PluginAction[]
+}
+
 export type WheelPrizeType = 'balance' | 'days' | 'traffic' | 'none'
 
 /** 幸运大转盘奖品：value 为分 / 天 / MB */

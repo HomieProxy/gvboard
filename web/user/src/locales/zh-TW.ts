@@ -42,7 +42,7 @@ const m: Messages = {
     admin: '管理後台',
   },
   nav: {
-    groups: { main: '', subscribe: '訂閱', finance: '財務', user: '用戶' } as Record<string, string>,
+    groups: { main: '', subscribe: '訂閱', finance: '財務', more: '更多', user: '用戶' } as Record<string, string>,
     dashboard: '儀表板',
     subscriptions: '我的訂閱',
     plans: '購買訂閱',
@@ -367,7 +367,13 @@ const m: Messages = {
     source: '來源',
     wheel: '幸運大轉盤抽獎',
   },
+  pluginPage: {
+    notFound: '頁面不存在或已停用',
+    show: '顯示',
+    hide: '隱藏',
+  },
   wheel: {
+    start: '開始',
     title: '幸運大轉盤',
     unavailable: '活動暫未開放',
     noSub: '你還沒有有效的訂閱，暫時無法參與抽獎',

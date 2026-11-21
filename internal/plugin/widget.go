@@ -19,7 +19,8 @@ var (
 	widgetPathPattern = regexp.MustCompile(`^/[A-Za-z0-9_/-]{0,127}$`)
 	widgetSlots       = []string{sdk.SlotDashboard}
 	widgetIcons       = []string{sdk.IconPuzzle, sdk.IconGift, sdk.IconCalendarCheck, sdk.IconStar, sdk.IconTrophy,
-		sdk.IconTicket, sdk.IconSparkles, sdk.IconCoins, sdk.IconMegaphone}
+		sdk.IconTicket, sdk.IconSparkles, sdk.IconCoins, sdk.IconMegaphone, sdk.IconFerrisWheel, sdk.IconKey, sdk.IconUsers,
+		sdk.IconBook, sdk.IconShield}
 )
 
 func (h *host) Widget(w sdk.Widget) {

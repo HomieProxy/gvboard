@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { UploadIcon, RefreshCwIcon, InfoIcon, SettingsIcon, Trash2Icon, Loader2Icon, TriangleAlertIcon } from '@lucide/vue'
+import { RouterLink } from 'vue-router'
+import { UploadIcon, RefreshCwIcon, InfoIcon, SettingsIcon, Trash2Icon, Loader2Icon, TriangleAlertIcon, ExternalLinkIcon } from '@lucide/vue'
 import { formatTime } from '@gv/shared'
 import { Button } from '@gv/shared/ui/button'
 import { Input } from '@gv/shared/ui/input'
@@ -16,6 +17,7 @@ import { admin } from '../api'
 import { confirm, errText, message, run } from '../ui'
 import { useList } from '../paged'
 import { loadFeatures } from '../features'
+import { menu } from '../router'
 import type { PluginField, PluginPreview, PluginView } from '../types'
 
 const { rows, loading, load } = useList(() => admin.get<PluginView[]>('/plugins'))
@@ -28,15 +30,22 @@ const columns: Column[] = [
   { key: 'op', title: '操作', align: 'right', class: 'w-32' },
 ]
 
+// 有独立管理页面的插件（菜单项 feature 等于插件标识），启用后到该页面设置
+const pageOf = (p: PluginView) => menu.find((m) => m.feature === p.code)
+const enabledText = (p: PluginView) => {
+  const page = pageOf(p)
+  return page ? `已启用，请到左侧菜单「${page.title}」中设置` : '已启用'
+}
+
 async function toggle(p: PluginView, v: boolean) {
   if (v && p.db_warning) {
     const tip = `「${p.name}」是编译进程序的 Go 插件，可以直接访问数据库。若它直接写 SQL 修改用户余额，将不会记录余额明细，管理员无法追溯余额来源。请确认插件来源可信后再启用（本插件只提示这一次）。`
-    await confirm(tip, () => admin.post(`/plugins/${p.code}/enable`, { acknowledge: true }), '已启用')
+    await confirm(tip, () => admin.post(`/plugins/${p.code}/enable`, { acknowledge: true }), enabledText(p))
     load()
     loadFeatures()
     return
   }
-  if (await run(() => admin.post(`/plugins/${p.code}/${v ? 'enable' : 'disable'}`), v ? '已启用' : '已停用')) {
+  if (await run(() => admin.post(`/plugins/${p.code}/${v ? 'enable' : 'disable'}`), v ? enabledText(p) : '已停用')) {
     load()
     loadFeatures()
   }
@@ -151,6 +160,9 @@ onMounted(load)
         <div class="flex justify-end gap-0.5">
           <Button variant="ghost" size="icon" class="size-8" title="详情" @click="openDetail(row)"><InfoIcon /></Button>
           <Button v-if="row.fields.length && row.status !== 'missing'" variant="ghost" size="icon" class="size-8" title="配置" @click="openConfig(row)"><SettingsIcon /></Button>
+          <Button v-if="row.enabled && pageOf(row)" as-child variant="ghost" size="icon" class="size-8" :title="`前往「${pageOf(row)!.title}」设置`">
+            <RouterLink :to="pageOf(row)!.path"><ExternalLinkIcon /></RouterLink>
+          </Button>
           <Button v-if="canRemove(row)" variant="ghost" size="icon" class="size-8 text-muted-foreground hover:text-destructive" title="删除" @click="remove(row)"><Trash2Icon /></Button>
         </div>
       </template>
@@ -171,6 +183,7 @@ onMounted(load)
           <dt class="text-muted-foreground">支付方式</dt><dd>{{ join(detail.features.payments) }}</dd>
           <dt class="text-muted-foreground">订阅格式</dt><dd>{{ join(detail.features.formats) }}</dd>
           <dt class="text-muted-foreground">用户端卡片</dt><dd>{{ join(detail.features.widgets || []) }}</dd>
+          <dt class="text-muted-foreground">用户端页面</dt><dd>{{ join(detail.features.pages || []) }}</dd>
           <dt class="text-muted-foreground">路由</dt>
           <dd>
             <div v-for="r in detail.features.routes" :key="r.method + r.path" class="font-mono text-xs">{{ r.method }} {{ r.path }}（{{ r.scope }}）</div>

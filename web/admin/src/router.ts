@@ -22,6 +22,7 @@ const pages: (RouteRecordRaw & { meta: { title: string; group: string; feature?:
   { path: '/machines', component: () => import('./views/Machines.vue'), meta: { title: '节点机', group: '服务器', feature: 'node_machine' } },
   { path: '/plans', component: () => import('./views/Plans.vue'), meta: { title: '订阅管理', group: '财务' } },
   { path: '/orders', component: () => import('./views/Orders.vue'), meta: { title: '订单管理', group: '财务' } },
+  { path: '/balance-logs', component: () => import('./views/BalanceLogs.vue'), meta: { title: '余额明细', group: '财务' } },
   { path: '/coupons', component: () => import('./views/Coupons.vue'), meta: { title: '优惠券管理', group: '财务' } },
   { path: '/giftcards', component: () => import('./views/Giftcards.vue'), meta: { title: '礼品卡管理', group: '财务' } },
   { path: '/users', component: () => import('./views/Users.vue'), meta: { title: '用户管理', group: '用户' } },

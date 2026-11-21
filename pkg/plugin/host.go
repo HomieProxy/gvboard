@@ -54,6 +54,8 @@ type Host interface {
 	SubscribeFormat(f *SubscribeFormat)
 	// Widget 注册用户端卡片，每个插件最多 5 张。插件停用时不显示。
 	Widget(w Widget)
+	// Page 注册用户端页面（出现在侧边导航中），每个插件最多 3 个。插件停用时不显示。
+	Page(p Page)
 }
 
 // Event 事件。Data 为事件数据的 JSON，使用 Decode 解析为对应的类型（如 OrderEvent）。

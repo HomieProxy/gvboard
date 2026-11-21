@@ -42,7 +42,7 @@ const m: Messages = {
     admin: 'Admin panel',
   },
   nav: {
-    groups: { main: '', subscribe: 'Subscription', finance: 'Finance', user: 'User' } as Record<string, string>,
+    groups: { main: '', subscribe: 'Subscription', finance: 'Finance', more: 'More', user: 'User' } as Record<string, string>,
     dashboard: 'Dashboard',
     subscriptions: 'Subscriptions',
     plans: 'Buy plan',
@@ -373,7 +373,13 @@ const m: Messages = {
     source: 'Source',
     wheel: 'Lucky Wheel spin',
   },
+  pluginPage: {
+    notFound: 'This page does not exist or has been disabled',
+    show: 'Show',
+    hide: 'Hide',
+  },
   wheel: {
+    start: 'GO',
     title: 'Lucky Wheel',
     unavailable: 'This event is not available yet',
     noSub: 'You need an active subscription to join the lucky draw',

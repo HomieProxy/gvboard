@@ -40,7 +40,7 @@ export default {
     admin: '管理后台',
   },
   nav: {
-    groups: { main: '', subscribe: '订阅', finance: '财务', user: '用户' } as Record<string, string>,
+    groups: { main: '', subscribe: '订阅', finance: '财务', more: '更多', user: '用户' } as Record<string, string>,
     dashboard: '仪表盘',
     subscriptions: '我的订阅',
     plans: '购买订阅',
@@ -365,7 +365,13 @@ export default {
     source: '来源',
     wheel: '幸运大转盘抽奖',
   },
+  pluginPage: {
+    notFound: '页面不存在或已停用',
+    show: '显示',
+    hide: '隐藏',
+  },
   wheel: {
+    start: '开始',
     title: '幸运大转盘',
     unavailable: '活动暂未开放',
     noSub: '你还没有有效的订阅，暂时无法参与抽奖',

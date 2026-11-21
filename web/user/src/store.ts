@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { formatMoney, nowUnix } from '@gv/shared'
 import { http } from './api'
 import { i18n } from './i18n'
-import type { BizConfig, Subscription, UserInfo, UserStat } from './types'
+import type { BizConfig, PluginPage, Subscription, UserInfo, UserStat } from './types'
 
 // 登录后共享的数据：用户信息、业务设置、订阅列表。
 
@@ -34,10 +34,35 @@ export async function loadSubs() {
   return subs.value
 }
 
+/** 已启用插件的用户端页面；null 表示尚未加载 */
+export const pluginPages = ref<PluginPage[] | null>(null)
+const pagePattern = /^\/[A-Za-z0-9_/-]{0,127}$/
+const codePattern = /^[a-z][a-z0-9_-]{1,31}$/
+const keyPattern = /^[a-z][a-z0-9_]{0,31}$/
+
+export async function loadPluginPages() {
+  try {
+    const list = await http.get<PluginPage[]>('/user/plugin-pages')
+    pluginPages.value = (Array.isArray(list) ? list : []).filter(
+      (p) => codePattern.test(p.plugin) && keyPattern.test(p.key) && pagePattern.test(p.content) && typeof p.title === 'string',
+    )
+  } catch {
+    pluginPages.value = []
+  }
+  return pluginPages.value
+}
+
+/** 插件页面在当前语言下的标题 */
+export function pageTitle(p: PluginPage): string {
+  const s = p.titles?.[String(i18n.global.locale.value)] || p.title
+  return [...s].slice(0, 24).join('')
+}
+
 export function clearSession() {
   me.value = null
   stat.value = null
   subs.value = []
+  pluginPages.value = null
 }
 
 /** 金额（分）加货币符号 */

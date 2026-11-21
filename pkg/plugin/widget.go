@@ -16,6 +16,11 @@ const (
 	IconSparkles      = "sparkles"
 	IconCoins         = "coins"
 	IconMegaphone     = "megaphone"
+	IconFerrisWheel   = "ferris-wheel"
+	IconKey           = "key"
+	IconUsers         = "users"
+	IconBook          = "book"
+	IconShield        = "shield"
 )
 
 // Widget 用户端卡片，在 Setup 中通过 Host.Widget 注册。

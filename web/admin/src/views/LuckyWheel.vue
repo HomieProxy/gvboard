@@ -40,6 +40,7 @@ interface WheelLog {
   user_id: number
   email: string
   subscription_id: number
+  subscription_name: string
   prize_name: string
   prize_type: PrizeType
   prize_value: number
@@ -146,10 +147,11 @@ const { rows, loading, pager, load, reload, setPage, setPageSize } = usePaged<Wh
 const columns: Column[] = [
   { key: 'created_at', title: '时间', class: 'w-40' },
   { key: 'email', title: '用户' },
-  { key: 'subscription_id', title: '订阅 ID', class: 'w-24' },
+  { key: 'subscription_id', title: '订阅' },
   { key: 'prize', title: '奖品' },
   { key: 'cost', title: '消耗', align: 'right' },
 ]
+const subLabel = (l: WheelLog) => (l.subscription_name ? `${l.subscription_name}（#${l.subscription_id}）` : `#${l.subscription_id}`)
 function prizeText(l: WheelLog) {
   switch (l.prize_type) {
     case 'balance':
@@ -277,7 +279,9 @@ onMounted(() => {
         <DataTable :columns="columns" :rows="rows" :loading="loading">
           <template #cell-created_at="{ row }"><span class="whitespace-nowrap text-xs">{{ formatTime(row.created_at) }}</span></template>
           <template #cell-email="{ row }">{{ row.email || `#${row.user_id}` }}</template>
-          <template #cell-subscription_id="{ row }"><span class="tabular-nums">{{ row.subscription_id }}</span></template>
+          <template #cell-subscription_id="{ row }">
+            <span class="block max-w-48 truncate" :title="subLabel(row)">{{ subLabel(row) }}</span>
+          </template>
           <template #cell-prize="{ row }">
             <span class="font-medium">{{ row.prize_name }}</span>
             <span v-if="row.prize_type !== 'none'" class="text-muted-foreground"> · {{ prizeText(row) }}</span>

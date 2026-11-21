@@ -287,6 +287,7 @@ export interface PluginView {
     payments: string[]
     formats: string[]
     widgets?: string[]
+    pages?: string[]
   }
   package?: { sha256: string; size: number; http: string[]; permissions: { key: string; description: string }[] }
 }

@@ -42,6 +42,7 @@ type Features struct {
 	Payments []string    `json:"payments"`
 	Formats  []string    `json:"formats"`
 	Widgets  []string    `json:"widgets"`
+	Pages    []string    `json:"pages"`
 }
 
 // View 管理端插件信息。
@@ -111,7 +112,7 @@ func (m *Manager) view(e *entry, row *model.Plugin) View {
 		v.Status, v.Error = StatusError, e.err
 		v.Enabled = false
 	}
-	f := Features{Events: []string{}, Filters: []string{}, Jobs: []string{}, Payments: append([]string{}, e.pays...), Formats: []string{}, Widgets: []string{}}
+	f := Features{Events: []string{}, Filters: []string{}, Jobs: []string{}, Payments: append([]string{}, e.pays...), Formats: []string{}, Widgets: []string{}, Pages: []string{}}
 	for name := range e.events {
 		f.Events = append(f.Events, name)
 	}
@@ -129,6 +130,9 @@ func (m *Manager) view(e *entry, row *model.Plugin) View {
 	for _, w := range e.widgets {
 		f.Widgets = append(f.Widgets, w.Title+" ("+w.Key+")")
 	}
+	for _, p := range e.pages {
+		f.Pages = append(f.Pages, p.Title+" (/plugin/"+e.code+"/"+p.Key+")")
+	}
 	f.Routes = e.routes()
 	v.Features = f
 	return v
@@ -144,7 +148,7 @@ func missingView(row *model.Plugin) View {
 	return View{
 		Info: sdk.Info{Code: row.Code, Name: row.Code, Version: row.Version}, Type: row.Type, Status: StatusMissing,
 		Enabled: row.Enabled == 1, InstalledAt: row.CreatedAt, Fields: []sdk.Field{}, Config: cfg,
-		Features: Features{Events: []string{}, Filters: []string{}, Routes: []routeInfo{}, Jobs: []string{}, Payments: []string{}, Formats: []string{}, Widgets: []string{}},
+		Features: Features{Events: []string{}, Filters: []string{}, Routes: []routeInfo{}, Jobs: []string{}, Payments: []string{}, Formats: []string{}, Widgets: []string{}, Pages: []string{}},
 	}
 }
 
@@ -344,6 +348,8 @@ func callTimeout(ctx context.Context, d time.Duration, fn func(ctx context.Conte
 // Register 挂载路由：
 //
 //	ANY {api}/plugin/{code}/*                       插件访客 / 用户路由
+//	GET    {api}/user/plugin-widgets                已启用插件的用户端卡片（slot）
+//	GET    {api}/user/plugin-pages                  已启用插件的用户端页面
 //	ANY {api}/{secure_path}/plugin/{code}/*         插件管理端路由
 //	GET    {api}/{secure_path}/plugins              插件列表
 //	GET    {api}/{secure_path}/plugins/{code}       插件详情
@@ -356,6 +362,7 @@ func callTimeout(ctx context.Context, d time.Duration, fn func(ctx context.Conte
 func (m *Manager) Register(r *server.Router) {
 	r.API.Any("/plugin/:code/*path", m.serve(false))
 	r.API.GET("/user/plugin-widgets", m.Auth.RequireUser(), m.userWidgets)
+	r.API.GET("/user/plugin-pages", m.Auth.RequireUser(), func(c *gin.Context) { httpx.OK(c, m.Pages()) })
 	a := m.Auth.AdminGroup(r.API, func() string { return m.Settings.String("secure_path") })
 	a.Any("/plugin/:code/*path", m.serve(true))
 	a.GET("/plugins", func(c *gin.Context) { reply[[]View](c)(m.List(c.Request.Context())) })

@@ -6,6 +6,8 @@ import { copyText } from '../format'
 
 // 公告、文档由管理员编写，允许 HTML（与原项目一致）
 const md = new MarkdownIt({ html: true, linkify: true, breaks: true })
+// 插件页面等不受信任的内容：不解析 HTML 与图片
+const safeMd = new MarkdownIt({ html: false, linkify: true, breaks: true }).disable('image')
 
 // 以 HTML 块开头的内容按 HTML 原样显示：交给 Markdown 解析时，缩进的 HTML 行会被当成代码块
 const htmlStart = /^\s*<(!--|!doctype|html|head|body|style|div|section|article|header|main|center|table|p|h[1-6]|ul|ol)\b/i
@@ -13,7 +15,7 @@ const htmlStart = /^\s*<(!--|!doctype|html|head|body|style|div|section|article|h
 // 完整 HTML 文档里 html / body 的样式在 Shadow DOM 中没有对应元素，改为作用于内容容器
 const docSelector = /(^|[\s,{}])(html|body)(?=\s*[,{.:#[>~+\s])/g
 
-const props = defineProps<{ source: string | null | undefined }>()
+const props = defineProps<{ source: string | null | undefined; safe?: boolean }>()
 const emit = defineEmits<{ copied: [ok: boolean] }>()
 
 // 内容中带 data-copy 属性的元素点击即复制属性值（不需要在内容中写脚本），复制后 1.5 秒内带 data-copied 属性
@@ -30,6 +32,7 @@ async function onClick(e: Event) {
 }
 const html = computed(() => {
   const s = props.source || ''
+  if (props.safe) return safeMd.render(s)
   return htmlStart.test(s) ? s : md.render(s)
 })
 

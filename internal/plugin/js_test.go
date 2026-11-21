@@ -806,6 +806,16 @@ func TestJSPermissionsAndLoadErrors(t *testing.T) {
 			t.Fatalf("注册内容不一致的运行时应拒绝：%v", err)
 		}
 
+		// 注册用户端页面
+		install(t, m, makeZip(t, map[string]string{
+			"plugin.json": simpleManifest("jspageok", "1"),
+			"main.js": `plugin.page({ key: 'shared', title: '共享账号', titles: { 'en-US': 'Shared ID' }, icon: 'key', group: 'user', content: '/page' });
+plugin.route('user', 'GET', '/page', function () { return { blocks: [{ type: 'alert', text: 'hi' }] }; });`,
+		}))
+		if v := statusOf(t, m, "jspageok"); v.Status != StatusOK || len(v.Features.Pages) != 1 || v.Features.Pages[0] != "共享账号 (/plugin/jspageok/shared)" {
+			t.Fatalf("JS 插件页面注册错误：%+v", v)
+		}
+
 		// 加载失败：脚本错误、未知事件、死循环、栈溢出、注册数量超限
 		for code, main := range map[string]string{
 			"jsthrow": `throw new Error('初始化失败');`,
@@ -819,6 +829,9 @@ func TestJSPermissionsAndLoadErrors(t *testing.T) {
 			"jswidg":  `plugin.widget('x');`,
 			"jswidg2": `plugin.widget({ key: 'a', slot: 'dashboard', title: 't', state: '/../x' });`,
 			"jswidg3": `for (var i = 0; i < 6; i++) plugin.widget({ key: 'k' + i, slot: 'dashboard', title: 't', state: '/w' });`,
+			"jspage":  `plugin.page('x');`,
+			"jspage2": `plugin.page({ key: 'a', title: 't', content: '/../x' });`,
+			"jspage3": `for (var i = 0; i < 4; i++) plugin.page({ key: 'k' + i, title: 't', content: '/p' });`,
 		} {
 			v := install(t, m, makeZip(t, map[string]string{"plugin.json": simpleManifest(code, "1"), "main.js": main}))
 			if v.Status != StatusError || v.Error == "" {

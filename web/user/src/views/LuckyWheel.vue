@@ -65,24 +65,59 @@ function subLabel(id: number) {
   return s ? subName(s) : `#${id}`
 }
 
-// 转盘扇区：角度从正上方顺时针计算
-const R = 140
+// 转盘扇区：角度从正上方顺时针计算，指针固定在正上方
+const C = 160
+const R = 136
 const point = (deg: number, r = R) => {
   const a = (deg * Math.PI) / 180
-  return `${(150 + r * Math.sin(a)).toFixed(2)} ${(150 - r * Math.cos(a)).toFixed(2)}`
+  return `${(C + r * Math.sin(a)).toFixed(2)} ${(C - r * Math.cos(a)).toFixed(2)}`
+}
+const palette = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+/** 扇区颜色：相邻（含首尾）不同色 */
+function colorOf(i: number, n: number) {
+  const c = i % palette.length
+  return i === n - 1 && n > 1 && c === 0 ? palette[2] : palette[c]
 }
 const sectors = computed(() =>
   prizes.value.map((p, i) => {
+    const n = prizes.value.length
     const a0 = i * seg.value
-    const a1 = a0 + seg.value
-    const path =
-      prizes.value.length === 1
-        ? `M 150 10 A ${R} ${R} 0 1 1 149.99 10 Z`
-        : `M 150 150 L ${point(a0)} A ${R} ${R} 0 ${seg.value > 180 ? 1 : 0} 1 ${point(a1)} Z`
-    return { path, mid: a0 + seg.value / 2, label: [...p.name].slice(0, 8).join(''), even: i % 2 === 0 }
+    const mid = a0 + seg.value / 2
+    // 文字沿半径方向，右半边从外向内读、左半边翻转，始终保持正向
+    const right = mid < 180
+    return {
+      path: `M ${C} ${C} L ${point(a0)} A ${R} ${R} 0 ${seg.value > 180 ? 1 : 0} 1 ${point(a0 + seg.value)} Z`,
+      color: colorOf(i, n),
+      line: `M ${C} ${C} L ${point(a0)}`,
+      rotate: right ? mid - 90 : mid + 90,
+      x: right ? C + R - 14 : C - R + 14,
+      anchor: right ? 'end' : 'start',
+      name: [...p.name].slice(0, 6).join(''),
+      sub: p.type === 'none' ? '' : describe(p.type, p.value),
+    }
   }),
 )
 const fontSize = computed(() => (prizes.value.length > 8 ? 11 : 13))
+const bulbs = Array.from({ length: 24 }, (_, i) => {
+  const a = (i * 15 * Math.PI) / 180
+  return { x: C + 148 * Math.sin(a), y: C - 148 * Math.cos(a), odd: i % 2 === 1 }
+})
+const winIndex = ref<number | null>(null)
+
+/** 中心按钮：有免费次数时免费抽，否则使用第一个可用的付费方式 */
+const centerPay = computed<'free' | 'balance' | 'traffic' | null>(() => {
+  const i = info.value
+  if (!i || !usable.value.length) return null
+  if (i.free_left > 0) return 'free'
+  if (!paidLeft.value) return null
+  if (i.balance_enable) return 'balance'
+  if (i.traffic_enable) return 'traffic'
+  return null
+})
+function centerClick() {
+  if (spinning.value || !subID.value || !centerPay.value) return
+  start(centerPay.value === 'free' ? undefined : centerPay.value)
+}
 
 async function loadInfo() {
   try {
@@ -112,6 +147,7 @@ async function draw(pay?: 'balance' | 'traffic') {
   if (spinning.value || !subID.value) return
   const r = await http.post<WheelResult>(`${base}/draw`, { subscription_id: subID.value, pay })
   result.value = null
+  winIndex.value = null
   spinning.value = true
   // 把抽中的扇区中心转到正上方的指针处，至少转 6 圈
   const target = 360 - (r.index + 0.5) * seg.value
@@ -120,6 +156,7 @@ async function draw(pay?: 'balance' | 'traffic') {
   timer = setTimeout(async () => {
     spinning.value = false
     result.value = r.prize
+    winIndex.value = r.index
     toast(r.prize.type === 'none' ? 'info' : 'success', r.prize.type === 'none' ? t('wheel.none') : t('wheel.won', { name: r.prize.name }))
     page.value = 1
     await Promise.all([loadInfo(), loadRecords(), loadMe().catch(() => {}), loadSubs().catch(() => {})])
@@ -159,34 +196,57 @@ onBeforeUnmount(() => clearTimeout(timer))
     </Card>
     <template v-else>
       <div class="grid gap-4 lg:grid-cols-[minmax(0,420px)_1fr]">
-        <Card class="py-6">
+        <Card class="overflow-hidden py-6">
           <CardContent class="flex justify-center px-4">
-            <Skeleton v-if="loading" class="aspect-square w-full max-w-[360px] rounded-full" />
-            <div v-else class="relative w-full max-w-[360px]">
-              <svg viewBox="0 0 300 300" class="w-full drop-shadow-sm">
-                <circle cx="150" cy="150" r="146" class="fill-primary/15" />
-                <g :style="{ transform: `rotate(${angle}deg)`, transformOrigin: '150px 150px', transition: spinning ? `transform ${SPIN_MS}ms cubic-bezier(0.15, 0.6, 0.1, 1)` : 'none' }">
-                  <g v-for="(s, i) in sectors" :key="i">
-                    <path :d="s.path" :class="s.even ? 'fill-primary' : 'fill-muted'" class="stroke-background" stroke-width="1.5" />
-                    <text
-                      x="150"
-                      y="42"
-                      text-anchor="middle"
-                      :font-size="fontSize"
-                      font-weight="600"
-                      :class="s.even ? 'fill-primary-foreground' : 'fill-foreground'"
-                      :transform="`rotate(${s.mid} 150 150)`"
-                    >
-                      {{ s.label }}
+            <Skeleton v-if="loading" class="aspect-square w-full max-w-[400px] rounded-full" />
+            <div v-else class="wheel relative w-full max-w-[400px] text-primary" :class="{ spinning }">
+              <svg viewBox="0 0 320 320" class="w-full select-none">
+                <defs>
+                  <radialGradient id="wheel-rim" cx="50%" cy="40%" r="60%">
+                    <stop offset="0%" stop-color="currentColor" stop-opacity="0.85" />
+                    <stop offset="100%" stop-color="currentColor" />
+                  </radialGradient>
+                  <radialGradient id="wheel-hub" cx="50%" cy="35%" r="65%">
+                    <stop offset="0%" stop-color="#ffffff" />
+                    <stop offset="100%" stop-color="#e2e8f0" />
+                  </radialGradient>
+                  <filter id="wheel-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-opacity="0.3" />
+                  </filter>
+                </defs>
+                <!-- 外圈与灯珠 -->
+                <circle :cx="C" :cy="C" r="158" fill="url(#wheel-rim)" />
+                <circle :cx="C" :cy="C" r="141" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="2" />
+                <circle v-for="(b, i) in bulbs" :key="i" :cx="b.x" :cy="b.y" r="4" class="bulb" :class="b.odd ? 'odd' : ''" />
+                <!-- 转动部分 -->
+                <g :style="{ transform: `rotate(${angle}deg)`, transformOrigin: `${C}px ${C}px`, transition: spinning ? `transform ${SPIN_MS}ms cubic-bezier(0.15, 0.6, 0.1, 1)` : 'none' }">
+                  <g v-for="(s, i) in sectors" :key="i" :opacity="winIndex !== null && winIndex !== i ? 0.55 : 1" class="transition-opacity duration-500">
+                    <path :d="s.path" :fill="s.color" />
+                    <text :transform="`rotate(${s.rotate} ${C} ${C})`" :x="s.x" :y="C" :text-anchor="s.anchor" fill="#ffffff" class="wheel-text">
+                      <tspan :font-size="fontSize" font-weight="700" :dy="s.sub ? -3 : 4">{{ s.name }}</tspan>
+                      <tspan v-if="s.sub" :x="s.x" dy="14" :font-size="fontSize - 3" font-weight="500" opacity="0.9">{{ s.sub }}</tspan>
                     </text>
                   </g>
+                  <path v-for="(s, i) in sectors" :key="`l${i}`" :d="s.line" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1.5" />
+                  <circle :cx="C" :cy="C" :r="R" fill="none" stroke="#ffffff" stroke-opacity="0.6" stroke-width="2" />
                 </g>
-                <circle cx="150" cy="150" r="30" class="fill-background stroke-primary" stroke-width="3" />
-                <path d="M 150 2 L 162 26 L 138 26 Z" class="fill-primary stroke-background" stroke-width="2" />
+                <!-- 中心指针（固定不动，箭头指向正上方的中奖扇区） -->
+                <g filter="url(#wheel-shadow)">
+                  <path :d="`M ${C} ${C - 74} L ${C + 15} ${C - 30} L ${C - 15} ${C - 30} Z`" fill="currentColor" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" />
+                  <circle :cx="C" :cy="C" r="38" fill="currentColor" stroke="#ffffff" stroke-width="3" />
+                  <circle :cx="C" :cy="C" r="30" fill="url(#wheel-hub)" />
+                </g>
               </svg>
-              <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <GiftIcon class="size-7 text-primary" :class="{ 'animate-pulse': spinning }" />
-              </div>
+              <button
+                type="button"
+                class="absolute top-1/2 left-1/2 flex size-[19%] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full font-bold text-primary transition-transform enabled:hover:scale-105 enabled:active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="spinning || !centerPay || !subID"
+                :title="centerPay ? t('wheel.start') : t('wheel.noChance')"
+                @click="centerClick"
+              >
+                <GiftIcon v-if="spinning" class="size-6 animate-pulse" />
+                <span v-else class="text-sm leading-none sm:text-base">{{ t('wheel.start') }}</span>
+              </button>
             </div>
           </CardContent>
         </Card>
@@ -241,7 +301,7 @@ onBeforeUnmount(() => clearTimeout(timer))
                 <div class="mb-2 text-sm font-medium">{{ t('wheel.prizes') }}</div>
                 <ul class="grid gap-1.5 text-sm sm:grid-cols-2">
                   <li v-for="(p, i) in info.prizes" :key="i" class="flex items-center gap-2">
-                    <span class="size-2 shrink-0 rounded-full" :class="i % 2 === 0 ? 'bg-primary' : 'bg-muted-foreground/40'" />
+                    <span class="size-2.5 shrink-0 rounded-full" :style="{ background: colorOf(i, info.prizes.length) }" />
                     <span class="truncate">{{ p.name }}</span>
                     <span v-if="p.type !== 'none'" class="shrink-0 text-muted-foreground">{{ describe(p.type, p.value) }}</span>
                   </li>
@@ -273,3 +333,40 @@ onBeforeUnmount(() => clearTimeout(timer))
     </template>
   </div>
 </template>
+
+<style scoped>
+.wheel-text {
+  paint-order: stroke;
+  stroke: rgb(0 0 0 / 0.18);
+  stroke-width: 2px;
+}
+.bulb {
+  fill: #fde68a;
+  animation: bulb 1.2s ease-in-out infinite;
+}
+.bulb.odd {
+  animation-delay: 0.6s;
+}
+.spinning .bulb {
+  animation-duration: 0.3s;
+}
+.spinning .bulb.odd {
+  animation-delay: 0.15s;
+}
+@keyframes bulb {
+  0%,
+  100% {
+    fill: #fef9c3;
+    opacity: 1;
+  }
+  50% {
+    fill: #f59e0b;
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bulb {
+    animation: none;
+  }
+}
+</style>

@@ -31,6 +31,7 @@ type Module struct {
 //	DELETE users/:id                          删除用户
 //	POST   users/:id/inviter                  设置 / 清除邀请人
 //	GET    users/:id/balance-logs             余额变动日志（type、current、page_size）
+//	GET    balance-logs                       全站余额变动日志（另可按 email、since、until 筛选）
 //	POST   users/:id/subscriptions            新开订阅
 //	PUT    subscriptions/:id                  修改订阅
 //	DELETE subscriptions/:id                  删除订阅
@@ -49,6 +50,7 @@ func (m *Module) Register(r *server.Router) {
 	a.DELETE("/users/:id", m.delete)
 	a.POST("/users/:id/inviter", m.inviter)
 	a.GET("/users/:id/balance-logs", m.balanceLogs)
+	a.GET("/balance-logs", m.allBalanceLogs)
 	a.POST("/users/:id/subscriptions", m.createSub)
 	a.PUT("/subscriptions/:id", m.updateSub)
 	a.DELETE("/subscriptions/:id", m.deleteSub)
@@ -215,6 +217,16 @@ func (m *Module) balanceLogs(c *gin.Context) {
 		return
 	}
 	v, err := m.Svc.BalanceLogs(c.Request.Context(), id, q)
+	respond(c, v, err)
+}
+
+func (m *Module) allBalanceLogs(c *gin.Context) {
+	var q BalanceLogQuery
+	if c.ShouldBindQuery(&q) != nil {
+		httpx.Fail(c, errInvalid)
+		return
+	}
+	v, err := m.Svc.AllBalanceLogs(c.Request.Context(), q)
 	respond(c, v, err)
 }
 

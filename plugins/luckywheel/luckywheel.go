@@ -2,6 +2,7 @@
 // 奖品为余额、订阅时长、本周期流量或谢谢惠顾，由管理员在管理端「幸运转盘」页面配置。
 //
 //	GET  {api}/plugin/lucky_wheel/widget    仪表盘卡片状态
+//	GET  {api}/plugin/lucky_wheel/page      用户端页面内容（未适配转盘界面的主题使用）
 //	GET  {api}/plugin/lucky_wheel/info      转盘信息（奖品、今日剩余次数、付费方式）
 //	POST {api}/plugin/lucky_wheel/draw      抽奖 {subscription_id, pay: balance|traffic}
 //	GET  {api}/plugin/lucky_wheel/records   我的抽奖记录
@@ -28,6 +29,9 @@ import (
 // Code 插件标识。
 const Code = "lucky_wheel"
 
+// PagePath 用户端转盘页面地址。
+const PagePath = "/plugin/" + Code + "/wheel"
+
 // Cooldown 同一用户两次抽奖的最小间隔，0 表示不限制。
 var Cooldown = 3 * time.Second
 
@@ -38,11 +42,14 @@ type Plugin struct{}
 
 func (Plugin) Info() sdk.Info {
 	return sdk.Info{Code: Code, Name: "幸运大转盘", Version: "1.0.0", Author: "Gvboard",
-		Description: "用户在仪表盘进入转盘抽奖，奖品为余额、订阅时长、本周期流量；奖品与概率在管理端「幸运转盘」页面配置"}
+		Description: "用户端导航与仪表盘卡片进入转盘抽奖，奖品为余额、订阅时长、本周期流量；奖品与概率在管理端「幸运转盘」页面配置"}
 }
 
 func (Plugin) Setup(h sdk.Host) error {
 	h.Widget(sdk.Widget{Key: "wheel", Slot: sdk.SlotDashboard, Title: "幸运大转盘", Icon: sdk.IconGift, State: "/widget"})
+	h.Page(sdk.Page{Key: "wheel", Title: "幸运大转盘", Icon: sdk.IconFerrisWheel, Group: sdk.NavMore, Content: "/page", Titles: map[string]string{
+		"zh-TW": "幸運大轉盤", "en-US": "Lucky Wheel", "ja-JP": "ラッキールーレット", "ko-KR": "행운의 룰렛", "vi-VN": "Vòng quay may mắn", "fa-IR": "گردونه شانس",
+	}})
 	h.Job("clean", "40 3 * * *", func(ctx context.Context) error { return clean(ctx, h) })
 
 	r := h.UserRoutes()
@@ -66,7 +73,30 @@ func (Plugin) Setup(h sdk.Host) error {
 		} else if s.FreeDaily > 0 {
 			text = "今日免费次数已用完，明天再来"
 		}
-		sdk.OK(c, sdk.WidgetState{Text: text, Actions: []sdk.WidgetAction{{Label: "去参加", Link: "/lucky-wheel"}}})
+		sdk.OK(c, sdk.WidgetState{Text: text, Actions: []sdk.WidgetAction{{Label: "去参加", Link: PagePath}}})
+	})
+	// 未适配转盘界面的主题按区块显示活动说明
+	r.GET("/page", func(c *gin.Context) {
+		ctx := c.Request.Context()
+		s, err := load(ctx, h)
+		if err != nil {
+			sdk.OK(c, sdk.PageContent{Blocks: []sdk.Block{{Type: sdk.BlockAlert, Tone: sdk.ToneWarning, Text: "活动暂未开放"}}})
+			return
+		}
+		info, err := userInfo(ctx, h, s, sdk.CurrentUser(c).ID)
+		if err != nil {
+			sdk.Fail(c, http.StatusInternalServerError, "服务繁忙")
+			return
+		}
+		rows := make([][]string, 0, len(s.Prizes))
+		for _, p := range s.Prizes {
+			rows = append(rows, []string{p.Name, p.describe()})
+		}
+		sdk.OK(c, sdk.PageContent{Blocks: []sdk.Block{
+			{Type: sdk.BlockAlert, Tone: sdk.ToneInfo, Text: "当前主题暂不支持转盘抽奖界面，请切换到默认主题参与活动。"},
+			{Type: sdk.BlockFields, Fields: []sdk.PageField{{Label: "今日剩余免费次数", Value: strconv.FormatInt(info.FreeLeft, 10)}}},
+			{Type: sdk.BlockTable, Title: "奖品", Columns: []string{"名称", "内容"}, Rows: rows},
+		}})
 	})
 	r.GET("/info", func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -210,7 +240,8 @@ func page(c *gin.Context) (int, int) {
 
 type adminRecord struct {
 	model.LuckyWheelLog
-	Email string `json:"email"`
+	Email            string `json:"email"`
+	SubscriptionName string `json:"subscription_name"`
 }
 
 func adminRecords(c *gin.Context, h sdk.Host) {
@@ -230,12 +261,20 @@ func adminRecords(c *gin.Context, h sdk.Host) {
 		return
 	}
 	ids := make([]int64, 0, len(logs))
+	subIDs := make([]int64, 0, len(logs))
 	for _, l := range logs {
 		ids = append(ids, l.UserID)
+		subIDs = append(subIDs, l.SubscriptionID)
 	}
 	var users []model.User
+	var subs []model.Subscription
 	if len(ids) > 0 {
-		if err := h.DB().WithContext(c.Request.Context()).Select("id", "email").Where("id IN ?", ids).Find(&users).Error; err != nil {
+		db := h.DB().WithContext(c.Request.Context())
+		if err := db.Select("id", "email").Where("id IN ?", ids).Find(&users).Error; err != nil {
+			sdk.Fail(c, http.StatusInternalServerError, "服务繁忙")
+			return
+		}
+		if err := db.Select("id", "name").Where("id IN ?", subIDs).Find(&subs).Error; err != nil {
 			sdk.Fail(c, http.StatusInternalServerError, "服务繁忙")
 			return
 		}
@@ -244,9 +283,13 @@ func adminRecords(c *gin.Context, h sdk.Host) {
 	for _, u := range users {
 		emails[u.ID] = u.Email
 	}
+	names := make(map[int64]string, len(subs))
+	for _, s := range subs {
+		names[s.ID] = s.Name
+	}
 	rows := make([]adminRecord, 0, len(logs))
 	for _, l := range logs {
-		rows = append(rows, adminRecord{LuckyWheelLog: l, Email: emails[l.UserID]})
+		rows = append(rows, adminRecord{LuckyWheelLog: l, Email: emails[l.UserID], SubscriptionName: names[l.SubscriptionID]})
 	}
 	sdk.OK(c, gin.H{"data": rows, "total": total})
 }

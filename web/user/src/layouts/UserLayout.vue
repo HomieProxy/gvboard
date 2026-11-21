@@ -12,8 +12,9 @@ import { Avatar, AvatarFallback, AvatarImage } from '@gv/shared/ui/avatar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@gv/shared/ui/dropdown-menu'
 import { cfg, http, setToken } from '../api'
 import { confirm } from '../ui'
-import { nav } from '../router'
-import { clearSession, loadBiz, loadMe, me } from '../store'
+import { nav, navGroups, pluginNavKey, type NavItem } from '../router'
+import { clearSession, loadBiz, loadMe, loadPluginPages, me, pageTitle, pluginPages } from '../store'
+import { pluginIcon } from '../pluginIcons'
 import TopActions from '../components/TopActions.vue'
 import { rtl } from '../i18n'
 import type { Session } from '../types'
@@ -22,17 +23,24 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 
-const groups = computed(() => {
-  const out: { name: string; items: typeof nav }[] = []
-  for (const n of nav) {
-    let g = out.find((x) => x.name === n.group)
-    if (!g) out.push((g = { name: n.group, items: [] }))
-    g.items.push(n)
-  }
-  return out
-})
-const active = computed(() => String(route.meta.nav || ''))
-const current = computed(() => nav.find((n) => n.key === active.value))
+const items = computed<NavItem[]>(() => [
+  ...nav,
+  ...(pluginPages.value || []).map((p) => ({
+    path: `/plugin/${p.plugin}/${p.key}`,
+    key: pluginNavKey(p.plugin, p.key),
+    icon: pluginIcon(p.icon),
+    group: navGroups.includes(p.group) ? p.group : 'more',
+    title: pageTitle(p),
+  })),
+])
+const groups = computed(() =>
+  navGroups.map((name) => ({ name, items: items.value.filter((n) => n.group === name) })).filter((g) => g.items.length),
+)
+const active = computed(() =>
+  route.params.plugin ? pluginNavKey(String(route.params.plugin), String(route.params.key)) : String(route.meta.nav || ''),
+)
+const current = computed(() => items.value.find((n) => n.key === active.value))
+const label = (n: NavItem) => n.title || t(`nav.${n.key}`)
 const logoFailed = ref(false)
 
 async function logout() {
@@ -53,6 +61,7 @@ async function logout() {
 onMounted(() => {
   loadMe().catch(() => {})
   loadBiz().catch(() => {})
+  loadPluginPages()
 })
 </script>
 
@@ -83,12 +92,12 @@ onMounted(() => {
                 <SidebarMenuButton
                   as-child
                   :is-active="active === n.key"
-                  :tooltip="t(`nav.${n.key}`)"
+                  :tooltip="label(n)"
                   class="h-9 data-[active=true]:bg-sidebar-primary data-[active=true]:text-sidebar-primary-foreground data-[active=true]:shadow-sm data-[active=true]:hover:bg-sidebar-primary/90 data-[active=true]:hover:text-sidebar-primary-foreground"
                 >
                   <RouterLink :to="n.path">
                     <component :is="n.icon" />
-                    <span>{{ t(`nav.${n.key}`) }}</span>
+                    <span>{{ label(n) }}</span>
                   </RouterLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -127,7 +136,7 @@ onMounted(() => {
       <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-card/90 px-4 backdrop-blur">
         <SidebarTrigger class="-ms-1" />
         <Separator orientation="vertical" class="me-1 data-[orientation=vertical]:h-4" />
-        <span class="truncate text-sm font-medium">{{ current ? t(`nav.${current.key}`) : '' }}</span>
+        <span class="truncate text-sm font-medium">{{ current ? label(current) : '' }}</span>
         <div class="ms-auto"><TopActions /></div>
       </header>
       <main class="flex-1">

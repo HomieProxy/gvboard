@@ -1,33 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, type Component } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import {
-  CalendarCheckIcon, CoinsIcon, GiftIcon, MegaphoneIcon, PuzzleIcon, SparklesIcon, StarIcon, TicketIcon, TrophyIcon,
-} from '@lucide/vue'
 import { Card, CardContent } from '@gv/shared/ui/card'
 import { Button } from '@gv/shared/ui/button'
 import { Skeleton } from '@gv/shared/ui/skeleton'
 import { http } from '../api'
 import { confirm, errText, toast } from '../ui'
 import { loadMe } from '../store'
+import { pluginIcon } from '../pluginIcons'
 import type { PluginWidget, PluginWidgetState } from '../types'
 
 const props = defineProps<{ position: string }>()
 const { t } = useI18n()
 const router = useRouter()
 
-const icons: Record<string, Component> = {
-  puzzle: PuzzleIcon,
-  gift: GiftIcon,
-  'calendar-check': CalendarCheckIcon,
-  star: StarIcon,
-  trophy: TrophyIcon,
-  ticket: TicketIcon,
-  sparkles: SparklesIcon,
-  coins: CoinsIcon,
-  megaphone: MegaphoneIcon,
-}
 // 插件只能请求自己路由前缀下的路径、跳转到站内页面
 const pathPattern = /^\/[A-Za-z0-9_/-]{0,127}$/
 const valid = (p: unknown): p is string => typeof p === 'string' && pathPattern.test(p)
@@ -124,7 +111,7 @@ onMounted(async () => {
       <Card v-for="it in visible" :key="it.id" class="gap-0 py-4">
         <CardContent class="flex items-start gap-4 px-4">
           <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <component :is="icons[it.w.icon] || PuzzleIcon" class="size-4.5" />
+            <component :is="pluginIcon(it.w.icon)" class="size-4.5" />
           </div>
           <div class="min-w-0 flex-1 space-y-1">
             <div class="flex items-baseline justify-between gap-2">

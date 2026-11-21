@@ -133,6 +133,9 @@ func (p *jsPlugin) Setup(h sdk.Host) error {
 	for _, w := range vm.widgets {
 		h.Widget(w)
 	}
+	for _, pg := range vm.pages {
+		h.Page(pg)
+	}
 	p.pool <- vm
 	return nil
 }
@@ -247,6 +250,7 @@ type jsVM struct {
 	jobs       []goja.Callable
 	jobMeta    []jsJobMeta
 	widgets    []sdk.Widget
+	pages      []sdk.Page
 	onEnable   goja.Callable
 	onDisable  goja.Callable
 
@@ -265,7 +269,7 @@ func (vm *jsVM) shape() string {
 	for _, n := range names {
 		fmt.Fprintf(&b, "e:%s:%d;", n, len(vm.events[n]))
 	}
-	fmt.Fprintf(&b, "%v|%v|%v|%v|%v|%v", vm.filterMeta, vm.routeMeta, vm.jobMeta, vm.widgets, vm.onEnable != nil, vm.onDisable != nil)
+	fmt.Fprintf(&b, "%v|%v|%v|%v|%v|%v|%v", vm.filterMeta, vm.routeMeta, vm.jobMeta, vm.widgets, vm.pages, vm.onEnable != nil, vm.onDisable != nil)
 	return b.String()
 }
 
@@ -602,6 +606,22 @@ func (vm *jsVM) install() error {
 			vm.throwf("最多注册 %d 张卡片", maxWidgets)
 		}
 		vm.widgets = append(vm.widgets, w)
+		return goja.Undefined()
+	})
+	vm.set(pl, "page", func(call goja.FunctionCall) goja.Value {
+		vm.mustSetup("页面")
+		var pg sdk.Page
+		b, err := vm.toJSON(call.Argument(0))
+		if err == nil {
+			err = json.Unmarshal(b, &pg)
+		}
+		if err != nil || b == nil {
+			vm.throwf("页面参数必须是对象")
+		}
+		if len(vm.pages) >= maxPages {
+			vm.throwf("最多注册 %d 个页面", maxPages)
+		}
+		vm.pages = append(vm.pages, pg)
 		return goja.Undefined()
 	})
 	vm.set(pl, "onEnable", func(call goja.FunctionCall) goja.Value {

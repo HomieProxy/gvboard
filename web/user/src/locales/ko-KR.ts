@@ -42,7 +42,7 @@ const m: Messages = {
     admin: '관리자 페이지',
   },
   nav: {
-    groups: { main: '', subscribe: '구독', finance: '재무', user: '사용자' } as Record<string, string>,
+    groups: { main: '', subscribe: '구독', finance: '재무', more: '더보기', user: '사용자' } as Record<string, string>,
     dashboard: '대시보드',
     subscriptions: '내 구독',
     plans: '구독 구매',
@@ -373,7 +373,13 @@ const m: Messages = {
     source: '출처',
     wheel: '행운의 룰렛 추첨',
   },
+  pluginPage: {
+    notFound: '페이지가 없거나 비활성화되었습니다',
+    show: '표시',
+    hide: '숨기기',
+  },
   wheel: {
+    start: '시작',
     title: '행운의 룰렛',
     unavailable: '현재 이벤트를 이용할 수 없습니다',
     noSub: '유효한 구독이 없어 추첨에 참여할 수 없습니다',

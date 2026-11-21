@@ -1,0 +1,1 @@
+import{bt as e,as as o,ay as r,b6 as t,bu as i,at as n,aG as p,bv as c,bw as l,bx as b,by as h,bz as k,aW as u,bA as s}from"./vendor-52GQdXVC.js";const y={puzzle:s,gift:u,"calendar-check":k,star:h,trophy:b,ticket:l,sparkles:c,coins:p,megaphone:n,"ferris-wheel":i,key:t,users:r,book:o,shield:e},z=a=>y[a]||s;export{z as p};

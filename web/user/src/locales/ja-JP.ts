@@ -42,7 +42,7 @@ const m: Messages = {
     admin: '管理画面',
   },
   nav: {
-    groups: { main: '', subscribe: 'サブスクリプション', finance: '財務', user: 'ユーザー' } as Record<string, string>,
+    groups: { main: '', subscribe: 'サブスクリプション', finance: '財務', more: 'その他', user: 'ユーザー' } as Record<string, string>,
     dashboard: 'ダッシュボード',
     subscriptions: 'マイサブスクリプション',
     plans: 'プラン購入',
@@ -373,7 +373,13 @@ const m: Messages = {
     source: '内容',
     wheel: 'ラッキールーレット抽選',
   },
+  pluginPage: {
+    notFound: 'ページが存在しないか、無効になっています',
+    show: '表示',
+    hide: '非表示',
+  },
   wheel: {
+    start: 'スタート',
     title: 'ラッキールーレット',
     unavailable: 'このイベントは現在利用できません',
     noSub: '有効なサブスクリプションがないため、抽選に参加できません',

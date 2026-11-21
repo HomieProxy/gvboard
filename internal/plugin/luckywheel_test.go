@@ -115,8 +115,19 @@ func TestLuckyWheel(t *testing.T) {
 		// 卡片跳转转盘页
 		var st sdk.WidgetState
 		if code := do("GET", "plugin/lucky_wheel/widget", nil, &st); code != http.StatusOK || len(st.Actions) != 1 ||
-			st.Actions[0].Link != "/lucky-wheel" || !strings.Contains(st.Text, "1 次") {
+			st.Actions[0].Link != "/plugin/lucky_wheel/wheel" || !strings.Contains(st.Text, "1 次") {
 			t.Fatalf("卡片状态错误：%d %+v", code, st)
+		}
+		// 导航页面与未适配主题的页面内容
+		var pages []PageView
+		if code := do("GET", "user/plugin-pages", nil, &pages); code != http.StatusOK || len(pages) != 1 || pages[0].Plugin != luckywheel.Code ||
+			pages[0].Key != "wheel" || pages[0].Group != sdk.NavMore || pages[0].Icon != sdk.IconFerrisWheel || pages[0].Titles["en-US"] != "Lucky Wheel" {
+			t.Fatalf("页面列表错误：%d %+v", code, pages)
+		}
+		var content sdk.PageContent
+		if code := do("GET", "plugin/lucky_wheel/page", nil, &content); code != http.StatusOK || len(content.Blocks) != 3 ||
+			content.Blocks[1].Fields[0].Value != "1" || len(content.Blocks[2].Rows) != 4 {
+			t.Fatalf("页面内容错误：%d %+v", code, content)
 		}
 
 		// 配置校验
@@ -261,14 +272,17 @@ func TestLuckyWheel(t *testing.T) {
 		e.db.Create(&model.LuckyWheelLog{UserID: other.ID, SubscriptionID: otherSub.ID, PrizeName: "x", PrizeType: "none", CostType: "free"})
 		var all struct {
 			Data []struct {
-				Email string `json:"email"`
+				Email            string `json:"email"`
+				SubscriptionName string `json:"subscription_name"`
 			} `json:"data"`
 			Total int64 `json:"total"`
 		}
 		if code := admin("GET", "/records", nil, &all); code != http.StatusOK || all.Total != 6 {
 			t.Fatalf("全部记录错误：%d %+v", code, all)
 		}
-		if code := admin("GET", "/records?email=other@x.com", nil, &all); code != http.StatusOK || all.Total != 1 || all.Data[0].Email != "other@x.com" {
+		e.db.Model(&model.Subscription{}).Where("id = ?", otherSub.ID).Update("name", "备用订阅")
+		if code := admin("GET", "/records?email=other@x.com", nil, &all); code != http.StatusOK || all.Total != 1 || all.Data[0].Email != "other@x.com" ||
+			all.Data[0].SubscriptionName != "备用订阅" {
 			t.Fatalf("按邮箱筛选错误：%d %+v", code, all)
 		}
 

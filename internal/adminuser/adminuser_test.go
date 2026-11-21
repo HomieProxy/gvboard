@@ -284,6 +284,27 @@ func TestDetailUpdateInviter(t *testing.T) {
 			t.Fatal("不存在的用户应报错")
 		}
 
+		// 全站余额明细：邮箱模糊筛选、时间范围、增减合计
+		now := time.Now().Unix()
+		e.DB.Create(&model.BalanceLog{UserID: admin.ID, Amount: 200, Balance: 200, Type: balance.TypeGiftcard})
+		e.DB.Create(&model.BalanceLog{UserID: admin.ID, Amount: -50, Balance: 150, Type: balance.TypePlugin})
+		all, err := e.AllBalanceLogs(ctx, BalanceLogQuery{Email: "X.COM"})
+		if err != nil || all.Total != 3 || all.Income != 200 || all.Expense != -170 {
+			t.Fatalf("全站余额明细错误：%+v %v", all, err)
+		}
+		if all, _ := e.AllBalanceLogs(ctx, BalanceLogQuery{Email: "new@"}); all == nil || all.Total != 1 || all.Data[0].Email != "new@X.com" || all.Expense != -120 {
+			t.Fatalf("按邮箱筛选错误：%+v", all)
+		}
+		if all, _ := e.AllBalanceLogs(ctx, BalanceLogQuery{Email: "admin@", Type: balance.TypeGiftcard, Since: now - 60, Until: now + 60}); all == nil || all.Total != 1 || all.Income != 200 {
+			t.Fatalf("按类型与时间筛选错误：%+v", all)
+		}
+		if all, _ := e.AllBalanceLogs(ctx, BalanceLogQuery{Until: now - 3600}); all == nil || all.Total != 0 || all.Income != 0 {
+			t.Fatalf("时间范围外应为空：%+v", all)
+		}
+		if _, err := e.AllBalanceLogs(ctx, BalanceLogQuery{Since: now, Until: now - 1}); !errors.Is(err, errInvalid) {
+			t.Fatal("开始时间晚于结束时间应报错")
+		}
+
 		// 封禁时删除会话
 		tok, _ := e.Auth.Issue(ctx, u.ID, "", "")
 		if tok == "" {

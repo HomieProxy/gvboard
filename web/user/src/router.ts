@@ -10,10 +10,18 @@ export interface NavItem {
   path: string
   key: string
   icon: Component
-  group: 'main' | 'subscribe' | 'finance' | 'user'
+  group: 'main' | 'subscribe' | 'finance' | 'more' | 'user'
+  /** 插件页面的标题（内置菜单为空，使用 nav.{key} 的翻译） */
+  title?: string
 }
 
-/** 侧边菜单（标题为 nav.{key} 的翻译，分组标题为 nav.groups.{group}） */
+/** 侧边菜单分组顺序 */
+export const navGroups: NavItem['group'][] = ['main', 'subscribe', 'finance', 'more', 'user']
+
+/** 插件页面在菜单中的 key，与插件页面路由的 meta 对应 */
+export const pluginNavKey = (plugin: string, key: string) => `plugin:${plugin}/${key}`
+
+/** 侧边菜单（标题为 nav.{key} 的翻译，分组标题为 nav.groups.{group}）；已启用插件的页面在布局中追加 */
 export const nav: NavItem[] = [
   { path: '/dashboard', key: 'dashboard', icon: LayoutDashboardIcon, group: 'main' },
   { path: '/knowledge', key: 'knowledge', icon: BookOpenIcon, group: 'main' },
@@ -45,8 +53,9 @@ const pages: RouteRecordRaw[] = [
   { path: '/notices', component: () => import('./views/Notices.vue'), meta: { nav: 'notices' } },
   { path: '/traffic', component: () => import('./views/Traffic.vue'), meta: { nav: 'traffic' } },
   { path: '/profile', component: () => import('./views/Profile.vue'), meta: { nav: 'profile' } },
-  // 内置插件「幸运大转盘」，入口为仪表盘卡片
-  { path: '/lucky-wheel', component: () => import('./views/LuckyWheel.vue'), meta: { nav: 'dashboard' } },
+  // 插件页面：主题提供专门界面的显示该界面，否则按插件返回的区块显示
+  { path: '/plugin/:plugin/:key', component: () => import('./views/PluginPage.vue') },
+  { path: '/lucky-wheel', redirect: '/plugin/lucky_wheel/wheel' },
 ]
 
 export const router = createRouter({

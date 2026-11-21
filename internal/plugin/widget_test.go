@@ -77,6 +77,75 @@ func TestWidgetRegister(t *testing.T) {
 	})
 }
 
+func pagePlugin(code string, ps ...sdk.Page) *fake {
+	return &fake{code: code, setup: func(h sdk.Host) error {
+		for _, p := range ps {
+			h.Page(p)
+		}
+		return nil
+	}}
+}
+
+func TestPageRegister(t *testing.T) {
+	eachDriver(t, func(t *testing.T, e *env) {
+		ok := sdk.Page{Key: "a", Title: "共享账号", Content: "/page"}
+		with := func(f func(p *sdk.Page)) sdk.Page {
+			p := ok
+			f(&p)
+			return p
+		}
+		four := make([]sdk.Page, 4)
+		for i := range four {
+			four[i] = with(func(p *sdk.Page) { p.Key = "k" + string(rune('a'+i)) })
+		}
+		bad := map[string][]sdk.Page{
+			"pbadkey":   {with(func(p *sdk.Page) { p.Key = "A-b" })},
+			"pdupkey":   {ok, ok},
+			"ptoomany":  four,
+			"pnotitle":  {with(func(p *sdk.Page) { p.Title = "" })},
+			"plongtitl": {with(func(p *sdk.Page) { p.Title = strings.Repeat("长", 25) })},
+			"pbadlang":  {with(func(p *sdk.Page) { p.Titles = map[string]string{"<x>": "A"} })},
+			"pemptylng": {with(func(p *sdk.Page) { p.Titles = map[string]string{"en-US": ""} })},
+			"pbadicon":  {with(func(p *sdk.Page) { p.Icon = "<svg>" })},
+			"pbadgroup": {with(func(p *sdk.Page) { p.Group = "admin" })},
+			"pdotpath":  {with(func(p *sdk.Page) { p.Content = "/../user/info" })},
+			"pnopath":   {with(func(p *sdk.Page) { p.Content = "" })},
+		}
+		second := with(func(p *sdk.Page) {
+			p.Key, p.Icon, p.Group, p.Titles = "b", sdk.IconKey, sdk.NavUser, map[string]string{"en-US": "Shared ID"}
+		})
+		plugins := []sdk.Plugin{pagePlugin("pok", ok, second)}
+		for code, ps := range bad {
+			plugins = append(plugins, pagePlugin(code, ps...))
+		}
+		m := e.manager(t, plugins...)
+
+		if v := statusOf(t, m, "pok"); v.Status != StatusOK || len(v.Features.Pages) != 2 || v.Features.Pages[0] != "共享账号 (/plugin/pok/a)" {
+			t.Fatalf("页面注册错误：%+v", v)
+		}
+		for code := range bad {
+			if v := statusOf(t, m, code); v.Status != StatusError || v.Error == "" || len(v.Features.Pages) != 0 {
+				t.Errorf("%s 应加载失败：%+v", code, v)
+			}
+		}
+		if ps := m.Pages(); len(ps) != 0 {
+			t.Fatalf("未启用插件的页面不应显示：%+v", ps)
+		}
+		mustEnable(t, m, "pok")
+		ps := m.Pages()
+		if len(ps) != 2 || ps[0].Plugin != "pok" || ps[0].Icon != sdk.IconPuzzle || ps[0].Group != sdk.NavMore ||
+			ps[1].Icon != sdk.IconKey || ps[1].Group != sdk.NavUser || ps[1].Titles["en-US"] != "Shared ID" {
+			t.Fatalf("页面列表错误：%+v", ps)
+		}
+		if err := m.Disable(context.Background(), "pok"); err != nil {
+			t.Fatal(err)
+		}
+		if ps := m.Pages(); len(ps) != 0 {
+			t.Fatalf("停用后页面不应显示：%+v", ps)
+		}
+	})
+}
+
 // widgetEnv 挂载插件路由，返回一个已登录用户与请求函数（返回状态码与 data）。
 func widgetEnv(t *testing.T, e *env, plugins ...sdk.Plugin) (*Manager, *model.User, string, func(method, path, tok string) (int, json.RawMessage)) {
 	t.Helper()
