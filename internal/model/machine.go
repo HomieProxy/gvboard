@@ -24,8 +24,10 @@ type NodeMachine struct {
 	UpdateVersion string `gorm:"column:update_version" json:"update_version"`
 	UpdateID      int64  `gorm:"column:update_id" json:"update_id"`
 	UpdateError   string `gorm:"column:update_error" json:"update_error"`
-	CreatedAt     int64  `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt     int64  `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	// NodeErrors 节点机上报的被跳过节点（端口冲突、启动失败），JSON 数组 [{node_id, error}]，没有时为空（决策 D90）。
+	NodeErrors JSON  `gorm:"column:node_errors" json:"-"`
+	CreatedAt  int64 `gorm:"column:created_at;autoCreateTime" json:"created_at"`
+	UpdatedAt  int64 `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 }
 
 func (NodeMachine) TableName() string { return "v2_node_machine" }

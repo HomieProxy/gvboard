@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 
@@ -194,6 +195,46 @@ func testMachine(t *testing.T, driver string) {
 		t.Fatal("通讯密钥仍应可用")
 	}
 
+	// 被跳过节点的上报：只保留本机节点、每个节点一条、原因截断；空列表清除。
+	report := func(tk, body string) int {
+		return do("POST", "/api/v2/server/machine/node-errors", body, map[string]string{"Authorization": "Bearer " + tk}).Code
+	}
+	errsOf := func(id int64) []NodeError {
+		t.Helper()
+		list, err := svc.List(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, v := range list {
+			if v.ID == id {
+				return v.NodeErrors
+			}
+		}
+		t.Fatalf("找不到节点机 %d", id)
+		return nil
+	}
+	if report(tokenPrefix+"0000", `{"errors":[]}`) != http.StatusNotFound || report(serverToken, `{"errors":[]}`) != http.StatusNotFound {
+		t.Fatal("伪造凭据、通讯密钥上报应 404")
+	}
+	if c := report(tok, `{"errors":"x"}`); c < 400 || c == http.StatusNotFound {
+		t.Fatalf("格式错误的上报应失败: %d", c)
+	}
+	reportBody := fmt.Sprintf(`{"errors":[{"node_id":%d,"error":"端口 443/TCP 与本面板节点 #%d 冲突，已跳过"},{"node_id":%d,"error":"重复"},{"node_id":%d,"error":"其他节点机"},{"node_id":%d,"error":%q}]}`,
+		n2, n1, n2, n3, n1, strings.Repeat("长", 300))
+	if c := report(tok, reportBody); c != http.StatusNoContent {
+		t.Fatalf("上报失败: %d", c)
+	}
+	if es := errsOf(a.Machine.ID); len(es) != 2 || es[0].NodeID != n2 || !strings.Contains(es[0].Error, "冲突") ||
+		es[1].NodeID != n1 || utf8.RuneCountInString(es[1].Error) != maxNodeErrorLen {
+		t.Fatalf("上报结果不符: %+v", es)
+	}
+	if report(tok, `{"errors":[]}`) != http.StatusNoContent || len(errsOf(a.Machine.ID)) != 0 {
+		t.Fatal("空列表应清除上报")
+	}
+	if report(tok, reportBody) != http.StatusNoContent {
+		t.Fatal("上报失败")
+	}
+
 	// 修改后立即下发；删除节点后不再下发。
 	if _, err := svc.Update(ctx, a.Machine.ID, Input{Name: "A", ServerIDs: []int64{n1, n2}, AuditIDs: []int64{n1}, LogLevel: "debug"}); err != nil {
 		t.Fatal(err)
@@ -205,6 +246,12 @@ func testMachine(t *testing.T, driver string) {
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &cf) != nil || cf.LogLevel != "debug" ||
 		len(cf.Nodes) != 1 || cf.Nodes[0] != (NodeConfig{NodeID: n1, AuditEnable: true}) {
 		t.Fatalf("修改后配置不符: %d %s", w.Code, w.Body)
+	}
+	if _, err := svc.Update(ctx, a.Machine.ID, Input{Name: "A", ServerIDs: []int64{n1}, AuditIDs: []int64{n1}, LogLevel: "debug"}); err != nil {
+		t.Fatal(err)
+	}
+	if es := errsOf(a.Machine.ID); len(es) != 1 || es[0].NodeID != n1 {
+		t.Fatalf("已不属于本机的节点不应显示: %+v", es)
 	}
 
 	// 存在已接入的节点机时不能关闭开关。
@@ -220,6 +267,9 @@ func testMachine(t *testing.T, driver string) {
 	}
 	if getConfig(tok, nil).Code != http.StatusNotFound || uni(tok, "v2node", n1) != http.StatusNotFound {
 		t.Fatal("重新生成接入码后旧凭据应失效")
+	}
+	if len(errsOf(a.Machine.ID)) != 0 {
+		t.Fatal("重新生成接入码应清除上报")
 	}
 	w = enroll(re.Code)
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil {

@@ -215,7 +215,7 @@ onMounted(async () => {
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <div class="flex flex-1 items-start gap-2 text-sm text-muted-foreground">
         <InfoIcon class="mt-0.5 size-4 shrink-0" />
-        <span>安装命令中的接入码 30 分钟内有效，只能使用一次。吊销或删除后，节点机会停止全部节点；修改节点、审计或日志级别后，节点机在下次拉取配置时自动生效。</span>
+        <span>安装命令中的接入码 30 分钟内有效，只能使用一次。吊销或删除后，节点机会停止本面板的全部节点（同一台服务器接入的其它面板不受影响）；修改节点、审计或日志级别后，节点机在下次拉取配置时自动生效。</span>
       </div>
       <Button variant="ghost" size="icon" :disabled="list.loading.value" @click="list.load"><RefreshCwIcon :class="list.loading.value ? 'animate-spin' : ''" /></Button>
       <Button variant="outline" :disabled="checking" title="从 GitHub 查询 gvboard 版 v2node 的最新版本" @click="checkUpdate">
@@ -241,6 +241,9 @@ onMounted(async () => {
           <span v-if="!row.server_ids.length" class="text-xs text-muted-foreground">未分配</span>
         </div>
         <div class="mt-0.5 text-xs text-muted-foreground">日志级别 {{ row.log_level || 'info' }}</div>
+        <div v-if="row.node_errors?.length" class="mt-1 max-w-sm space-y-0.5 text-xs text-destructive">
+          <div v-for="e in row.node_errors" :key="e.node_id" class="break-all">{{ serverName(e.node_id) }} 未运行：{{ e.error }}</div>
+        </div>
       </template>
       <template #cell-host="{ row }">
         <template v-if="row.enrolled_at">

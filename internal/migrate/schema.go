@@ -562,6 +562,8 @@ func Schema() []Table {
 			def("update_version", "varchar(64)", "''"),
 			def("update_id", "int", "0"),
 			def("update_error", "varchar(255)", "''"),
+			// 被跳过节点的上报（决策 D90）
+			null("node_errors", "text"),
 		},
 			Index{Name: "uniq_token", Cols: []string{"token_hash"}, Unique: true, Ensure: true},
 			Index{Name: "uniq_enroll", Cols: []string{"enroll_hash"}, Unique: true, Ensure: true},

@@ -48,6 +48,7 @@ type Module struct {
 //	POST /api/v2/server/machine/enroll  {"code","hostname","version"} 换取凭据
 //	GET  /api/v2/server/machine/config  下发配置，凭据放在 Authorization: Bearer 或参数 token，支持 ETag；
 //	                                    参数 update_id、update_error 上报上次更新失败的原因
+//	POST /api/v2/server/machine/node-errors  {"errors":[{"node_id","error"}]} 上报被跳过的节点，空列表表示全部恢复，成功 204
 func (m *Module) Register(r *server.Router) {
 	a := m.Auth.AdminGroup(r.API, func() string { return m.Svc.Settings.String("secure_path") })
 	a.GET("/machines", m.list)
@@ -63,6 +64,7 @@ func (m *Module) Register(r *server.Router) {
 	n := r.NodeV2.Group("/machine", m.guard)
 	n.POST("/enroll", m.enroll)
 	n.GET("/config", m.config)
+	n.POST("/node-errors", m.nodeErrors)
 }
 
 func (m *Module) guard(c *gin.Context) {
@@ -226,4 +228,24 @@ func (m *Module) config(c *gin.Context) {
 		return
 	}
 	c.Data(http.StatusOK, "application/json", body)
+}
+
+func (m *Module) nodeErrors(c *gin.Context) {
+	mc := m.Svc.Auth(c.Request.Context(), Token(c))
+	if mc == nil {
+		httpx.NotFound(c)
+		return
+	}
+	var in struct {
+		Errors []NodeError `json:"errors"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, errInvalid)
+		return
+	}
+	if err := m.Svc.ReportNodeErrors(c.Request.Context(), mc, in.Errors); err != nil {
+		httpx.Fail(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

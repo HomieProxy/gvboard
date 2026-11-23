@@ -403,6 +403,8 @@ export interface NodeMachine {
   created_at: number
   enrolled: boolean
   online: boolean
+  /** 节点机上报的被跳过节点（端口冲突、启动失败） */
+  node_errors: { node_id: number; error: string }[]
 }
 
 export interface V2nodeRelease {

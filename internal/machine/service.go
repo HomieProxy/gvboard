@@ -102,6 +102,8 @@ type View struct {
 	Enrolled bool `json:"enrolled"`
 	// Online 最近在拉取间隔的 3 倍（至少 3 分钟）内连接过。
 	Online bool `json:"online"`
+	// NodeErrors 节点机上报的被跳过节点（决策 D90）。
+	NodeErrors []NodeError `json:"node_errors"`
 }
 
 // Input 新建或修改节点机。
@@ -120,7 +122,7 @@ type Created struct {
 }
 
 func (s *Service) view(m model.NodeMachine) View {
-	v := View{NodeMachine: m, Enrolled: m.TokenHash != nil}
+	v := View{NodeMachine: m, Enrolled: m.TokenHash != nil, NodeErrors: nodeErrors(m)}
 	if m.LastSeenAt != nil {
 		window := max(s.Settings.Int("server_pull_interval")*3, 180)
 		v.Online = s.now().Unix()-*m.LastSeenAt <= window
@@ -269,13 +271,13 @@ func (s *Service) Reenroll(ctx context.Context, id int64) (*Created, error) {
 	}
 	code, h, exp := s.newCode()
 	err = s.DB.WithContext(ctx).Model(&model.NodeMachine{}).Where("id = ?", m.ID).Updates(map[string]any{
-		"token_hash": nil, "enroll_hash": h, "enroll_expires_at": exp,
+		"token_hash": nil, "enroll_hash": h, "enroll_expires_at": exp, "node_errors": nil,
 	}).Error
 	if err != nil {
 		return nil, err
 	}
 	s.forget(m)
-	m.TokenHash, m.EnrollHash, m.EnrollExpiresAt = nil, &h, &exp
+	m.TokenHash, m.EnrollHash, m.EnrollExpiresAt, m.NodeErrors = nil, &h, &exp, nil
 	return &Created{Machine: m, Code: code, ExpiresAt: exp}, nil
 }
 
@@ -286,7 +288,7 @@ func (s *Service) Revoke(ctx context.Context, id int64) error {
 		return err
 	}
 	err = s.DB.WithContext(ctx).Model(&model.NodeMachine{}).Where("id = ?", m.ID).Updates(map[string]any{
-		"token_hash": nil, "enroll_hash": nil, "enroll_expires_at": nil,
+		"token_hash": nil, "enroll_hash": nil, "enroll_expires_at": nil, "node_errors": nil,
 	}).Error
 	s.forget(m)
 	return err
