@@ -76,7 +76,7 @@ type PageView struct {
 func (m *Manager) Pages() []PageView {
 	out := []PageView{}
 	for _, e := range m.list() {
-		if !m.Enabled(e.code) {
+		if !m.Enabled(e.code) || !m.shown(e.code, formPage) {
 			continue
 		}
 		e.mu.RLock()

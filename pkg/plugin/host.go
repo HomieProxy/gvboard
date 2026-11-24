@@ -52,9 +52,13 @@ type Host interface {
 	Payment(name string, g PaymentGateway)
 	// SubscribeFormat 新增客户端订阅格式，优先于内置格式匹配。插件停用时不参与匹配。
 	SubscribeFormat(f *SubscribeFormat)
-	// Widget 注册用户端卡片，每个插件最多 5 张。插件停用时不显示。
+	// 卡片、横幅、页面可以任意组合注册；管理员可以按形式关闭，显示位置由主题决定。插件停用时都不显示。
+
+	// Widget 注册用户端卡片，每个插件最多 5 张。
 	Widget(w Widget)
-	// Page 注册用户端页面（出现在侧边导航中），每个插件最多 3 个。插件停用时不显示。
+	// Banner 注册用户端横幅，每个插件最多 3 个。
+	Banner(b Banner)
+	// Page 注册用户端页面（出现在侧边导航中），每个插件最多 3 个。
 	Page(p Page)
 }
 

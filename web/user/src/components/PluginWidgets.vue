@@ -11,7 +11,6 @@ import { loadMe } from '../store'
 import { pluginIcon } from '../pluginIcons'
 import type { PluginWidget, PluginWidgetState } from '../types'
 
-const props = defineProps<{ position: string }>()
 const { t } = useI18n()
 const router = useRouter()
 
@@ -93,7 +92,7 @@ async function act(it: Item, a: NonNullable<PluginWidgetState['actions']>[number
 onMounted(async () => {
   let list: PluginWidget[] = []
   try {
-    list = await http.get<PluginWidget[]>('/user/plugin-widgets', { slot: props.position })
+    list = await http.get<PluginWidget[]>('/user/plugin-widgets')
   } catch {
     return
   }

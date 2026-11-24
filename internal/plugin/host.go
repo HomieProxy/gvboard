@@ -54,6 +54,7 @@ type entry struct {
 	pays    []string
 	formats []*subscribe.Protocol
 	widgets []sdk.Widget
+	banners []sdk.Banner
 	pages   []sdk.Page
 }
 
@@ -74,7 +75,7 @@ func (e *entry) fail(err error) {
 	for _, f := range e.formats {
 		subscribe.UnregisterExt(f)
 	}
-	e.events, e.filters, e.pub, e.user, e.admin, e.jobs, e.pays, e.formats, e.widgets, e.pages = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
+	e.events, e.filters, e.pub, e.user, e.admin, e.jobs, e.pays, e.formats, e.widgets, e.banners, e.pages = nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil
 }
 
 // setup 创建插件条目并调用 Setup。

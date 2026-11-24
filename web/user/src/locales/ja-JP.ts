@@ -104,6 +104,8 @@ const m: Messages = {
     manage: '管理',
     shortcuts: 'ショートカット',
     activities: 'アクティビティ',
+    bannerLeft: '残り時間',
+    bannerDays: '{n} 日',
     tutorial: 'チュートリアル',
     tutorialDesc: '{site} の使い方を学ぶ',
     oneClick: 'ワンクリック購読',

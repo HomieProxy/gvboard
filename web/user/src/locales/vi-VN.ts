@@ -104,6 +104,8 @@ const m: Messages = {
     manage: 'Quản lý',
     shortcuts: 'Lối tắt',
     activities: 'Hoạt động',
+    bannerLeft: 'Còn lại',
+    bannerDays: '{n} ngày',
     tutorial: 'Xem hướng dẫn',
     tutorialDesc: 'Tìm hiểu cách sử dụng {site}',
     oneClick: 'Đăng ký một chạm',

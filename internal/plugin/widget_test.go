@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -52,7 +53,10 @@ func TestWidgetRegister(t *testing.T) {
 			"wparam":    {with(func(w *sdk.Widget) { w.State = "/w/:id" })},
 			"wnostate":  {with(func(w *sdk.Widget) { w.State = "" })},
 		}
-		plugins := []sdk.Plugin{widgetPlugin("wok", ok, with(func(w *sdk.Widget) { w.Key = "b"; w.Icon = sdk.IconGift }))}
+		plugins := []sdk.Plugin{
+			widgetPlugin("wok", ok, with(func(w *sdk.Widget) { w.Key = "b"; w.Icon = sdk.IconGift })),
+			widgetPlugin("wnoslot", with(func(w *sdk.Widget) { w.Slot = "" })),
+		}
 		for code, ws := range bad {
 			plugins = append(plugins, widgetPlugin(code, ws...))
 		}
@@ -73,6 +77,135 @@ func TestWidgetRegister(t *testing.T) {
 		ws := m.Widgets(sdk.SlotDashboard)
 		if len(ws) != 2 || ws[0].Plugin != "wok" || ws[0].Icon != sdk.IconPuzzle || ws[1].Icon != sdk.IconGift {
 			t.Fatalf("卡片列表错误：%+v", ws)
+		}
+		// 建议位置为空的卡片只在不指定位置时返回
+		mustEnable(t, m, "wnoslot")
+		if ws := m.Widgets(sdk.SlotDashboard); len(ws) != 2 {
+			t.Fatalf("指定位置时不应返回未建议位置的卡片：%+v", ws)
+		}
+		if ws := m.Widgets(""); len(ws) != 3 || ws[0].Plugin != "wnoslot" {
+			t.Fatalf("不指定位置应返回全部卡片：%+v", ws)
+		}
+	})
+}
+
+func bannerPlugin(code string, bs ...sdk.Banner) *fake {
+	return &fake{code: code, setup: func(h sdk.Host) error {
+		for _, b := range bs {
+			h.Banner(b)
+		}
+		return nil
+	}}
+}
+
+func TestBannerRegister(t *testing.T) {
+	eachDriver(t, func(t *testing.T, e *env) {
+		ok := sdk.Banner{Key: "a", State: "/banner"}
+		with := func(f func(b *sdk.Banner)) sdk.Banner {
+			b := ok
+			f(&b)
+			return b
+		}
+		four := make([]sdk.Banner, 4)
+		for i := range four {
+			four[i] = with(func(b *sdk.Banner) { b.Key = "k" + string(rune('a'+i)) })
+		}
+		bad := map[string][]sdk.Banner{
+			"bbadkey":   {with(func(b *sdk.Banner) { b.Key = "A-b" })},
+			"bdupkey":   {ok, ok},
+			"btoomany":  four,
+			"blongtitl": {with(func(b *sdk.Banner) { b.Title = strings.Repeat("长", 33) })},
+			"bbadicon":  {with(func(b *sdk.Banner) { b.Icon = "<svg>" })},
+			"bdotstate": {with(func(b *sdk.Banner) { b.State = "/../user/info" })},
+			"bnostate":  {with(func(b *sdk.Banner) { b.State = "" })},
+		}
+		plugins := []sdk.Plugin{bannerPlugin("bok", ok, with(func(b *sdk.Banner) { b.Key, b.Title, b.Icon = "b", "限时活动", sdk.IconGift }))}
+		for code, bs := range bad {
+			plugins = append(plugins, bannerPlugin(code, bs...))
+		}
+		m := e.manager(t, plugins...)
+
+		if v := statusOf(t, m, "bok"); v.Status != StatusOK || len(v.Features.Banners) != 2 || v.Features.Banners[0] != "a (a)" || v.Features.Banners[1] != "限时活动 (b)" {
+			t.Fatalf("横幅注册错误：%+v", v)
+		}
+		for code := range bad {
+			if v := statusOf(t, m, code); v.Status != StatusError || v.Error == "" || len(v.Features.Banners) != 0 {
+				t.Errorf("%s 应加载失败：%+v", code, v)
+			}
+		}
+		if bs := m.Banners(); len(bs) != 0 {
+			t.Fatalf("未启用插件的横幅不应显示：%+v", bs)
+		}
+		mustEnable(t, m, "bok")
+		bs := m.Banners()
+		if len(bs) != 2 || bs[0].Plugin != "bok" || bs[0].Icon != sdk.IconMegaphone || bs[1].Icon != sdk.IconGift {
+			t.Fatalf("横幅列表错误：%+v", bs)
+		}
+	})
+}
+
+func TestDisplaySwitch(t *testing.T) {
+	eachDriver(t, func(t *testing.T, e *env) {
+		ctx := context.Background()
+		all := func(code string) *fake {
+			return &fake{code: code, setup: func(h sdk.Host) error {
+				h.Widget(sdk.Widget{Key: "w", Title: "卡片", State: "/w"})
+				h.Banner(sdk.Banner{Key: "b", State: "/b"})
+				h.Page(sdk.Page{Key: "p", Title: "页面", Content: "/p"})
+				return nil
+			}}
+		}
+		m := e.manager(t, all("da"), all("db"), widgetPlugin("dw", sdk.Widget{Key: "w", Title: "卡片", State: "/w"}))
+		for _, code := range []string{"da", "db", "dw"} {
+			mustEnable(t, m, code)
+		}
+		count := func() (int, int, int) { return len(m.Widgets("")), len(m.Banners()), len(m.Pages()) }
+		if v := statusOf(t, m, "da"); len(v.Display) != 3 || !v.Display["widget"] || !v.Display["banner"] || !v.Display["page"] {
+			t.Fatalf("默认应开启全部已注册形式：%+v", v.Display)
+		}
+		if v := statusOf(t, m, "dw"); len(v.Display) != 1 || !v.Display["widget"] {
+			t.Fatalf("只应包含已注册的形式：%+v", v.Display)
+		}
+		if w, b, p := count(); w != 3 || b != 2 || p != 2 {
+			t.Fatalf("开启时数量错误：%d %d %d", w, b, p)
+		}
+
+		// 关闭 da 的卡片：只影响 da 的卡片；未注册的形式忽略
+		if err := m.SetDisplay(ctx, "da", map[string]bool{"widget": false, "x": false}); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.SetDisplay(ctx, "dw", map[string]bool{"banner": false}); err != nil {
+			t.Fatal(err)
+		}
+		if w, b, p := count(); w != 2 || b != 2 || p != 2 {
+			t.Fatalf("关闭卡片后数量错误：%d %d %d", w, b, p)
+		}
+		for _, x := range m.Widgets("") {
+			if x.Plugin == "da" {
+				t.Fatal("已关闭的卡片不应返回")
+			}
+		}
+		// 未提交的形式保持原值
+		if err := m.SetDisplay(ctx, "da", map[string]bool{"page": false}); err != nil {
+			t.Fatal(err)
+		}
+		if v := statusOf(t, m, "da"); v.Display["widget"] || !v.Display["banner"] || v.Display["page"] {
+			t.Fatalf("开关保存错误：%+v", v.Display)
+		}
+		if w, b, p := count(); w != 2 || b != 2 || p != 1 {
+			t.Fatalf("关闭页面后数量错误：%d %d %d", w, b, p)
+		}
+		if err := m.SetDisplay(ctx, "da", map[string]bool{"widget": true, "page": true}); err != nil {
+			t.Fatal(err)
+		}
+		if w, b, p := count(); w != 3 || b != 2 || p != 2 {
+			t.Fatalf("重新开启后数量错误：%d %d %d", w, b, p)
+		}
+		if got := m.Settings.Strings(displayKey); len(got) != 0 {
+			t.Fatalf("全部开启后不应保存关闭记录：%v", got)
+		}
+		if err := m.SetDisplay(ctx, "nope", map[string]bool{"widget": false}); err == nil {
+			t.Fatal("不存在的插件应报错")
 		}
 	})
 }
@@ -200,6 +333,53 @@ func TestWidgetFirstOrder(t *testing.T) {
 		if _, data := do("GET", "plugin/first_order/widget", tok); json.Unmarshal(data, &st) != nil || st.Hidden {
 			t.Fatalf("充值与待支付订单不应隐藏首单卡片：%s", data)
 		}
+
+		// 限时：未设置时不显示横幅；设置后在时限内显示倒计时横幅，超过时限后卡片与横幅都隐藏
+		var banners []BannerView
+		if code, data := do("GET", "user/plugin-banners", tok); code != http.StatusOK || json.Unmarshal(data, &banners) != nil ||
+			len(banners) != 1 || banners[0].Plugin != "first_order" || banners[0].State != "/banner" {
+			t.Fatalf("横幅列表错误：%d %s", code, data)
+		}
+		var bs sdk.BannerState
+		if _, data := do("GET", "plugin/first_order/banner", tok); json.Unmarshal(data, &bs) != nil || !bs.Hidden {
+			t.Fatalf("未设置限时不应显示横幅：%s", data)
+		}
+		if err := m.SaveConfig(context.Background(), "first_order", map[string]any{"limit_minutes": 30}); err != nil {
+			t.Fatal(err)
+		}
+		now := time.Now().Unix()
+		if err := e.db.Model(&model.User{}).Where("id = ?", u.ID).Update("created_at", now-60).Error; err != nil {
+			t.Fatal(err)
+		}
+		bs = sdk.BannerState{}
+		if _, data := do("GET", "plugin/first_order/banner", tok); json.Unmarshal(data, &bs) != nil || bs.Hidden ||
+			bs.EndsAt != now-60+30*60 || bs.Dismissible || bs.Action == nil {
+			t.Fatalf("时限内应显示倒计时横幅：%s", data)
+		}
+		var el struct {
+			Eligible bool  `json:"eligible"`
+			EndsAt   int64 `json:"ends_at"`
+		}
+		if _, data := do("GET", "plugin/first_order/eligible", tok); json.Unmarshal(data, &el) != nil || !el.Eligible || el.EndsAt != bs.EndsAt {
+			t.Fatalf("时限内应可享受：%s", data)
+		}
+		if err := e.db.Model(&model.User{}).Where("id = ?", u.ID).Update("created_at", now-31*60).Error; err != nil {
+			t.Fatal(err)
+		}
+		bs, st = sdk.BannerState{}, sdk.WidgetState{}
+		if _, data := do("GET", "plugin/first_order/banner", tok); json.Unmarshal(data, &bs) != nil || !bs.Hidden {
+			t.Fatalf("超过时限应隐藏横幅：%s", data)
+		}
+		if _, data := do("GET", "plugin/first_order/widget", tok); json.Unmarshal(data, &st) != nil || !st.Hidden {
+			t.Fatalf("超过时限应隐藏卡片：%s", data)
+		}
+		if _, data := do("GET", "plugin/first_order/eligible", tok); json.Unmarshal(data, &el) != nil || el.Eligible {
+			t.Fatalf("超过时限不应享受：%s", data)
+		}
+		if err := m.SaveConfig(context.Background(), "first_order", map[string]any{"limit_minutes": 0}); err != nil {
+			t.Fatal(err)
+		}
+		st = sdk.WidgetState{}
 		if err := e.db.Create(&model.Order{UserID: u.ID, PlanID: 1, Type: 1, Status: 3, TradeNo: "fo-done", Period: "month_price"}).Error; err != nil {
 			t.Fatal(err)
 		}

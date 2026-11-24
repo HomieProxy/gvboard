@@ -18,7 +18,7 @@ import { confirm, errText, message, run } from '../ui'
 import { useList } from '../paged'
 import { loadFeatures } from '../features'
 import { menu } from '../router'
-import type { PluginField, PluginPreview, PluginView } from '../types'
+import type { PluginField, PluginForm, PluginPreview, PluginView } from '../types'
 
 const { rows, loading, load } = useList(() => admin.get<PluginView[]>('/plugins'))
 
@@ -63,6 +63,16 @@ function openDetail(p: PluginView) {
   detailShow.value = true
 }
 const join = (a: string[]) => a.join('、') || '-'
+
+// 用户端显示形式开关：只列出插件已注册的形式，位置由主题决定
+const formLabels: Record<PluginForm, string> = { widget: '卡片', banner: '横幅', page: '独立页面' }
+const forms = (p: PluginView) => (Object.keys(formLabels) as PluginForm[]).filter((f) => p.display?.[f] !== undefined)
+async function setDisplay(p: PluginView, f: PluginForm, v: boolean) {
+  if (await run(() => admin.put(`/plugins/${p.code}/display`, { [f]: v }), v ? '已开启' : '已关闭')) {
+    p.display = { ...p.display, [f]: v }
+    load()
+  }
+}
 
 // ---------- 配置 ----------
 const cfgPlugin = ref<PluginView | null>(null)
@@ -183,7 +193,18 @@ onMounted(load)
           <dt class="text-muted-foreground">支付方式</dt><dd>{{ join(detail.features.payments) }}</dd>
           <dt class="text-muted-foreground">订阅格式</dt><dd>{{ join(detail.features.formats) }}</dd>
           <dt class="text-muted-foreground">用户端卡片</dt><dd>{{ join(detail.features.widgets || []) }}</dd>
+          <dt class="text-muted-foreground">用户端横幅</dt><dd>{{ join(detail.features.banners || []) }}</dd>
           <dt class="text-muted-foreground">用户端页面</dt><dd>{{ join(detail.features.pages || []) }}</dd>
+          <template v-if="forms(detail).length">
+            <dt class="text-muted-foreground">用户端显示</dt>
+            <dd class="grid gap-2">
+              <label v-for="f in forms(detail)" :key="f" class="flex items-center gap-2">
+                <Switch :model-value="!!detail.display?.[f]" @update:model-value="(v: boolean) => setDisplay(detail!, f, v)" />
+                <span>{{ formLabels[f] }}</span>
+              </label>
+              <span class="text-xs text-muted-foreground">关闭后用户端不再显示该形式，显示位置由主题决定</span>
+            </dd>
+          </template>
           <dt class="text-muted-foreground">路由</dt>
           <dd>
             <div v-for="r in detail.features.routes" :key="r.method + r.path" class="font-mono text-xs">{{ r.method }} {{ r.path }}（{{ r.scope }}）</div>

@@ -386,6 +386,8 @@ var defs = []Def{
 	{Key: "email_templates_custom", Type: TypeString, Default: "", Group: GroupInternal},
 	// 管理员已确认过数据库访问警告的 Go 插件标识（决策 D86）。
 	{Key: "plugin_db_warning_ack", Type: TypeStrings, Default: []string{}, Group: GroupInternal},
+	// 管理员关闭的插件用户端显示形式，值为 "插件标识:widget|banner|page"（决策 D91）。
+	{Key: "plugin_ui_off", Type: TypeStrings, Default: []string{}, Group: GroupInternal},
 
 	// 原项目遗留项
 	{Key: "stripe_pk_live", Type: TypeString, Default: "", Group: GroupLegacy},

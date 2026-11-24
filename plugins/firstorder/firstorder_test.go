@@ -17,11 +17,16 @@ func TestParseRule(t *testing.T) {
 	if r, _ := parseRule(sdk.Config{"percent": "50"}); !r.applies(99) {
 		t.Fatal("未填写套餐 ID 时应适用全部套餐")
 	}
+	if r, _ := parseRule(sdk.Config{"percent": float64(20), "limit_minutes": float64(30)}); r.limit != 30 {
+		t.Fatalf("限时解析错误：%+v", r)
+	}
 	for _, cfg := range []sdk.Config{
 		{"percent": float64(0)},
 		{"percent": float64(101)},
 		{"percent": float64(10), "max_off": float64(-1)},
 		{"percent": float64(10), "plan_ids": "1,a"},
+		{"percent": float64(10), "limit_minutes": float64(-1)},
+		{"percent": float64(10), "limit_minutes": float64(maxLimitMinutes + 1)},
 	} {
 		if _, err := parseRule(cfg); err == nil {
 			t.Fatalf("配置 %v 应校验失败", cfg)
@@ -66,5 +71,31 @@ func TestBadgeAndWidget(t *testing.T) {
 		if len(w.Actions) != 1 || w.Actions[0].Link != "/plans" || w.Actions[0].Path != "" {
 			t.Fatalf("卡片按钮应跳转到套餐页：%+v", w.Actions)
 		}
+	}
+}
+
+func TestDeadline(t *testing.T) {
+	if d := (rule{percent: 20}).deadline(1000); d != 0 || !open(d, 1<<40) {
+		t.Fatalf("不限时应始终可享受：%d", d)
+	}
+	d := rule{percent: 20, limit: 30}.deadline(1000)
+	if d != 1000+30*60 {
+		t.Fatalf("截止时间 %d", d)
+	}
+	if !open(d, d-1) || open(d, d) || open(d, d+1) {
+		t.Fatal("截止时间之前可享受，到达截止时间后失效")
+	}
+}
+
+func TestBanner(t *testing.T) {
+	b := rule{percent: 20, limit: 30}.banner(12345)
+	if b.Hidden || b.Dismissible || b.EndsAt != 12345 || b.Tone != sdk.ToneWarning {
+		t.Fatalf("横幅应醒目、带截止时间且不可关闭：%+v", b)
+	}
+	if b.Text != "新用户限时福利：首次购买套餐立减 20%，到期后失效" {
+		t.Fatalf("横幅文字 %q", b.Text)
+	}
+	if b.Action == nil || b.Action.Link != "/plans" {
+		t.Fatalf("横幅按钮应跳转到套餐页：%+v", b.Action)
 	}
 }

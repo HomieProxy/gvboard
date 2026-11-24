@@ -39,8 +39,8 @@ func (h *host) Widget(w sdk.Widget) {
 		h.fail("卡片 %q 重复", w.Key)
 	case len(h.e.widgets) >= maxWidgets:
 		h.fail("最多注册 %d 张卡片", maxWidgets)
-	case !slices.Contains(widgetSlots, w.Slot):
-		h.fail("卡片 %s 的位置 %q 无效", w.Key, w.Slot)
+	case w.Slot != "" && !slices.Contains(widgetSlots, w.Slot):
+		h.fail("卡片 %s 的建议位置 %q 无效", w.Key, w.Slot)
 	case w.Title == "" || utf8.RuneCountInString(w.Title) > 32:
 		h.fail("卡片 %s 的标题不能为空且不能超过 32 个字符", w.Key)
 	case !slices.Contains(widgetIcons, w.Icon):
@@ -58,16 +58,16 @@ type WidgetView struct {
 	sdk.Widget
 }
 
-// Widgets 已启用插件在指定位置的卡片，按插件标识与注册顺序排列。
+// Widgets 已启用插件的卡片，按插件标识与注册顺序排列；slot 不为空时只返回该建议位置的卡片。
 func (m *Manager) Widgets(slot string) []WidgetView {
 	out := []WidgetView{}
 	for _, e := range m.list() {
-		if !m.Enabled(e.code) {
+		if !m.Enabled(e.code) || !m.shown(e.code, formWidget) {
 			continue
 		}
 		e.mu.RLock()
 		for _, w := range e.widgets {
-			if w.Slot == slot {
+			if slot == "" || w.Slot == slot {
 				out = append(out, WidgetView{Plugin: e.code, Widget: w})
 			}
 		}
@@ -77,8 +77,8 @@ func (m *Manager) Widgets(slot string) []WidgetView {
 }
 
 func (m *Manager) userWidgets(c *gin.Context) {
-	slot := c.DefaultQuery("slot", sdk.SlotDashboard)
-	if !slices.Contains(widgetSlots, slot) {
+	slot := c.Query("slot")
+	if slot != "" && !slices.Contains(widgetSlots, slot) {
 		httpx.Fail(c, errInvalid)
 		return
 	}

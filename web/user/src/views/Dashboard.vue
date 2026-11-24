@@ -19,6 +19,7 @@ import ClientDownloads from '../components/ClientDownloads.vue'
 import NoticeDialog from '../components/NoticeDialog.vue'
 import NoticeCarousel from '../components/NoticeCarousel.vue'
 import PluginWidgets from '../components/PluginWidgets.vue'
+import PluginBanners from '../components/PluginBanners.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -92,6 +93,8 @@ onMounted(async () => {
     <Skeleton v-if="loading" class="h-44 w-full rounded-xl sm:h-52" />
     <NoticeCarousel v-else :notices="notices.slice(0, 5)" @open="openNotice" />
 
+    <PluginBanners />
+
     <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
       <Card v-for="c in cards" :key="c.label" class="cursor-pointer gap-2 py-4 transition-colors hover:bg-accent/40" @click="router.push(c.to)">
         <CardContent class="flex items-center justify-between gap-3 px-4">
@@ -108,7 +111,7 @@ onMounted(async () => {
     </div>
 
     <div class="space-y-6">
-        <PluginWidgets position="dashboard" />
+        <PluginWidgets />
 
         <section>
           <div class="mb-3 flex items-center justify-between">

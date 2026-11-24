@@ -816,6 +816,16 @@ plugin.route('user', 'GET', '/page', function () { return { blocks: [{ type: 'al
 			t.Fatalf("JS 插件页面注册错误：%+v", v)
 		}
 
+		// 注册用户端横幅
+		install(t, m, makeZip(t, map[string]string{
+			"plugin.json": simpleManifest("jsbannerok", "1"),
+			"main.js": `plugin.banner({ key: 'sale', title: '限时活动', state: '/banner' });
+plugin.route('user', 'GET', '/banner', function () { return { text: 'hi', tone: 'warning', ends_at: 1 }; });`,
+		}))
+		if v := statusOf(t, m, "jsbannerok"); v.Status != StatusOK || len(v.Features.Banners) != 1 || v.Features.Banners[0] != "限时活动 (sale)" || !v.Display["banner"] {
+			t.Fatalf("JS 插件横幅注册错误：%+v", v)
+		}
+
 		// 加载失败：脚本错误、未知事件、死循环、栈溢出、注册数量超限
 		for code, main := range map[string]string{
 			"jsthrow": `throw new Error('初始化失败');`,
@@ -832,6 +842,9 @@ plugin.route('user', 'GET', '/page', function () { return { blocks: [{ type: 'al
 			"jspage":  `plugin.page('x');`,
 			"jspage2": `plugin.page({ key: 'a', title: 't', content: '/../x' });`,
 			"jspage3": `for (var i = 0; i < 4; i++) plugin.page({ key: 'k' + i, title: 't', content: '/p' });`,
+			"jsban":   `plugin.banner('x');`,
+			"jsban2":  `plugin.banner({ key: 'a', state: '/../x' });`,
+			"jsban3":  `for (var i = 0; i < 4; i++) plugin.banner({ key: 'k' + i, state: '/b' });`,
 		} {
 			v := install(t, m, makeZip(t, map[string]string{"plugin.json": simpleManifest(code, "1"), "main.js": main}))
 			if v.Status != StatusError || v.Error == "" {

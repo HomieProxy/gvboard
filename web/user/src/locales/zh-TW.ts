@@ -104,6 +104,8 @@ const m: Messages = {
     manage: '管理',
     shortcuts: '捷徑',
     activities: '活動',
+    bannerLeft: '剩餘時間',
+    bannerDays: '{n} 天',
     tutorial: '查看教程',
     tutorialDesc: '學習如何使用 {site}',
     oneClick: '一鍵訂閱',

@@ -264,6 +264,9 @@ export interface PluginField {
   help?: string
 }
 
+/** 插件用户端显示形式：卡片、横幅、页面 */
+export type PluginForm = 'widget' | 'banner' | 'page'
+
 export interface PluginView {
   code: string
   name: string
@@ -287,8 +290,11 @@ export interface PluginView {
     payments: string[]
     formats: string[]
     widgets?: string[]
+    banners?: string[]
     pages?: string[]
   }
+  /** 插件已注册的用户端显示形式是否开启 */
+  display?: Partial<Record<PluginForm, boolean>>
   package?: { sha256: string; size: number; http: string[]; permissions: { key: string; description: string }[] }
 }
 

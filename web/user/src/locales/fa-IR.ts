@@ -104,6 +104,8 @@ const m: Messages = {
     manage: 'مدیریت',
     shortcuts: 'میان‌برها',
     activities: 'فعالیت‌ها',
+    bannerLeft: 'زمان باقی‌مانده',
+    bannerDays: '{n} روز',
     tutorial: 'مشاهده آموزش‌ها',
     tutorialDesc: 'یادگیری نحوه استفاده از {site}',
     oneClick: 'اشتراک با یک کلیک',

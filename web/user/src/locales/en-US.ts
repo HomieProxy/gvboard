@@ -104,6 +104,8 @@ const m: Messages = {
     manage: 'Manage',
     shortcuts: 'Shortcuts',
     activities: 'Activities',
+    bannerLeft: 'Ends in',
+    bannerDays: '{n}d',
     tutorial: 'Tutorials',
     tutorialDesc: 'Learn how to use {site}',
     oneClick: 'One-click subscribe',

@@ -1,6 +1,6 @@
 package plugin
 
-// 卡片位置。
+// 卡片建议位置。实际显示位置由主题决定。
 const (
 	SlotDashboard = "dashboard" // 用户端仪表盘
 )
@@ -30,7 +30,7 @@ const (
 type Widget struct {
 	// Key 插件内唯一的标识：小写字母开头，只能包含小写字母、数字、下划线，最多 32 个字符。
 	Key string `json:"key"`
-	// Slot 位置，目前只有 SlotDashboard。
+	// Slot 建议位置，可以为空，非空时目前只能为 SlotDashboard。主题可以放在其它位置。
 	Slot string `json:"slot"`
 	// Title 标题，最多 32 个字符。
 	Title string `json:"title"`

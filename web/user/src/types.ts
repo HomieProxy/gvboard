@@ -249,11 +249,11 @@ export interface Notice {
   created_at: number
 }
 
-/** 插件卡片（GET /user/plugin-widgets） */
+/** 插件卡片（GET /user/plugin-widgets），slot 为插件建议的位置，可以为空 */
 export interface PluginWidget {
   plugin: string
   key: string
-  slot: string
+  slot?: string
   title: string
   icon: string
   state: string
@@ -268,6 +268,25 @@ export interface PluginWidgetState {
 }
 
 export type PluginAction = NonNullable<PluginWidgetState['actions']>[number]
+
+/** 插件横幅（GET /user/plugin-banners） */
+export interface PluginBanner {
+  plugin: string
+  key: string
+  title?: string
+  icon: string
+  state: string
+}
+
+/** 插件横幅状态（插件的 state 路由返回）：ends_at 为截止时间（Unix 秒），dismissible 为用户可关闭 */
+export interface PluginBannerState {
+  hidden?: boolean
+  text?: string
+  tone?: 'info' | 'success' | 'warning' | 'danger'
+  ends_at?: number
+  action?: PluginAction | null
+  dismissible?: boolean
+}
 
 /** 插件页面（GET /user/plugin-pages），地址为 /plugin/{plugin}/{key} */
 export interface PluginPage {

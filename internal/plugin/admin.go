@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -42,6 +43,7 @@ type Features struct {
 	Payments []string    `json:"payments"`
 	Formats  []string    `json:"formats"`
 	Widgets  []string    `json:"widgets"`
+	Banners  []string    `json:"banners"`
 	Pages    []string    `json:"pages"`
 }
 
@@ -56,6 +58,8 @@ type View struct {
 	Fields      []sdk.Field    `json:"fields"`
 	Config      map[string]any `json:"config"`
 	Features    Features       `json:"features"`
+	// Display 插件已注册的用户端显示形式（widget / banner / page）是否开启。
+	Display map[string]bool `json:"display"`
 	// Package JS 插件的安装包信息（可访问的域名、权限）。
 	Package *PackageInfo `json:"package,omitempty"`
 	// DBWarning 启用前需要管理员确认数据库访问警告（非内置 Go 插件且尚未确认过）。
@@ -112,7 +116,7 @@ func (m *Manager) view(e *entry, row *model.Plugin) View {
 		v.Status, v.Error = StatusError, e.err
 		v.Enabled = false
 	}
-	f := Features{Events: []string{}, Filters: []string{}, Jobs: []string{}, Payments: append([]string{}, e.pays...), Formats: []string{}, Widgets: []string{}, Pages: []string{}}
+	f := Features{Events: []string{}, Filters: []string{}, Jobs: []string{}, Payments: append([]string{}, e.pays...), Formats: []string{}, Widgets: []string{}, Banners: []string{}, Pages: []string{}}
 	for name := range e.events {
 		f.Events = append(f.Events, name)
 	}
@@ -130,11 +134,15 @@ func (m *Manager) view(e *entry, row *model.Plugin) View {
 	for _, w := range e.widgets {
 		f.Widgets = append(f.Widgets, w.Title+" ("+w.Key+")")
 	}
+	for _, b := range e.banners {
+		f.Banners = append(f.Banners, cmp.Or(b.Title, b.Key)+" ("+b.Key+")")
+	}
 	for _, p := range e.pages {
 		f.Pages = append(f.Pages, p.Title+" (/plugin/"+e.code+"/"+p.Key+")")
 	}
 	f.Routes = e.routes()
 	v.Features = f
+	v.Display = m.display(e)
 	return v
 }
 
@@ -147,8 +155,8 @@ func missingView(row *model.Plugin) View {
 	}
 	return View{
 		Info: sdk.Info{Code: row.Code, Name: row.Code, Version: row.Version}, Type: row.Type, Status: StatusMissing,
-		Enabled: row.Enabled == 1, InstalledAt: row.CreatedAt, Fields: []sdk.Field{}, Config: cfg,
-		Features: Features{Events: []string{}, Filters: []string{}, Routes: []routeInfo{}, Jobs: []string{}, Payments: []string{}, Formats: []string{}, Widgets: []string{}, Pages: []string{}},
+		Enabled: row.Enabled == 1, InstalledAt: row.CreatedAt, Fields: []sdk.Field{}, Config: cfg, Display: map[string]bool{},
+		Features: Features{Events: []string{}, Filters: []string{}, Routes: []routeInfo{}, Jobs: []string{}, Payments: []string{}, Formats: []string{}, Widgets: []string{}, Banners: []string{}, Pages: []string{}},
 	}
 }
 
@@ -348,7 +356,8 @@ func callTimeout(ctx context.Context, d time.Duration, fn func(ctx context.Conte
 // Register 挂载路由：
 //
 //	ANY {api}/plugin/{code}/*                       插件访客 / 用户路由
-//	GET    {api}/user/plugin-widgets                已启用插件的用户端卡片（slot）
+//	GET    {api}/user/plugin-widgets                已启用插件的用户端卡片（可选 slot 只返回该建议位置）
+//	GET    {api}/user/plugin-banners                已启用插件的用户端横幅
 //	GET    {api}/user/plugin-pages                  已启用插件的用户端页面
 //	ANY {api}/{secure_path}/plugin/{code}/*         插件管理端路由
 //	GET    {api}/{secure_path}/plugins              插件列表
@@ -356,12 +365,14 @@ func callTimeout(ctx context.Context, d time.Duration, fn func(ctx context.Conte
 //	POST   {api}/{secure_path}/plugins/{code}/enable  启用 {"acknowledge": true}（首次启用非内置 Go 插件时必填，否则 409）
 //	POST   {api}/{secure_path}/plugins/{code}/disable 停用
 //	PUT    {api}/{secure_path}/plugins/{code}/config  保存配置 {"config": {...}}
+//	PUT    {api}/{secure_path}/plugins/{code}/display 用户端显示形式开关 {"widget": bool, "banner": bool, "page": bool}
 //	DELETE {api}/{secure_path}/plugins/{code}       删除 JS 插件或已移除插件的记录
 //	POST   {api}/{secure_path}/plugins/upload       上传 JS 插件 zip（表单 file）：不带 sha256 时只预览，
 //	                                                带预览返回的 sha256 时安装 / 更新
 func (m *Manager) Register(r *server.Router) {
 	r.API.Any("/plugin/:code/*path", m.serve(false))
 	r.API.GET("/user/plugin-widgets", m.Auth.RequireUser(), m.userWidgets)
+	r.API.GET("/user/plugin-banners", m.Auth.RequireUser(), func(c *gin.Context) { httpx.OK(c, m.Banners()) })
 	r.API.GET("/user/plugin-pages", m.Auth.RequireUser(), func(c *gin.Context) { httpx.OK(c, m.Pages()) })
 	a := m.Auth.AdminGroup(r.API, func() string { return m.Settings.String("secure_path") })
 	a.Any("/plugin/:code/*path", m.serve(true))
@@ -387,6 +398,14 @@ func (m *Manager) Register(r *server.Router) {
 			return
 		}
 		done(c, m.SaveConfig(c.Request.Context(), c.Param("code"), in.Config))
+	})
+	a.PUT("/plugins/:code/display", func(c *gin.Context) {
+		var in map[string]bool
+		if c.ShouldBindJSON(&in) != nil || in == nil {
+			httpx.Fail(c, errInvalid)
+			return
+		}
+		done(c, m.SetDisplay(c.Request.Context(), c.Param("code"), in))
 	})
 	a.DELETE("/plugins/:code", func(c *gin.Context) { done(c, m.Delete(c.Request.Context(), c.Param("code"))) })
 	a.POST("/plugins/upload", m.upload)
