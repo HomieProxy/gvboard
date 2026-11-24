@@ -334,15 +334,15 @@ func TestWidgetFirstOrder(t *testing.T) {
 			t.Fatalf("充值与待支付订单不应隐藏首单卡片：%s", data)
 		}
 
-		// 限时：未设置时不显示横幅；设置后在时限内显示倒计时横幅，超过时限后卡片与横幅都隐藏
+		// 限时：未设置时显示不带倒计时的横幅；设置后在时限内显示倒计时横幅，超过时限后卡片与横幅都隐藏
 		var banners []BannerView
 		if code, data := do("GET", "user/plugin-banners", tok); code != http.StatusOK || json.Unmarshal(data, &banners) != nil ||
 			len(banners) != 1 || banners[0].Plugin != "first_order" || banners[0].State != "/banner" {
 			t.Fatalf("横幅列表错误：%d %s", code, data)
 		}
 		var bs sdk.BannerState
-		if _, data := do("GET", "plugin/first_order/banner", tok); json.Unmarshal(data, &bs) != nil || !bs.Hidden {
-			t.Fatalf("未设置限时不应显示横幅：%s", data)
+		if _, data := do("GET", "plugin/first_order/banner", tok); json.Unmarshal(data, &bs) != nil || bs.Hidden || bs.EndsAt != 0 || bs.Text == "" {
+			t.Fatalf("未设置限时应显示不带倒计时的横幅：%s", data)
 		}
 		if err := m.SaveConfig(context.Background(), "first_order", map[string]any{"limit_minutes": 30}); err != nil {
 			t.Fatal(err)

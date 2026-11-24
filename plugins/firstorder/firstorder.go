@@ -4,7 +4,7 @@
 //
 //	GET {api}/plugin/first_order/eligible  当前用户能否享受首单优惠
 //	GET {api}/plugin/first_order/widget    卡片状态（不能享受时隐藏）
-//	GET {api}/plugin/first_order/banner    倒计时横幅状态（未设置限时或不能享受时隐藏）
+//	GET {api}/plugin/first_order/banner    横幅状态（设置了限时时带倒计时，不能享受时隐藏）
 package firstorder
 
 import (
@@ -41,7 +41,7 @@ type Plugin struct{}
 
 func (Plugin) Info() sdk.Info {
 	return sdk.Info{
-		Code: "first_order", Name: "首单优惠", Version: "1.2.0", Author: "Gvboard",
+		Code: "first_order", Name: "首单优惠", Version: "1.2.1", Author: "Gvboard",
 		Description: "从未购买过套餐的用户新购套餐时按比例减免金额（在优惠券之后计算），可以设置从注册开始的限时；用户端显示首单优惠卡片与倒计时横幅，套餐显示“首单立减”标签",
 	}
 }
@@ -52,7 +52,7 @@ func (Plugin) Fields() []sdk.Field {
 		{Key: "max_off", Label: "最多减免（分）", Type: sdk.FieldNumber, Default: 0, Help: "0 表示不限制"},
 		{Key: "plan_ids", Label: "适用套餐 ID", Type: sdk.FieldString, Help: "英文逗号分隔，留空表示全部套餐"},
 		{Key: "limit_minutes", Label: "限时（分钟）", Type: sdk.FieldNumber, Default: 0,
-			Help: "从用户注册时开始计算，超过后不再享受首单优惠，仪表盘显示倒计时横幅；0 表示不限时。注意：注册时间已超过时限的老用户会随即失去资格"},
+			Help: "从用户注册时开始计算，超过后不再享受首单优惠，横幅显示倒计时；0 表示不限时。注意：注册时间已超过时限的老用户会随即失去资格"},
 	}
 }
 
@@ -124,10 +124,14 @@ func (r rule) widget() sdk.WidgetState {
 	return sdk.WidgetState{Text: r.offer() + "，下单时自动抵扣", Value: value, Actions: []sdk.WidgetAction{{Label: "去选套餐", Link: "/plans"}}}
 }
 
-// banner 倒计时横幅状态。
+// banner 横幅状态：设置了限时时带倒计时。
 func (r rule) banner(endsAt int64) sdk.BannerState {
+	text := "新用户专享：" + r.offer() + "，下单时自动抵扣"
+	if endsAt > 0 {
+		text = "新用户限时福利：" + r.offer() + "，到期后失效"
+	}
 	return sdk.BannerState{
-		Text: "新用户限时福利：" + r.offer() + "，到期后失效", Tone: sdk.ToneWarning, EndsAt: endsAt,
+		Text: text, Tone: sdk.ToneWarning, EndsAt: endsAt,
 		Action: &sdk.WidgetAction{Label: "去选套餐", Link: "/plans"},
 	}
 }
@@ -256,7 +260,7 @@ func (Plugin) Setup(h sdk.Host) error {
 
 	h.UserRoutes().GET("/banner", func(c *gin.Context) {
 		r, err := parseRule(h.Config())
-		if err != nil || r.limit == 0 {
+		if err != nil {
 			sdk.OK(c, sdk.BannerState{Hidden: true})
 			return
 		}

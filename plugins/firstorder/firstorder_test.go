@@ -98,4 +98,8 @@ func TestBanner(t *testing.T) {
 	if b.Action == nil || b.Action.Link != "/plans" {
 		t.Fatalf("横幅按钮应跳转到套餐页：%+v", b.Action)
 	}
+	b = rule{percent: 20}.banner(0)
+	if b.Hidden || b.EndsAt != 0 || b.Text != "新用户专享：首次购买套餐立减 20%，下单时自动抵扣" || b.Action == nil {
+		t.Fatalf("不限时横幅应一直显示且没有倒计时：%+v", b)
+	}
 }
