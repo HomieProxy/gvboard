@@ -158,11 +158,11 @@ onBeforeUnmount(() => clearInterval(timer))
       <div class="flex size-9 shrink-0 items-center justify-center rounded-lg" :class="iconClass[it.state!.tone || 'info']">
         <component :is="pluginIcon(it.b.icon)" class="size-4.5" />
       </div>
-      <div class="min-w-0 flex-1">
+      <div class="min-w-48 flex-1">
         <div v-if="it.b.title" class="font-semibold">{{ clip(it.b.title, 32) }}</div>
         <p class="text-sm break-words">{{ it.state!.text }}</p>
       </div>
-      <div class="flex items-center gap-3">
+      <div class="ml-auto flex items-center gap-3">
         <div v-if="it.state!.ends_at" class="text-end">
           <div class="text-xs opacity-80">{{ t('dashboard.bannerLeft') }}</div>
           <div class="font-mono text-lg font-bold tabular-nums">{{ left(it.state!.ends_at) }}</div>

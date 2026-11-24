@@ -159,7 +159,7 @@ onUnmounted(() => clearInterval(tgTimer))
 <template>
   <div>
     <PageHeader :title="t('nav.profile')" />
-    <div class="grid items-start gap-6 lg:grid-cols-2">
+    <div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle class="flex items-center gap-2 text-base"><UserIcon class="size-4" />{{ t('profile.account') }}</CardTitle>

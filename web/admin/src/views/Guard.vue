@@ -310,7 +310,7 @@ onMounted(async () => {
 
       <TabsContent value="rules">
         <div class="mb-3 flex flex-wrap items-center gap-2">
-          <div class="flex flex-1 items-start gap-2 text-sm text-muted-foreground">
+          <div class="flex basis-full items-start sm:min-w-72 sm:flex-1 gap-2 text-sm text-muted-foreground">
             <InfoIcon class="mt-0.5 size-4 shrink-0" />
             <span>
               启用的规则按优先级从小到大匹配：命中“仅记录”继续匹配，命中其它动作即结束。频率限制、防分享等全局参数在

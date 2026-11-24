@@ -244,7 +244,7 @@ onMounted(() => {
 
       <TabsContent value="rules">
         <div class="mb-3 flex flex-wrap items-center gap-2">
-          <div class="flex flex-1 items-start gap-2 text-sm text-muted-foreground">
+          <div class="flex basis-full items-start sm:min-w-72 sm:flex-1 gap-2 text-sm text-muted-foreground">
             <InfoIcon class="mt-0.5 size-4 shrink-0" />
             <span>
               只有开启了审计（AuditEnable）的 v2node 节点会拉取并执行规则。一个连接命中多条规则时按最严重的动作处理（封禁用户 &gt; 阻断 &gt; 记录）。

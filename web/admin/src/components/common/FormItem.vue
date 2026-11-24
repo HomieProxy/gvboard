@@ -6,7 +6,7 @@ withDefaults(defineProps<{ label: string; help?: string; required?: boolean; cla
 </script>
 
 <template>
-  <div :class="['grid gap-1.5', $props.class]">
+  <div :class="['grid min-w-0 grid-cols-1 gap-1.5', $props.class]">
     <Label class="text-sm">
       {{ label }}<span v-if="required" class="text-destructive">*</span>
       <slot name="extra" />

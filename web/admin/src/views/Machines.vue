@@ -213,7 +213,7 @@ onMounted(async () => {
     <p class="mb-4 text-sm text-amber-700 dark:text-amber-400">只支持 gvboard 版 v2node，节点类型必须是 v2node。原有配置文件方式不受影响，两种方式可以同时使用。</p>
 
     <div class="mb-3 flex flex-wrap items-center gap-2">
-      <div class="flex flex-1 items-start gap-2 text-sm text-muted-foreground">
+      <div class="flex basis-full items-start sm:min-w-72 sm:flex-1 gap-2 text-sm text-muted-foreground">
         <InfoIcon class="mt-0.5 size-4 shrink-0" />
         <span>安装命令中的接入码 30 分钟内有效，只能使用一次。吊销或删除后，节点机会停止本面板的全部节点（同一台服务器接入的其它面板不受影响）；修改节点、审计或日志级别后，节点机在下次拉取配置时自动生效。</span>
       </div>

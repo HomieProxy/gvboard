@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 import { token } from './api'
+import { features, loadFeatures } from './features'
 
 export interface MenuItem {
   path: string
@@ -46,9 +47,15 @@ export const router = createRouter({
   ],
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   if (!to.meta.public && !token.value) return { path: '/login', query: { redirect: to.fullPath } }
   if (to.path === '/login' && token.value) return { path: '/dashboard' }
+  // 功能未开启时不进入页面：插件未启用时其管理接口不存在，404 会被当作登录失效
+  const f = to.meta.feature as string | undefined
+  if (f) {
+    if (features.value[f] === undefined) await loadFeatures()
+    if (features.value[f] === false) return { path: '/dashboard' }
+  }
 })
 
 // 升级部署后旧页面引用的分包文件已不存在，整页刷新一次以加载新版本
