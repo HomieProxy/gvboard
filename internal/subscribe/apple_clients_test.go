@@ -108,7 +108,7 @@ func TestSurgeHysteria2V2node(t *testing.T) {
 		"port", "20000-30000",
 		"tls_settings", phpx.Map("server_name", "hy2.v2n.com", "allow_insecure", int64(0)),
 	))
-	want := "v2n hy2=hysteria2,v2n6.example.com,20000,password=" + uuid + ",sni=hy2.v2n.com,udp-relay=true\r\n"
+	want := "v2n hy2=hysteria2,v2n6.example.com,20000,password=" + uuid + `,sni=hy2.v2n.com,udp-relay=true,port-hopping="20000-30000"` + "\r\n"
 	if got != want {
 		t.Fatalf("v2node hy2\n期望 %q\n实际 %q", want, got)
 	}

@@ -109,9 +109,13 @@ func vmessURI(uuid string, s *phpx.Arr) string {
 	)
 	if phpx.Truthy(s.Get("tls")) {
 		ts := phpx.Coalesce(s.Get("tls_settings"), s.Get("tlsSettings"), phpx.New())
-		cfg.Set("allowInsecure", phpx.Int(phpx.Coalesce(phpx.Get(ts, "allow_insecure"), phpx.Get(ts, "allowInsecure"), int64(0))))
+		insecure := phpx.Int(phpx.Coalesce(phpx.Get(ts, "allow_insecure"), phpx.Get(ts, "allowInsecure"), int64(0)))
+		cfg.Set("allowInsecure", insecure)
+		cfg.Set("insecure", phpx.Str(insecure))
 		cfg.Set("sni", phpx.Coalesce(phpx.Get(ts, "server_name"), phpx.Get(ts, "serverName"), ""))
-		cfg.Set("pcs", phpx.Coalesce(phpx.Get(ts, "pinned_peer_cert_sha256"), ""))
+		if pin := phpx.Get(ts, "pinned_peer_cert_sha256"); phpx.LooseEq(s.Get("tls"), int64(1)) && !phpx.Empty(pin) {
+			cfg.Set("pcs", pin)
+		}
 	}
 	ns := phpx.Coalesce(s.Get("networkSettings"), s.Get("network_settings"), phpx.New())
 	g := func(path ...any) any { return phpx.Get(ns, path...) }
@@ -193,8 +197,11 @@ func vlessURI(uuid string, s *phpx.Arr) string {
 		"flow", s.Get("flow"),
 		"fp", phpx.Coalesce(ts.Get("fingerprint"), "chrome"),
 		"insecure", phpx.Coalesce(ts.Get("allow_insecure"), int64(0)),
-		"pcs", phpx.Coalesce(ts.Get("pinned_peer_cert_sha256"), ""),
 	)
+	if pin := ts.Get("pinned_peer_cert_sha256"); phpx.LooseEq(s.Get("tls"), int64(1)) && !phpx.Empty(pin) {
+		cfg.Set("pcs", pin)
+		cfg.Set("allowInsecure", cfg.Get("insecure"))
+	}
 	if phpx.Truthy(s.Get("tls")) {
 		cfg.Set("sni", phpx.Coalesce(ts.Get("server_name"), ""))
 		if phpx.LooseEq(s.Get("tls"), int64(2)) {
@@ -224,8 +231,10 @@ func uriString(scheme, auth string, s *phpx.Arr, name string, params *phpx.Arr) 
 func trojanURI(password string, s *phpx.Arr) string {
 	ts := arr(s.Get("tls_settings"))
 	sni := phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), "")
+	insecure := phpx.Coalesce(s.Get("allow_insecure"), ts.Get("allow_insecure"), int64(0))
 	cfg := phpx.Map(
-		"allowInsecure", phpx.Coalesce(s.Get("allow_insecure"), ts.Get("allow_insecure"), int64(0)),
+		"allowInsecure", insecure,
+		"insecure", insecure,
 		"peer", sni,
 		"sni", sni,
 		"pcs", phpx.Coalesce(ts.Get("pinned_peer_cert_sha256"), ""),
@@ -279,8 +288,19 @@ func hysteria2URI(password string, s *phpx.Arr) string {
 	ts := arr(s.Get("tls_settings"))
 	uri := "hysteria2://" + password + "@" + remote + ":" + phpx.FirstPort(s.Get("port")) +
 		"/?insecure=" + phpx.Str(phpx.Coalesce(ts.Get("allow_insecure"), int64(0))) +
-		"&sni=" + phpx.Str(phpx.Coalesce(ts.Get("server_name"), "")) +
-		"&pcs=" + phpx.Str(phpx.Coalesce(ts.Get("pinned_peer_cert_sha256"), ""))
+		"&sni=" + phpx.Str(phpx.Coalesce(ts.Get("server_name"), ""))
+	// Hysteria2 官方 URI 用 pinSHA256 传指纹；pcs 保留给只读 pcs 的客户端。
+	fp := certPin(s)
+	if fp != "" {
+		uri += "&pinSHA256=" + fp
+	}
+	pcs := any(fp)
+	if fp == "" {
+		pcs = ts.Get("pinned_peer_cert_sha256")
+	}
+	if p, ok := pcs.(string); ok && p != "" {
+		uri += "&pcs=" + phpx.RawURLEncode(p)
+	}
 	if s.Isset("obfs") && s.Isset("obfs_password") {
 		uri += "&obfs=" + s.Str("obfs") + "&obfs-password=" + phpx.RawURLEncode(s.Str("obfs_password"))
 	}
@@ -310,8 +330,10 @@ func anytlsURI(password string, s *phpx.Arr) string {
 		"type", phpx.Coalesce(s.Get("network"), "tcp"),
 		"insecure", phpx.Coalesce(s.Get("insecure"), ts.Get("allow_insecure"), int64(0)),
 		"fp", phpx.Coalesce(ts.Get("fingerprint"), "chrome"),
-		"pcs", phpx.Coalesce(ts.Get("pinned_peer_cert_sha256"), ""),
 	)
+	if pin := ts.Get("pinned_peer_cert_sha256"); phpx.LooseEq(phpx.Coalesce(s.Get("tls"), int64(1)), int64(1)) && !phpx.Empty(pin) {
+		cfg.Set("pcs", pin)
+	}
 	if s.Isset("server_name") || ts.Isset("server_name") {
 		cfg.Set("sni", phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), ""))
 	}

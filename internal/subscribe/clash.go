@@ -184,7 +184,7 @@ func clashVmess(uuid string, s *phpx.Arr) *phpx.Arr {
 			opts.Set("grpc-service-name", g("serviceName"))
 		}
 	}
-	return a
+	return withPin(a, s, "fingerprint")
 }
 
 // trojanTransport Clash 系 Trojan 的 grpc / ws 传输设置。
@@ -219,7 +219,7 @@ func clashTrojan(password string, s *phpx.Arr) *phpx.Arr {
 	ts := arr(s.Get("tls_settings"))
 	a.Set("sni", phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), ""))
 	a.Set("skip-cert-verify", phpx.Int(phpx.Coalesce(ts.Get("allow_insecure"), s.Get("allow_insecure"), int64(0))) == 1)
-	return a
+	return withPin(a, s, "fingerprint")
 }
 
 // appConfig 原项目 AppController::getConfig：App 内置 Clash 配置，只含旧表的 SS（4 种 AEAD 加密）/ VMess / Trojan 节点。

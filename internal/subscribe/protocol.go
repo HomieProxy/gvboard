@@ -69,7 +69,7 @@ type Protocol struct {
 	Name   string
 	Flag   string
 	Handle func(c *Ctx) (*Response, error)
-	// RemoteCert 为 true 时，证书模式为 remote 的 v2node TLS 节点标记为允许不安全证书。
+	// RemoteCert 为 true 时，证书模式为 remote 的 v2node TLS 节点即使没有证书指纹也允许不安全证书。
 	RemoteCert bool
 }
 
@@ -217,21 +217,78 @@ func addInfoServers(servers []*phpx.Arr, sub *model.Subscription, resetDay *int)
 	return servers
 }
 
-// markRemoteCert 证书模式为 remote 的 v2node TLS 节点允许不安全证书（Clash 系与 sing-box）。
-func markRemoteCert(servers []*phpx.Arr) {
+// markCertPin 对应原项目 ClientController::subscribe：有证书指纹的 TLS 节点（remote 为 true 时还包括
+// 证书模式为 remote 的 v2node 节点）规范指纹并允许不安全证书，不支持证书固定的客户端仍可连接自签名证书节点。
+func markCertPin(servers []*phpx.Arr, remote bool) {
 	for i, s := range servers {
-		if s.Get("type") != "v2node" || phpx.Int(s.Get("tls")) != 1 || s.Get("tls_settings", "cert_mode") != "remote" {
+		typ := typeOf(s)
+		if typ == "shadowsocks" || phpx.Int(phpx.Coalesce(s.Get("tls"), int64(1))) != 1 {
+			continue
+		}
+		ts := arr(phpx.Coalesce(s.Get("tls_settings"), s.Get("tlsSettings")))
+		pin, _ := ts.Get("pinned_peer_cert_sha256").(string)
+		isRemote := s.Get("type") == "v2node" && ts.Get("cert_mode") == "remote"
+		if strings.TrimSpace(pin) == "" && !(remote && isRemote) {
 			continue
 		}
 		c := s.Clone()
-		ts := arr(c.Get("tls_settings"))
-		if _, ok := c.Get("tls_settings").(*phpx.Arr); !ok {
-			c.Set("tls_settings", ts)
+		ts = ts.Clone()
+		if fp := normPin(pin); fp != "" {
+			ts.Set("pinned_peer_cert_sha256", fp)
 		}
 		ts.Set("allow_insecure", int64(1))
-		if s.Get("protocol") == "vmess" {
+		if typ == "vmess" {
 			ts.Set("allowInsecure", int64(1))
+		}
+		c.Set("tls_settings", ts)
+		for _, k := range []string{"allow_insecure", "insecure"} {
+			if _, ok := c.Lookup(k); ok {
+				c.Set(k, int64(1))
+			}
 		}
 		servers[i] = c
 	}
+}
+
+var pinPattern = regexp.MustCompile(`\A[0-9a-f]{64}\z`)
+
+// normPin 证书 SHA-256 指纹规范为 64 位小写十六进制（可带冒号），格式不对时返回空串。
+func normPin(v any) string {
+	p, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	p = strings.ToLower(strings.ReplaceAll(strings.TrimSpace(p), ":", ""))
+	if !pinPattern.MatchString(p) {
+		return ""
+	}
+	return p
+}
+
+// certPin Helper::getTlsCertificateFingerprint：TLS（非 REALITY）节点的证书指纹。
+func certPin(s *phpx.Arr) string {
+	if phpx.Int(phpx.Coalesce(s.Get("tls"), int64(1))) != 1 {
+		return ""
+	}
+	return normPin(phpx.Get(phpx.Coalesce(s.Get("tls_settings"), s.Get("tlsSettings")), "pinned_peer_cert_sha256"))
+}
+
+// withPin ClashMeta::withCertificateFingerprint：Clash 系配置写入证书指纹（键名由客户端决定）并跳过 CA 校验。
+func withPin(a, s *phpx.Arr, key string) *phpx.Arr {
+	if a.Get("type") == "ss" {
+		return a
+	}
+	if fp := certPin(s); fp != "" {
+		a.Set(key, fp)
+		a.Set("skip-cert-verify", true)
+	}
+	return a
+}
+
+// appendPin Helper::appendTlsCertificateFingerprint：Surge / Loon 等文本配置追加 key=指纹。
+func appendPin(cfg []string, s *phpx.Arr, key string) []string {
+	if fp := certPin(s); fp != "" {
+		cfg = append(cfg, key+"="+fp)
+	}
+	return cfg
 }

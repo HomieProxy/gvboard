@@ -124,23 +124,23 @@ func surgeSS(uuid string, s *phpx.Arr) string {
 	return strings.Join(cfg, ",") + "\r\n"
 }
 
-// surgeVmess Surge / Surfboard 共用。与原项目一致只读旧表字段 tlsSettings / networkSettings。
+// surgeVmess Surge / Surfboard 共用，新旧表字段（tls_settings / tlsSettings 等）都读取。
 func surgeVmess(uuid string, s *phpx.Arr) string {
 	cfg := []string{s.Str("name") + "=vmess", s.Str("host"), s.Str("port"), "username=" + uuid, "vmess-aead=true", "tfo=true", "udp-relay=true"}
 	if phpx.Truthy(s.Get("tls")) {
 		cfg = append(cfg, "tls=true")
-		if ts := s.Get("tlsSettings"); phpx.Truthy(ts) {
-			if !phpx.Empty(phpx.Get(ts, "allowInsecure")) {
-				cfg = append(cfg, "skip-cert-verify=true")
-			}
-			if !phpx.Empty(phpx.Get(ts, "serverName")) {
-				cfg = append(cfg, "sni="+phpx.Str(phpx.Get(ts, "serverName")))
-			}
+		ts := phpx.Coalesce(s.Get("tls_settings"), s.Get("tlsSettings"))
+		if !phpx.Empty(phpx.Coalesce(phpx.Get(ts, "allow_insecure"), phpx.Get(ts, "allowInsecure"), int64(0))) {
+			cfg = append(cfg, "skip-cert-verify=true")
 		}
+		if sni := phpx.Str(phpx.Coalesce(phpx.Get(ts, "server_name"), phpx.Get(ts, "serverName"), "")); sni != "" {
+			cfg = append(cfg, "sni="+sni)
+		}
+		cfg = appendPin(cfg, s, "server-cert-fingerprint-sha256")
 	}
 	if s.Get("network") == "ws" {
 		cfg = append(cfg, "ws=true")
-		if ns := s.Get("networkSettings"); phpx.Truthy(ns) {
+		if ns := phpx.Coalesce(s.Get("networkSettings"), s.Get("network_settings")); phpx.Truthy(ns) {
 			if !phpx.Empty(phpx.Get(ns, "path")) {
 				cfg = append(cfg, "ws-path="+phpx.Str(phpx.Get(ns, "path")))
 			}
@@ -157,14 +157,16 @@ func surgeVmess(uuid string, s *phpx.Arr) string {
 
 // surgeTrojan surfboard 为 true 时按 Surfboard 的 ws 写法（只看 isset，不要求 network_settings 非空）。
 func surgeTrojan(password string, s *phpx.Arr, surfboard bool) string {
+	ts := arr(s.Get("tls_settings"))
 	sni := ""
-	if phpx.Truthy(s.Get("server_name")) {
-		sni = "sni=" + s.Str("server_name")
+	if v := phpx.Str(phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), "")); v != "" {
+		sni = "sni=" + v
 	}
 	cfg := []string{s.Str("name") + "=trojan", s.Str("host"), s.Str("port"), "password=" + password, sni, "tfo=true", "udp-relay=true"}
-	if !phpx.Empty(s.Get("allow_insecure")) {
+	if !phpx.Empty(phpx.Coalesce(s.Get("allow_insecure"), ts.Get("allow_insecure"), int64(0))) {
 		cfg = append(cfg, "skip-cert-verify=true")
 	}
+	cfg = appendPin(cfg, s, "server-cert-fingerprint-sha256")
 	if s.Get("network") != nil && phpx.Str(s.Get("network")) == "ws" {
 		cfg = append(cfg, "ws=true")
 		ns := s.Get("network_settings")
@@ -187,23 +189,27 @@ func surgeTrojan(password string, s *phpx.Arr, surfboard bool) string {
 	return joinFilter(",", cfg) + "\r\n"
 }
 
+// surgeHysteria2 参考 https://manual.nssurge.com/policy/proxy.html。
 func surgeHysteria2(password string, s *phpx.Arr) string {
 	ts := arr(s.Get("tls_settings"))
 	sni := ""
-	if v := phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), ""); phpx.Truthy(v) {
-		sni = "sni=" + phpx.Str(v)
+	if v := phpx.Str(phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), "")); v != "" {
+		sni = "sni=" + v
 	}
-	cfg := []string{s.Str("name") + "=hysteria2", s.Str("host"), phpx.FirstPort(s.Get("port")), "password=" + password}
+	cfg := []string{s.Str("name") + "=hysteria2", s.Str("host"), phpx.FirstPort(s.Get("port")), "password=" + password, sni, "udp-relay=true"}
 	if !phpx.Empty(s.Get("up_mbps")) {
 		cfg = append(cfg, "download-bandwidth="+s.Str("up_mbps"))
 	}
-	if sni != "" {
-		cfg = append(cfg, sni)
+	if phpx.MultiPort(s.Get("port")) {
+		cfg = append(cfg, `port-hopping="`+strings.ReplaceAll(s.Str("port"), ",", ";")+`"`)
 	}
-	cfg = append(cfg, "udp-relay=true")
-	if phpx.Truthy(phpx.Coalesce(s.Get("insecure"), ts.Get("allow_insecure"), int64(0))) {
+	if !phpx.Empty(phpx.Coalesce(s.Get("insecure"), ts.Get("allow_insecure"), int64(0))) {
 		cfg = append(cfg, "skip-cert-verify=true")
 	}
+	if obfs := s.Str("obfs"); (obfs == "salamander" || obfs == "gecko") && !phpx.Empty(s.Get("obfs_password")) {
+		cfg = append(cfg, obfs+"-password="+s.Str("obfs_password"))
+	}
+	cfg = appendPin(cfg, s, "server-cert-fingerprint-sha256")
 	return joinFilter(",", cfg) + "\r\n"
 }
 
@@ -241,6 +247,7 @@ func surgeVless(uuid string, s *phpx.Arr) string {
 		if phpx.Truthy(ts.Get("allow_insecure")) {
 			cfg = append(cfg, "skip-cert-verify=true")
 		}
+		cfg = appendPin(cfg, s, "server-cert-fingerprint-sha256")
 	}
 	if sni := ts.Get("server_name"); phpx.Truthy(sni) {
 		cfg = append(cfg, "sni="+phpx.Str(sni))
@@ -289,7 +296,7 @@ func surgeVless(uuid string, s *phpx.Arr) string {
 	return strings.Join(cfg, ",") + "\r\n"
 }
 
-// surgeAnyTLS surfboard 为 true 时不带 tfo、追加 reuse=false。
+// surgeAnyTLS surfboard 为 true 时密码不带 password= 前缀、不带 tfo、追加 reuse=false。
 func surgeAnyTLS(password string, s *phpx.Arr, surfboard bool) string {
 	ts := arr(s.Get("tls_settings"))
 	insecure := "false"
@@ -297,13 +304,18 @@ func surgeAnyTLS(password string, s *phpx.Arr, surfboard bool) string {
 		insecure = "true"
 	}
 	sni := phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), "")
-	cfg := []string{s.Str("name") + "=anytls", s.Str("host"), s.Str("port"), "password=" + password, "skip-cert-verify=" + insecure}
+	auth := "password=" + password
+	if surfboard {
+		auth = password
+	}
+	cfg := []string{s.Str("name") + "=anytls", s.Str("host"), s.Str("port"), auth, "skip-cert-verify=" + insecure}
 	if !surfboard {
 		cfg = append(cfg, "tfo=true")
 	}
 	if phpx.Truthy(sni) {
 		cfg = append(cfg, "sni="+phpx.Str(sni))
 	}
+	cfg = appendPin(cfg, s, "server-cert-fingerprint-sha256")
 	if surfboard {
 		cfg = append(cfg, "reuse=false")
 	}

@@ -31,13 +31,13 @@ func stash(c *Ctx) (*Response, error) {
 		case "hysteria":
 			p = stashHysteria(c.Sub.UUID, s)
 		case "hysteria2":
-			p = metaHysteria2(c.Sub.UUID, s)
+			p = stashAuth(metaHysteria2(c.Sub.UUID, s))
 		case "anytls":
 			p = stashAnyTLS(c.Sub.UUID, s)
 		default:
 			continue
 		}
-		proxy = append(proxy, p)
+		proxy = append(proxy, withPin(p, s, "server-cert-fingerprint"))
 		names = append(names, s.Str("name"))
 	}
 	setProxies(config, proxy)
@@ -79,8 +79,6 @@ func stashSS(uuid string, s *phpx.Arr) *phpx.Arr {
 	return a
 }
 
-// stashVmess 决策 D40：原项目只读旧表字段 tlsSettings / networkSettings，v2node 的 VMess 会丢失 TLS 与传输设置，
-// 这里依次回退到 tls_settings / network_settings（以及 server_name / allow_insecure）。
 func stashVmess(uuid string, s *phpx.Arr) *phpx.Arr {
 	a := phpx.Map(
 		"name", s.Get("name"),
@@ -94,14 +92,12 @@ func stashVmess(uuid string, s *phpx.Arr) *phpx.Arr {
 	)
 	if phpx.Truthy(s.Get("tls")) {
 		a.Set("tls", true)
-		ts := phpx.Coalesce(s.Get("tlsSettings"), s.Get("tls_settings"))
-		if phpx.Truthy(ts) {
-			if ai := phpx.Coalesce(phpx.Get(ts, "allowInsecure"), phpx.Get(ts, "allow_insecure")); !phpx.Empty(ai) {
-				a.Set("skip-cert-verify", true)
-			}
-			if sn := phpx.Coalesce(phpx.Get(ts, "serverName"), phpx.Get(ts, "server_name")); !phpx.Empty(sn) {
-				a.Set("servername", sn)
-			}
+		ts := phpx.Coalesce(s.Get("tls_settings"), s.Get("tlsSettings"))
+		if !phpx.Empty(phpx.Coalesce(phpx.Get(ts, "allow_insecure"), phpx.Get(ts, "allowInsecure"), int64(0))) {
+			a.Set("skip-cert-verify", true)
+		}
+		if sn := phpx.Coalesce(phpx.Get(ts, "server_name"), phpx.Get(ts, "serverName"), ""); phpx.Str(sn) != "" {
+			a.Set("servername", sn)
 		}
 	}
 	ns := phpx.Coalesce(s.Get("networkSettings"), s.Get("network_settings"))
@@ -218,10 +214,11 @@ func stashTrojan(password string, s *phpx.Arr) *phpx.Arr {
 		"udp", true,
 	)
 	trojanTransport(a, s)
-	if !phpx.Empty(s.Get("server_name")) {
-		a.Set("sni", s.Get("server_name"))
+	ts := arr(s.Get("tls_settings"))
+	if sni := phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), ""); phpx.Str(sni) != "" {
+		a.Set("sni", sni)
 	}
-	if !phpx.Empty(s.Get("allow_insecure")) {
+	if !phpx.Empty(phpx.Coalesce(s.Get("allow_insecure"), ts.Get("allow_insecure"), int64(0))) {
 		a.Set("skip-cert-verify", true)
 	}
 	return a
@@ -237,10 +234,11 @@ func stashTuic(password string, s *phpx.Arr) *phpx.Arr {
 		"uuid", password,
 		"password", password,
 		"alpn", phpx.Strings("h3"),
-		"skip-cert-verify", phpx.Truthy(s.Get("insecure")),
 	)
-	if s.Isset("server_name") {
-		a.Set("sni", s.Get("server_name"))
+	ts := arr(s.Get("tls_settings"))
+	a.Set("skip-cert-verify", !phpx.Empty(phpx.Coalesce(s.Get("insecure"), ts.Get("allow_insecure"), int64(0))))
+	if sni := phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), ""); phpx.Str(sni) != "" {
+		a.Set("sni", sni)
 	}
 	return a
 }
@@ -248,18 +246,22 @@ func stashTuic(password string, s *phpx.Arr) *phpx.Arr {
 func stashHysteria(password string, s *phpx.Arr) *phpx.Arr {
 	a := metaHysteria(password, s)
 	if a.Get("type") == "hysteria2" {
-		// Stash 的 Hysteria2 鉴权字段名为 auth（Meta 为 password），键位置保持不变。
-		b := phpx.New()
-		for _, k := range a.Keys() {
-			if k == "password" {
-				b.Set("auth", a.Get(k))
-			} else {
-				b.Set(k, a.Get(k))
-			}
-		}
-		return b
+		return stashAuth(a)
 	}
 	return a
+}
+
+// stashAuth Stash 的 Hysteria2 鉴权字段名为 auth（Meta 为 password），键位置保持不变。
+func stashAuth(a *phpx.Arr) *phpx.Arr {
+	b := phpx.New()
+	for _, k := range a.Keys() {
+		if k == "password" {
+			b.Set("auth", a.Get(k))
+		} else {
+			b.Set(k, a.Get(k))
+		}
+	}
+	return b
 }
 
 func stashAnyTLS(password string, s *phpx.Arr) *phpx.Arr {

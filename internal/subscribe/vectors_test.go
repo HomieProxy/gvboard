@@ -157,9 +157,7 @@ func TestUpdateVectors(t *testing.T) {
 		case "custom":
 			svc = svcCustom
 		}
-		if h.remoteCert {
-			markRemoteCert(servers)
-		}
+		markCertPin(servers, h.remoteCert)
 		resp, err := h.handle(&Ctx{
 			Context: context.Background(), svc: svc, Sub: sub, Servers: servers,
 			AppName: cfg["app_name"].(string), AppURL: cfg["app_url"].(string),
@@ -249,9 +247,7 @@ func TestProtocolsMatchPHP(t *testing.T) {
 		case "custom":
 			svc = svcCustom
 		}
-		if h.remoteCert {
-			markRemoteCert(servers)
-		}
+		markCertPin(servers, h.remoteCert)
 		resp, err := h.handle(&Ctx{
 			Context: context.Background(), svc: svc, Sub: sub, Servers: servers,
 			AppName: cfg["app_name"].(string), AppURL: cfg["app_url"].(string),

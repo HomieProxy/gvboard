@@ -283,9 +283,7 @@ func (s *Service) render(ctx context.Context, sub *model.Subscription, req Reque
 		}
 		servers = addInfoServers(servers, sub, day)
 	}
-	if p.RemoteCert {
-		markRemoteCert(servers)
-	}
+	markCertPin(servers, p.RemoteCert)
 	resp, err := p.Handle(&Ctx{
 		Context: ctx,
 		svc:     s,

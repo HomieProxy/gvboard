@@ -46,7 +46,7 @@ func clashMeta(v metaVariant) func(*Ctx) (*Response, error) {
 			default:
 				continue
 			}
-			proxy = append(proxy, p)
+			proxy = append(proxy, withPin(p, s, "fingerprint"))
 			names = append(names, s.Str("name"))
 		}
 		setProxies(config, proxy)

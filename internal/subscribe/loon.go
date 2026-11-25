@@ -26,9 +26,11 @@ func loon(c *Ctx) (*Response, error) {
 				b.WriteString(loonTrojan(c.Sub.UUID, s))
 			}
 		case "hysteria":
-			if s.Get("version") == int64(2) {
+			if phpx.Int(s.Get("version")) == 2 {
 				b.WriteString(loonHysteria2(c.Sub.UUID, s))
 			}
+		case "hysteria2":
+			b.WriteString(loonHysteria2(c.Sub.UUID, s))
 		case "anytls":
 			b.WriteString(loonAnyTLS(c.Sub.UUID, s))
 		}
@@ -85,9 +87,9 @@ func loonWS(cfg []string, ns any) []string {
 	return cfg
 }
 
-// loonVmess 与原项目一致只读旧表字段 tlsSettings / networkSettings。
+// loonVmess 新旧表字段（network_settings / networkSettings 等）都读取。
 func loonVmess(uuid string, s *phpx.Arr) string {
-	ns := s.Get("networkSettings")
+	ns := phpx.Coalesce(s.Get("networkSettings"), s.Get("network_settings"))
 	cfg := []string{s.Str("name") + "=vmess", s.Str("host"), s.Str("port"),
 		phpx.Str(phpx.Coalesce(phpx.Get(ns, "security"), "auto")), uuid, "fast-open=false", "udp=true", "alterId=0"}
 	if s.Get("network") == "tcp" {
@@ -95,14 +97,14 @@ func loonVmess(uuid string, s *phpx.Arr) string {
 	}
 	if phpx.Truthy(s.Get("tls")) {
 		cfg = append(cfg, "over-tls=true")
-		if ts := s.Get("tlsSettings"); phpx.Truthy(ts) {
-			if !phpx.Empty(phpx.Get(ts, "allowInsecure")) {
-				cfg = append(cfg, "skip-cert-verify=true")
-			}
-			if sn := phpx.Get(ts, "serverName"); !phpx.Empty(sn) {
-				cfg = append(cfg, "tls-name="+phpx.Str(sn))
-			}
+		ts := phpx.Coalesce(s.Get("tls_settings"), s.Get("tlsSettings"))
+		if !phpx.Empty(phpx.Coalesce(phpx.Get(ts, "allow_insecure"), phpx.Get(ts, "allowInsecure"), int64(0))) {
+			cfg = append(cfg, "skip-cert-verify=true")
 		}
+		if sni := phpx.Str(phpx.Coalesce(phpx.Get(ts, "server_name"), phpx.Get(ts, "serverName"), "")); sni != "" {
+			cfg = append(cfg, "sni="+sni)
+		}
+		cfg = appendPin(cfg, s, "tls-cert-sha256")
 	}
 	if s.Get("network") == "ws" {
 		cfg = loonWS(cfg, ns)
@@ -117,18 +119,19 @@ func loonVless(uuid string, s *phpx.Arr) string {
 		cfg = loonTCP(cfg, ns)
 	}
 	ts := s.Get("tls_settings")
-	switch s.Get("tls") {
-	case int64(1):
+	switch phpx.Int(s.Get("tls")) {
+	case 1:
 		cfg = append(cfg, "over-tls=true", "flow="+s.Str("flow"))
 		if phpx.Truthy(ts) {
 			if !phpx.Empty(phpx.Get(ts, "allow_insecure")) {
 				cfg = append(cfg, "skip-cert-verify=true")
 			}
 			if sn := phpx.Get(ts, "server_name"); !phpx.Empty(sn) {
-				cfg = append(cfg, "tls-name="+phpx.Str(sn))
+				cfg = append(cfg, "sni="+phpx.Str(sn))
 			}
 		}
-	case int64(2):
+		cfg = appendPin(cfg, s, "tls-cert-sha256")
+	case 2:
 		cfg = append(cfg, "flow="+s.Str("flow"))
 		if phpx.Truthy(ts) {
 			if v := phpx.Get(ts, "public_key"); !phpx.Empty(v) {
@@ -152,14 +155,16 @@ func loonVless(uuid string, s *phpx.Arr) string {
 }
 
 func loonTrojan(password string, s *phpx.Arr) string {
+	ts := arr(s.Get("tls_settings"))
 	sni := ""
-	if !phpx.Empty(s.Get("server_name")) {
-		sni = "tls-name=" + s.Str("server_name")
+	if v := phpx.Str(phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), "")); v != "" {
+		sni = "sni=" + v
 	}
 	cfg := []string{s.Str("name") + "=trojan", s.Str("host"), s.Str("port"), password, sni, "fast-open=false", "udp=true"}
-	if !phpx.Empty(s.Get("allow_insecure")) {
+	if !phpx.Empty(phpx.Coalesce(s.Get("allow_insecure"), ts.Get("allow_insecure"), int64(0))) {
 		cfg = append(cfg, "skip-cert-verify=true")
 	}
+	cfg = appendPin(cfg, s, "tls-cert-sha256")
 	if s.Get("network") != nil && phpx.Str(s.Get("network")) == "ws" {
 		cfg = append(cfg, "ws=true")
 		if ns := s.Get("network_settings"); phpx.Truthy(ns) {
@@ -175,18 +180,25 @@ func loonTrojan(password string, s *phpx.Arr) string {
 }
 
 func loonHysteria2(password string, s *phpx.Arr) string {
+	ts := arr(s.Get("tls_settings"))
 	sni := ""
-	if phpx.Truthy(s.Get("server_name")) {
-		sni = "sni=" + s.Str("server_name")
+	if v := phpx.Str(phpx.Coalesce(s.Get("server_name"), ts.Get("server_name"), "")); v != "" {
+		sni = "sni=" + v
 	}
-	cfg := []string{s.Str("name") + "=hysteria2", s.Str("host"), phpx.FirstPort(s.Get("port")), "password=" + password,
-		"download-bandwidth=" + s.Str("up_mbps"), sni, "udp=true"}
-	if !phpx.Empty(s.Get("insecure")) {
+	cfg := []string{s.Str("name") + "=hysteria2", s.Str("host"), phpx.FirstPort(s.Get("port")), password, sni, "udp=true"}
+	if !phpx.Empty(s.Get("up_mbps")) {
+		cfg = append(cfg, "download-bandwidth="+s.Str("up_mbps"))
+	}
+	if phpx.MultiPort(s.Get("port")) {
+		cfg = append(cfg, `server-ports="`+strings.ReplaceAll(s.Str("port"), "-", ":")+`"`)
+	}
+	if !phpx.Empty(phpx.Coalesce(s.Get("insecure"), ts.Get("allow_insecure"), int64(0))) {
 		cfg = append(cfg, "skip-cert-verify=true")
 	}
-	if s.Isset("obfs") {
+	if s.Str("obfs") == "salamander" && !phpx.Empty(s.Get("obfs_password")) {
 		cfg = append(cfg, "salamander-password="+s.Str("obfs_password"))
 	}
+	cfg = appendPin(cfg, s, "tls-cert-sha256")
 	return joinFilter(",", cfg) + "\r\n"
 }
 
@@ -201,5 +213,6 @@ func loonAnyTLS(password string, s *phpx.Arr) string {
 		insecure = "true"
 	}
 	cfg = append(cfg, "skip-cert-verify="+insecure)
+	cfg = appendPin(cfg, s, "tls-cert-sha256")
 	return strings.Join(cfg, ",") + "\r\n"
 }
