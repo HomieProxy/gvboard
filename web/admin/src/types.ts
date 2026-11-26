@@ -354,6 +354,7 @@ export interface AuditRule {
   action: 'log' | 'block' | 'ban'
   group_id: number[] | null
   enabled: 0 | 1
+  alert: 0 | 1
   sort: number
   hit_count: number
   last_hit_at: number | null
@@ -374,6 +375,7 @@ export interface AuditLog {
   detail_count: number
   day: number
   banned: 0 | 1
+  alerted: 0 | 1
   hit_at: number
   created_at: number
   email: string

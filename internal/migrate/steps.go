@@ -45,7 +45,17 @@ func Steps() []Step {
 			Description: "审计日志按天回填 day、写入细节表并合并同日同键汇总",
 			Run:         stepAuditLogDayMerge,
 		},
+		{
+			ID:          "2026112601_audit_rule_alert_ban",
+			Description: "已有的封禁审计规则打开 Telegram 告警（保持升级前封禁即通知的行为）",
+			Run:         stepAuditRuleAlertBan,
+		},
 	}
+}
+
+// stepAuditRuleAlertBan 告警改为规则开关后，已有封禁规则默认打开（决策 D92）。
+func stepAuditRuleAlertBan(ctx context.Context, m *Migrator) error {
+	return m.db.WithContext(ctx).Table("v2_audit_rule").Where("action = ?", "ban").Update("alert", 1).Error
 }
 
 // stepAuditLogDayMerge 为已有审计日志补 day / detail_count、写入细节，并把同日同键多行合成一条。

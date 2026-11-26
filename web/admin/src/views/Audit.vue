@@ -56,6 +56,7 @@ const ruleCols: Column[] = [
   { key: 'name', title: '名称' },
   { key: 'pattern', title: '匹配内容' },
   { key: 'action', title: '动作' },
+  { key: 'alert', title: 'Telegram 告警', align: 'center' },
   { key: 'group_id', title: '生效权限组' },
   { key: 'hit_count', title: '命中' },
   { key: 'op', title: '操作', align: 'right', class: 'w-24' },
@@ -69,6 +70,7 @@ interface RuleForm {
   action: AuditRule['action']
   group_id: number[]
   enabled: boolean
+  alert: boolean
   sort: number | null
 }
 const ruleShow = ref(false)
@@ -76,12 +78,12 @@ const ruleSaving = ref(false)
 const ruleEditing = ref<AuditRule | null>(null)
 const ruleForm = ref<RuleForm>(blankRule())
 function blankRule(): RuleForm {
-  return { name: '', pattern: '', action: 'log', group_id: [], enabled: true, sort: 0 }
+  return { name: '', pattern: '', action: 'log', group_id: [], enabled: true, alert: false, sort: 0 }
 }
 function openRule(r: AuditRule | null) {
   ruleEditing.value = r
   ruleForm.value = r
-    ? { name: r.name, pattern: r.pattern, action: r.action, group_id: [...(r.group_id || [])], enabled: !!r.enabled, sort: r.sort }
+    ? { name: r.name, pattern: r.pattern, action: r.action, group_id: [...(r.group_id || [])], enabled: !!r.enabled, alert: !!r.alert, sort: r.sort }
     : blankRule()
   ruleShow.value = true
 }
@@ -108,9 +110,9 @@ async function saveRule() {
     rules.load()
   }
 }
-async function toggleRule(r: AuditRule, v: boolean) {
-  const body = { name: r.name, pattern: r.pattern, action: r.action, group_id: r.group_id || [], enabled: v, sort: r.sort }
-  if (await run(() => admin.put(`/audit/rules/${r.id}`, body))) r.enabled = v ? 1 : 0
+async function toggleRule(r: AuditRule, key: 'enabled' | 'alert', v: boolean) {
+  const body = { name: r.name, pattern: r.pattern, action: r.action, group_id: r.group_id || [], enabled: !!r.enabled, alert: !!r.alert, sort: r.sort, [key]: v }
+  if (await run(() => admin.put(`/audit/rules/${r.id}`, body))) r[key] = v ? 1 : 0
 }
 async function removeRule(r: AuditRule) {
   if (await confirm(`确定要删除规则「${r.name}」吗？已有的审计日志会保留。`, () => admin.del(`/audit/rules/${r.id}`), '删除成功')) rules.load()
@@ -273,7 +275,8 @@ onMounted(() => {
 
         <DataTable :columns="ruleCols" :rows="rules.rows.value" :loading="rules.loading.value">
           <template #cell-sort="{ row }"><span class="tabular-nums">{{ row.sort }}</span></template>
-          <template #cell-enabled="{ row }"><Switch :model-value="!!row.enabled" @update:model-value="(v: boolean) => toggleRule(row, v)" /></template>
+          <template #cell-enabled="{ row }"><Switch :model-value="!!row.enabled" @update:model-value="(v: boolean) => toggleRule(row, 'enabled', v)" /></template>
+          <template #cell-alert="{ row }"><Switch :model-value="!!row.alert" @update:model-value="(v: boolean) => toggleRule(row, 'alert', v)" /></template>
           <template #cell-name="{ row }"><span class="font-medium">{{ row.name }}</span></template>
           <template #cell-pattern="{ row }">
             <span class="line-clamp-2 max-w-md font-mono text-xs" :title="patternLines(row.pattern).join('\n')">
@@ -366,6 +369,7 @@ onMounted(() => {
             <div class="flex flex-wrap gap-1">
               <StatusBadge :tone="actionOf(row.action)?.tone || 'default'">{{ actionOf(row.action)?.label || row.action }}</StatusBadge>
               <StatusBadge v-if="row.banned" tone="danger">已封禁账号</StatusBadge>
+              <StatusBadge v-if="row.alerted" tone="warning">已告警</StatusBadge>
             </div>
           </template>
           <template #cell-server_id="{ row }">
@@ -438,11 +442,15 @@ onMounted(() => {
             <NumInput v-model="ruleForm.sort" :min="-1000000" :max="1000000" />
           </FormItem>
           <p v-if="ruleForm.action === 'ban'" class="text-sm text-destructive sm:col-span-2">
-            封禁用户：节点阻断连接并在本节点暂停该用户 10 分钟；面板收到上报后封禁整个账号、退出全部登录，并通过 Telegram 通知管理员。管理员账号只记录不封禁。
+            封禁用户：节点阻断连接并在本节点暂停该用户 10 分钟；面板收到上报后封禁整个账号、退出全部登录。管理员账号只记录不封禁。
           </p>
           <FormItem label="生效权限组" class="sm:col-span-2" help="下发给属于所选权限组的节点；不选则下发给全部节点">
             <MultiSelect :model-value="ruleForm.group_id" :options="groupOptions" placeholder="全部节点" @update:model-value="(v) => (ruleForm.group_id = v.map(Number))" />
           </FormItem>
+          <label class="flex items-center gap-2 text-sm sm:col-span-2"><Switch v-model="ruleForm.alert" />命中时发送 Telegram 告警</label>
+          <p v-if="ruleForm.alert" class="-mt-2 text-sm text-muted-foreground sm:col-span-2">
+            发送到管理员群组的告警话题；同一订阅、同一规则每天只告警一次（封禁时发送封禁通知）。
+          </p>
           <label class="flex items-center gap-2 text-sm sm:col-span-2"><Switch v-model="ruleForm.enabled" />启用</label>
         </div>
         <DialogFooter>

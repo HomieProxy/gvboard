@@ -15,6 +15,8 @@ type AuditRule struct {
 	Action  string  `gorm:"column:action" json:"action"`
 	GroupID IntList `gorm:"column:group_id" json:"group_id"`
 	Enabled int     `gorm:"column:enabled" json:"enabled"`
+	// Alert 命中时通过 Telegram 告警话题通知管理员（决策 D92），同一订阅、规则每个自然日一次。
+	Alert int `gorm:"column:alert" json:"alert"`
 	// Sort 管理端显示顺序。
 	Sort      int64  `gorm:"column:sort" json:"sort"`
 	HitCount  int64  `gorm:"column:hit_count" json:"hit_count"`
@@ -45,7 +47,9 @@ type AuditLog struct {
 	// Day 该汇总所属自然日的零点 Unix 秒（服务器本地时区）。
 	Day int64 `gorm:"column:day" json:"day"`
 	// Banned 本条记录是否导致账号被封禁。
-	Banned    int   `gorm:"column:banned" json:"banned"`
+	Banned int `gorm:"column:banned" json:"banned"`
+	// Alerted 本条记录是否已发送 Telegram 告警（用于同一订阅、规则当天只告警一次）。
+	Alerted   int   `gorm:"column:alerted" json:"alerted"`
 	HitAt     int64 `gorm:"column:hit_at" json:"hit_at"`
 	CreatedAt int64 `gorm:"column:created_at" json:"created_at"`
 }

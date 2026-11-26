@@ -30,13 +30,15 @@ var (
 	errRuleNotExist = httpx.NotFoundErr("规则不存在")
 )
 
-// BanInfo 审计封禁的信息，用于通知管理员。
+// BanInfo 审计封禁或告警的信息，用于通知管理员。
 type BanInfo struct {
 	UserID   int64
 	Email    string
 	RuleName string
-	Target   string
-	Server   string
+	// Action 节点实际执行的动作（log / block / ban）。
+	Action string
+	Target string
+	Server string
 }
 
 // Service 审计规则服务。
@@ -47,8 +49,11 @@ type Service struct {
 	Now      func() time.Time
 	// RemoveSessions 删除用户全部登录会话（封禁时调用），可为 nil。
 	RemoveSessions func(ctx context.Context, userID int64) error
-	// OnBan 审计封禁账号后调用（通知管理员），可为 nil。
+	// OnBan 开启告警的规则封禁账号后调用（通知管理员），可为 nil。
 	OnBan func(ctx context.Context, info BanInfo)
+	// OnAlert 开启告警的规则命中后调用（通知管理员），同一订阅、规则每个自然日一次；
+	// 本次已发封禁通知的不再调用。可为 nil。
+	OnAlert func(ctx context.Context, info BanInfo)
 }
 
 func (s *Service) now() time.Time {
@@ -74,6 +79,7 @@ type RuleInput struct {
 	Action  string  `json:"action"`
 	GroupID []int64 `json:"group_id"`
 	Enabled bool    `json:"enabled"`
+	Alert   bool    `json:"alert"`
 	Sort    int64   `json:"sort"`
 }
 
@@ -121,9 +127,12 @@ func (s *Service) SaveRule(ctx context.Context, id int64, in RuleInput) (*model.
 			return nil, httpx.Validation("权限组不存在")
 		}
 	}
-	enabled := 0
+	enabled, alert := 0, 0
 	if in.Enabled {
 		enabled = 1
+	}
+	if in.Alert {
+		alert = 1
 	}
 	r := &model.AuditRule{}
 	db := s.DB.WithContext(ctx)
@@ -136,9 +145,9 @@ func (s *Service) SaveRule(ctx context.Context, id int64, in RuleInput) (*model.
 			return nil, err
 		}
 	}
-	r.Name, r.Pattern, r.Action, r.GroupID, r.Enabled, r.Sort = name, strings.TrimSpace(in.Pattern), in.Action, groups, enabled, in.Sort
+	r.Name, r.Pattern, r.Action, r.GroupID, r.Enabled, r.Alert, r.Sort = name, strings.TrimSpace(in.Pattern), in.Action, groups, enabled, alert, in.Sort
 	if id > 0 {
-		err := db.Model(r).Select("name", "pattern", "action", "group_id", "enabled", "sort", "updated_at").Updates(r).Error
+		err := db.Model(r).Select("name", "pattern", "action", "group_id", "enabled", "alert", "sort", "updated_at").Updates(r).Error
 		return r, err
 	}
 	return r, db.Create(r).Error
@@ -283,7 +292,8 @@ type banTrig struct {
 }
 
 // Report 处理节点上报：按「订阅 + 规则 + 节点 + 自然日」合并写入汇总与细节，累计规则命中数；
-// 规则当前动作为封禁、且节点已按封禁处理时封禁账号。不存在的订阅、不存在或对该节点不生效的规则，记录直接丢弃。
+// 规则当前动作为封禁、且节点已按封禁处理时封禁账号；规则开启告警时同一订阅、规则每个自然日通知管理员一次。
+// 不存在的订阅、不存在或对该节点不生效的规则，记录直接丢弃。
 func (s *Service) Report(ctx context.Context, typ string, srv node.Server, records []Record) error {
 	if len(records) > maxRecords {
 		records = records[:maxRecords]
@@ -323,6 +333,8 @@ func (s *Service) Report(ctx context.Context, typ string, srv node.Server, recor
 	}
 	hits := map[int64]hit{}
 	bans := map[int64]banTrig{} // 账号 → 触发封禁信息
+	alerts := []alertTrig{}
+	checked := map[[3]int64]bool{} // 订阅、规则、自然日 → 本次已检查过是否告警
 	for _, r := range records {
 		rule, uid := ruleByID[r.RuleID], owner[r.UserID]
 		if rule == nil || uid == 0 || !validAction(r.Action) {
@@ -377,8 +389,23 @@ func (s *Service) Report(ctx context.Context, typ string, srv node.Server, recor
 		if _, ok := bans[uid]; !ok && r.Action == model.AuditActionBan && rule.Action == model.AuditActionBan && rule.Enabled == 1 {
 			bans[uid] = banTrig{logID: sum.ID, ruleID: rule.ID, target: target}
 		}
+		if key := [3]int64{r.UserID, rule.ID, day}; rule.Alert == 1 && rule.Enabled == 1 && !checked[key] {
+			checked[key] = true
+			var n int64
+			if err := db.Model(&model.AuditLog{}).Where("subscription_id = ? AND rule_id = ? AND day = ? AND alerted = ?",
+				r.UserID, rule.ID, day, 1).Count(&n).Error; err != nil {
+				return err
+			}
+			if n == 0 {
+				alerts = append(alerts, alertTrig{userID: uid, logID: sum.ID, ruleID: rule.ID, action: r.Action, target: target})
+			}
+		}
 	}
-	if err := s.ban(ctx, srv, typ, bans, ruleByID); err != nil {
+	notified, err := s.ban(ctx, srv, typ, bans, ruleByID)
+	if err != nil {
+		return err
+	}
+	if err := s.alert(ctx, srv, typ, alerts, notified, ruleByID); err != nil {
 		return err
 	}
 	for id, h := range hits {
@@ -422,11 +449,13 @@ func (s *Service) refreshLog(db *gorm.DB, logID int64, incomingAction string) er
 	}).Error
 }
 
-// ban 封禁账号（管理员与已封禁的账号跳过），实际封禁的账号把触发封禁的汇总日志标记为已封禁。
+// ban 封禁账号（管理员与已封禁的账号跳过），实际封禁的账号把触发封禁的汇总日志标记为已封禁；
+// 规则开启告警时通知管理员。返回已发封禁通知的 账号 → 规则。
 func (s *Service) ban(ctx context.Context, srv node.Server, typ string, bans map[int64]banTrig,
-	rules map[int64]*model.AuditRule) error {
+	rules map[int64]*model.AuditRule) (map[int64]int64, error) {
+	notified := map[int64]int64{}
 	if len(bans) == 0 {
-		return nil
+		return notified, nil
 	}
 	ids := make([]int64, 0, len(bans))
 	for id := range bans {
@@ -456,13 +485,17 @@ func (s *Service) ban(ctx context.Context, srv node.Server, typ string, bans map
 			return tx.Model(&u).Updates(map[string]any{"banned": 1, "remarks": note}).Error
 		})
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !done {
 			continue
 		}
-		if err := s.DB.WithContext(ctx).Model(&model.AuditLog{}).Where("id = ?", trig.logID).Update("banned", 1).Error; err != nil {
-			return err
+		mark := map[string]any{"banned": 1}
+		if rule.Alert == 1 {
+			mark["alerted"] = 1
+		}
+		if err := s.DB.WithContext(ctx).Model(&model.AuditLog{}).Where("id = ?", trig.logID).Updates(mark).Error; err != nil {
+			return nil, err
 		}
 		if s.RemoveSessions != nil {
 			if err := s.RemoveSessions(ctx, uid); err != nil {
@@ -470,8 +503,56 @@ func (s *Service) ban(ctx context.Context, srv node.Server, typ string, bans map
 			}
 		}
 		s.log().Warn("审计规则封禁账号", zap.Int64("user_id", uid), zap.Int64("rule_id", rule.ID), zap.String("target", trig.target), zap.String("server", server))
-		if s.OnBan != nil {
-			s.OnBan(ctx, BanInfo{UserID: uid, Email: u.Email, RuleName: rule.Name, Target: trig.target, Server: server})
+		if rule.Alert == 1 {
+			notified[uid] = rule.ID
+			if s.OnBan != nil {
+				s.OnBan(ctx, BanInfo{UserID: uid, Email: u.Email, RuleName: rule.Name, Action: model.AuditActionBan, Target: trig.target, Server: server})
+			}
+		}
+	}
+	return notified, nil
+}
+
+// alertTrig 待告警：一个订阅当日首次命中某条开启告警的规则。
+type alertTrig struct {
+	userID int64
+	logID  int64
+	ruleID int64
+	action string
+	target string
+}
+
+// alert 把触发告警的汇总日志标记为已告警并通知管理员；本次已发封禁通知的（同一账号、规则）跳过。
+func (s *Service) alert(ctx context.Context, srv node.Server, typ string, alerts []alertTrig,
+	notified map[int64]int64, rules map[int64]*model.AuditRule) error {
+	if len(alerts) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(alerts))
+	for _, a := range alerts {
+		ids = append(ids, a.userID)
+	}
+	var users []model.User
+	if err := s.DB.WithContext(ctx).Select("id", "email").Where("id IN ?", uniq(ids)).Find(&users).Error; err != nil {
+		return err
+	}
+	email := make(map[int64]string, len(users))
+	for _, u := range users {
+		email[u.ID] = u.Email
+	}
+	server := fmt.Sprintf("%s#%d %s", typ, srv.Common().ID, srv.Common().Name)
+	for _, a := range alerts {
+		if id, ok := notified[a.userID]; ok && id == a.ruleID {
+			continue
+		}
+		if err := s.DB.WithContext(ctx).Model(&model.AuditLog{}).Where("id = ?", a.logID).Update("alerted", 1).Error; err != nil {
+			return err
+		}
+		rule := rules[a.ruleID]
+		s.log().Info("审计规则告警", zap.Int64("user_id", a.userID), zap.Int64("rule_id", rule.ID),
+			zap.String("action", a.action), zap.String("target", a.target), zap.String("server", server))
+		if s.OnAlert != nil {
+			s.OnAlert(ctx, BanInfo{UserID: a.userID, Email: email[a.userID], RuleName: rule.Name, Action: a.action, Target: a.target, Server: server})
 		}
 	}
 	return nil

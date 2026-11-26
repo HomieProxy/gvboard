@@ -342,6 +342,41 @@ func testDropIdxGroup(t *testing.T, driver string) {
 	}
 }
 
+// testAuditRuleAlert 升级时补 alert / alerted 列，已有封禁规则打开告警，其它规则保持关闭。
+func testAuditRuleAlert(t *testing.T, driver string) {
+	db := openTestDB(t, driver)
+	runMigrate(t, db, driver)
+	for _, s := range []string{"ALTER TABLE v2_audit_rule DROP COLUMN alert", "ALTER TABLE v2_audit_log DROP COLUMN alerted"} {
+		if err := db.Exec(s).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, a := range []string{"log", "block", "ban"} {
+		if err := db.Table("v2_audit_rule").Create(map[string]any{"name": a, "pattern": "a.com", "action": a, "created_at": 1, "updated_at": 1}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.Exec(`DELETE FROM v2_gvb_migration WHERE id = '2026112601_audit_rule_alert_ban'`)
+	runMigrate(t, db, driver)
+
+	var rows []struct {
+		Action string
+		Alert  int
+	}
+	db.Table("v2_audit_rule").Select("action", "alert").Order("id").Find(&rows)
+	if len(rows) != 3 || rows[0].Alert != 0 || rows[1].Alert != 0 || rows[2].Alert != 1 {
+		t.Fatalf("只有封禁规则应打开告警: %+v", rows)
+	}
+	var n int64
+	if err := db.Table("v2_audit_log").Where("alerted = ?", 0).Count(&n).Error; err != nil {
+		t.Fatalf("应补建 alerted 列: %v", err)
+	}
+}
+
+func TestMigrateAuditRuleAlertMySQL(t *testing.T) { testAuditRuleAlert(t, config.DriverMySQL) }
+
+func TestMigrateAuditRuleAlertPostgres(t *testing.T) { testAuditRuleAlert(t, config.DriverPostgres) }
+
 func TestMigrateDropIdxGroupMySQL(t *testing.T) { testDropIdxGroup(t, config.DriverMySQL) }
 
 func TestMigrateDropIdxGroupPostgres(t *testing.T) { testDropIdxGroup(t, config.DriverPostgres) }

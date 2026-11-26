@@ -14,6 +14,7 @@ import (
 	"gvboard/internal/account"
 	"gvboard/internal/httpx"
 	"gvboard/internal/model"
+	"gvboard/internal/node"
 	"gvboard/internal/setting"
 	"gvboard/internal/testutil"
 )
@@ -107,6 +108,7 @@ type env struct {
 	now     time.Time
 	removed []int64
 	bans    []BanInfo
+	alerts  []BanInfo
 }
 
 func newEnv(t *testing.T, driver string) *env {
@@ -122,6 +124,7 @@ func newEnv(t *testing.T, driver string) *env {
 		DB: db, Settings: st, Now: func() time.Time { return e.now },
 		RemoveSessions: func(_ context.Context, uid int64) error { e.removed = append(e.removed, uid); return nil },
 		OnBan:          func(_ context.Context, b BanInfo) { e.bans = append(e.bans, b) },
+		OnAlert:        func(_ context.Context, b BanInfo) { e.alerts = append(e.alerts, b) },
 	}
 	return e
 }
@@ -161,6 +164,7 @@ func TestAudit(t *testing.T) {
 		t.Run(driver, func(t *testing.T) {
 			t.Run("规则", func(t *testing.T) { testRules(t, newEnv(t, driver)) })
 			t.Run("上报与封禁", func(t *testing.T) { testReport(t, newEnv(t, driver)) })
+			t.Run("告警", func(t *testing.T) { testAlert(t, newEnv(t, driver)) })
 		})
 	}
 }
@@ -230,12 +234,79 @@ func testRules(t *testing.T, e *env) {
 	}
 }
 
+func testAlert(t *testing.T, e *env) {
+	ctx := context.Background()
+	alert, err := e.SaveRule(ctx, 0, RuleInput{Name: "告警", Pattern: "warn.com", Action: "block", Enabled: true, Alert: true})
+	if err != nil || alert.Alert != 1 {
+		t.Fatalf("保存失败: %v %+v", err, alert)
+	}
+	logRule, _ := e.SaveRule(ctx, 0, RuleInput{Name: "记录", Pattern: "log.com", Action: "log", Enabled: true})
+	quietBan, _ := e.SaveRule(ctx, 0, RuleInput{Name: "静默封禁", Pattern: "ban.com", Action: "ban", Enabled: true})
+	u1, s1 := e.user(t, "a1@x.com", false)
+	_, s2 := e.user(t, "a2@x.com", false)
+	u3, s3 := e.user(t, "a3@x.com", false)
+	n1 := &model.ServerV2node{ServerBase: model.ServerBase{ID: 11, Name: "东京"}}
+	n2 := &model.ServerV2node{ServerBase: model.ServerBase{ID: 12, Name: "新加坡"}}
+
+	report := func(srv node.Server, recs ...Record) {
+		t.Helper()
+		if err := e.Report(ctx, model.ServerTypeV2node, srv, recs); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report(n1,
+		Record{UserID: s1.ID, RuleID: alert.ID, Action: "block", Target: "warn.com:443", Network: "tcp", Count: 3},
+		Record{UserID: s1.ID, RuleID: alert.ID, Action: "block", Target: "www.warn.com:443", Network: "tcp"},
+		Record{UserID: s1.ID, RuleID: logRule.ID, Action: "log", Target: "log.com:443", Network: "tcp"},
+	)
+	if len(e.alerts) != 1 || e.alerts[0].UserID != u1.ID || e.alerts[0].Email != "a1@x.com" || e.alerts[0].RuleName != "告警" ||
+		e.alerts[0].Action != "block" || e.alerts[0].Target != "warn.com:443" || e.alerts[0].Server != "v2node#11 东京" {
+		t.Fatalf("首次命中应告警一次（未开告警的规则不告警）: %+v", e.alerts)
+	}
+	var sum model.AuditLog
+	e.DB.Where("subscription_id = ? AND rule_id = ?", s1.ID, alert.ID).Take(&sum)
+	if sum.Action != "block" || sum.Count != 4 || sum.Alerted != 1 || sum.Banned != 0 {
+		t.Fatalf("告警汇总不符: %+v", sum)
+	}
+
+	report(n1, Record{UserID: s1.ID, RuleID: alert.ID, Action: "block", Target: "warn.com:443", Network: "tcp"})
+	report(n2, Record{UserID: s1.ID, RuleID: alert.ID, Action: "block", Target: "warn.com:443", Network: "tcp"})
+	if len(e.alerts) != 1 {
+		t.Fatalf("同一订阅、规则当天不应重复告警（含其它节点）: %+v", e.alerts)
+	}
+
+	report(n2, Record{UserID: s2.ID, RuleID: alert.ID, Action: "block", Target: "warn.com:80", Network: "tcp"})
+	if len(e.alerts) != 2 || e.alerts[1].Email != "a2@x.com" || e.alerts[1].Server != "v2node#12 新加坡" {
+		t.Fatalf("其它订阅应单独告警: %+v", e.alerts)
+	}
+
+	e.now = e.now.Add(24 * time.Hour)
+	report(n1, Record{UserID: s1.ID, RuleID: alert.ID, Action: "block", Target: "warn.com:443", Network: "tcp"})
+	if len(e.alerts) != 3 {
+		t.Fatalf("第二天应重新告警: %+v", e.alerts)
+	}
+
+	e.SaveRule(ctx, alert.ID, RuleInput{Name: "告警", Pattern: "warn.com", Action: "block", Alert: true})
+	e.now = e.now.Add(24 * time.Hour)
+	report(n1, Record{UserID: s1.ID, RuleID: alert.ID, Action: "block", Target: "warn.com:443", Network: "tcp"})
+	if len(e.alerts) != 3 {
+		t.Fatalf("停用的规则不应告警: %+v", e.alerts)
+	}
+
+	report(n1, Record{UserID: s3.ID, RuleID: quietBan.ID, Action: "ban", Target: "ban.com:443", Network: "tcp"})
+	var u model.User
+	e.DB.Take(&u, u3.ID)
+	if u.Banned != 1 || len(e.bans) != 0 || len(e.alerts) != 3 {
+		t.Fatalf("未开告警的封禁规则只封禁不通知: %+v %+v %+v", u, e.bans, e.alerts)
+	}
+}
+
 func testReport(t *testing.T, e *env) {
 	ctx := context.Background()
 	g1, g2 := &model.ServerGroup{Name: "g1"}, &model.ServerGroup{Name: "g2"}
 	e.DB.Create(g1)
 	e.DB.Create(g2)
-	ban, _ := e.SaveRule(ctx, 0, RuleInput{Name: "封禁", Pattern: "bad.com", Action: "ban", Enabled: true})
+	ban, _ := e.SaveRule(ctx, 0, RuleInput{Name: "封禁", Pattern: "bad.com", Action: "ban", Enabled: true, Alert: true})
 	block, _ := e.SaveRule(ctx, 0, RuleInput{Name: "阻断", Pattern: ":25", Action: "block", Enabled: true})
 	other, _ := e.SaveRule(ctx, 0, RuleInput{Name: "别的组", Pattern: "x.com", Action: "log", GroupID: []int64{g2.ID}, Enabled: true})
 
@@ -289,6 +360,9 @@ func testReport(t *testing.T, e *env) {
 	}
 	if !slices.Equal(e.removed, []int64{u1.ID}) || len(e.bans) != 1 || e.bans[0].Email != "u1@x.com" || e.bans[0].Target != "bad.com:443" {
 		t.Fatalf("封禁回调不符: %v %+v", e.removed, e.bans)
+	}
+	if logs[0].Alerted != 1 || len(e.alerts) != 1 || e.alerts[0].Email != "admin@x.com" || e.alerts[0].Action != "ban" {
+		t.Fatalf("已发封禁通知的不再告警，管理员命中封禁规则应告警: %+v %+v", logs[0], e.alerts)
 	}
 
 	var r model.AuditRule

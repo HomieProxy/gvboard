@@ -87,7 +87,7 @@ func newServices(a *app.App) (*services, error) {
 	sv.tickets.OnAdminReply = sv.bot.OnAdminReply
 	sv.audit = &audit.Service{
 		DB: a.DB, Settings: a.Settings, Log: a.Log.Named("audit"),
-		RemoveSessions: a.Auth.RemoveAll, OnBan: sv.bot.OnAuditBan,
+		RemoveSessions: a.Auth.RemoveAll, OnBan: sv.bot.OnAuditBan, OnAlert: sv.bot.OnAuditAlert,
 	}
 	sv.tasks = &tasks.Service{
 		DB: a.DB, Cache: a.Cache, Settings: a.Settings, Mail: a.Mail, Notify: sv.bot, Translate: translate,

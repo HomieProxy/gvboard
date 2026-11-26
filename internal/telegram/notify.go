@@ -191,8 +191,17 @@ func (s *Service) OnCancelledPaid(ctx context.Context, o *model.Order, paymentNa
 	s.NotifyAdmins(ctx, TopicAlert, false, func(locale string) string { return s.T(locale, "telegram.cancelled_paid", params) })
 }
 
-// OnAuditBan 审计规则封禁账号后通知管理员（决策 D81）。
+// OnAuditBan 开启告警的审计规则封禁账号后通知管理员（决策 D81、D92）。
 func (s *Service) OnAuditBan(ctx context.Context, b audit.BanInfo) {
+	s.notifyAudit(ctx, "telegram.audit_ban", b)
+}
+
+// OnAuditAlert 开启告警的审计规则命中后通知管理员（决策 D92）。
+func (s *Service) OnAuditAlert(ctx context.Context, b audit.BanInfo) {
+	s.notifyAudit(ctx, "telegram.audit_alert", b)
+}
+
+func (s *Service) notifyAudit(ctx context.Context, key string, b audit.BanInfo) {
 	if !s.Enabled() {
 		return
 	}
@@ -200,7 +209,13 @@ func (s *Service) OnAuditBan(ctx context.Context, b audit.BanInfo) {
 		"email": "<code>" + esc(b.Email) + "</code>", "rule": esc(b.RuleName),
 		"target": "<code>" + esc(b.Target) + "</code>", "server": esc(b.Server),
 	}
-	s.NotifyAdmins(ctx, TopicAlert, false, func(locale string) string { return s.T(locale, "telegram.audit_ban", params) })
+	s.NotifyAdmins(ctx, TopicAlert, false, func(locale string) string {
+		p := i18n.Params{"action": s.T(locale, "telegram.audit_action_"+b.Action, nil)}
+		for k, v := range params {
+			p[k] = v
+		}
+		return s.T(locale, key, p)
+	})
 }
 
 // TestTopic 向管理员话题群组的 topic 话题直接发送一条测试消息，返回 Telegram 的错误（管理端配置检查用）。
